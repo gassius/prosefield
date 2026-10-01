@@ -1,0 +1,14 @@
+---
+description: Agent commit trailers and merge-commit policy (Prosefield)
+alwaysApply: true
+---
+
+# Agent attribution
+
+Follow **AGENTS.md → Agent attribution** exactly.
+
+- Every agent commit ends with **one contiguous trailer block** via `git commit --trailer …` (`Agent:`, `Agent-Ticket:`, `Agent-Run:`, optional `Agent-Coordinator:`, `Co-authored-by:`). No blank lines inside the block.
+- `Agent-Run:` is the full `https://cursor.com/agents/<bc id>` URL of the authoring agent/thread (not the coordinator), or `hermes-session:<id>` for Hermes.
+- Do **not** override git author/committer to impersonate Carlos (`gassius`). Trailers identify the agent; CI trusts only verified GitHub signals for carve-outs.
+- Carlos merges with **Create a merge commit** only. Every PR-branch commit lands on `main` as-is, so each commit needs its own valid trailers.
+- Draft-only trailer fixes: reword + `--force-with-lease` on your own draft PR branch only — never on `main` or a ready PR.

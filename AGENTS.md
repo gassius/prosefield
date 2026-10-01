@@ -10,11 +10,11 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 ## Agent attribution
 
-Every commit, pull request, and review comment made by an AI agent must identify the agent, the ClickUp ticket (or `none` / a GitHub issue-or-PR reference), and (when known) the agent run.
+Every commit, pull request, and review comment made by an AI agent must identify the agent, the ClickUp ticket (or `none` / a GitHub issue-or-PR reference), and the agent run.
 
 ### Commits
 
-AI-agent commits must end with **one contiguous trailer block**: the final paragraph of the message, with no blank lines inside it. Git only treats that last paragraph as trailers. The block contains `Agent:`, `Agent-Ticket:`, `Agent-Run:` (when known), optional `Agent-Coordinator:`, and any other trailers such as `Co-authored-by:`. There must be no blank line between the `Agent:` lines and `Co-authored-by:`.
+AI-agent commits must end with **one contiguous trailer block**: the final paragraph of the message, with no blank lines inside it. Git only treats that last paragraph as trailers. The block contains `Agent:`, `Agent-Ticket:`, `Agent-Run:`, optional `Agent-Coordinator:`, and any other trailers such as `Co-authored-by:`. There must be no blank line between the `Agent:` lines and `Co-authored-by:`.
 
 Add them with `--trailer` so they form that final paragraph (do not type a separate paragraph by hand):
 
@@ -51,10 +51,12 @@ git log -1 --format='%(trailers:key=Agent,valueonly)'
 
 It must print the agent name. `git interpret-trailers --parse` on the commit message must list every `Agent*` trailer (and `Co-authored-by:` if present) in one block.
 
-**Carve-outs (no trailers required):**
+**Carve-outs (no trailers required):** CI and humans use the same signals — agents cannot forge them.
 
-- GitHub merge commits: PR merges (*Create a merge commit*) and update-branch merges (button or API). Attribute update-branch merges in a PR comment when practical.
-- Carlos's own commits (`gassius`).
+- **GitHub merge commits:** PR merges (*Create a merge commit*) and update-branch merges (button or API) when the committer is GitHub `web-flow` **and** the commit signature is verified. An agent that updates the branch via GitHub **must** leave a PR comment starting with `### Agent: <name>` that names the merge SHA.
+- **Carlos's own commits (`gassius`):** only when the commit is signature-verified with committer login `gassius`, or is a verified `web-flow` commit whose author login is `gassius` (web UI). Never treat author name or email alone as proof. A message that contains any `Agent:` / `Agent-*:` line is never exempt — it must parse as a valid trailer block.
+
+Any other merge (for example a local `git merge`) must carry a valid trailer block.
 
 **Merge commits (Carlos):** Carlos merges with *Create a merge commit* only. *Squash and merge* and *Rebase and merge* are disabled in repo settings. Because every PR-branch commit lands on `main` as-is, each commit on the branch must carry its own valid single trailer block (`Agent:`, `Agent-Ticket:`, `Agent-Run:`, optional `Agent-Coordinator:`, `Co-authored-by:`).
 
@@ -92,4 +94,4 @@ PRs opened by Cursor agents show `gassius` as author; the footer identifies the 
 
 Only Carlos (`gassius`) merges PRs, and only via *Create a merge commit* (see [Commits](#commits)). *Squash and merge* and *Rebase and merge* are disabled in repo settings.
 
-Engineer Supervisor marks a PR ready only after **all** of the following hold on the **same** head SHA: Pull Request Reviewer **Approve**, GasNet Hermes **Pass**, and green CI. Agents never merge, enable auto-merge, or mark PRs Ready.
+Engineer Supervisor marks a PR ready after Pull Request Reviewer **Approve** + GasNet Hermes **Pass** + green CI on the **same** head SHA. Other agents never mark Ready unless Carlos asks. Agents never merge or enable auto-merge.
