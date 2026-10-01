@@ -1,0 +1,68 @@
+services:
+  emulators:
+    build:
+      context: .
+      dockerfile: docker/emulators.Dockerfile
+      args:
+        FIREBASE_TOOLS_VERSION: "15.32.1"
+    volumes:
+      - .:/workspace
+      - emulator-data:/workspace/.emulator-data
+    ports:
+      - "127.0.0.1:4000:4000"
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:9099:9099"
+      - "127.0.0.1:9150:9150"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:4000 >/dev/null && curl -fsS http://127.0.0.1:9099 >/dev/null && curl -fsS http://127.0.0.1:8080 >/dev/null",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  app:
+    image: node:24-bookworm
+    working_dir: /app
+    volumes:
+      - .:/app
+      - app_node_modules:/app/node_modules
+    command:
+      - bash
+      - -lc
+      - corepack enable && pnpm install --frozen-lockfile && pnpm dev --hostname 0.0.0.0 --port 3000
+    ports:
+      - "127.0.0.1:3000:3000"
+    env_file:
+      - .env
+    environment:
+      APP_URL: http://localhost:3000
+      FIREBASE_PROJECT_ID: demo-prosefield
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: demo-prosefield
+      FIREBASE_AUTH_EMULATOR_HOST: emulators:9099
+      FIRESTORE_EMULATOR_HOST: emulators:8080
+      NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST: localhost:9099
+    depends_on:
+      emulators:
+        condition: service_healthy
+
+  stripe-cli:
+    profiles: ["stripe"]
+    # Pin by tag + digest (not :latest). STRIPE_API_KEY is what the CLI reads;
+    # map it from STRIPE_SECRET_KEY in .env so `docker compose run --rm stripe-cli listen --print-secret` works.
+    image: stripe/stripe-cli:v1.53.0@sha256:92dbb87a9342196d6b4c0aa305ef8d0cacc1edd81da12f1e819ed78e9e99bead
+    environment:
+      STRIPE_API_KEY: ${STRIPE_SECRET_KEY:?set STRIPE_SECRET_KEY in .env}
+    command:
+      - listen
+      - --forward-to
+      - app:3000/api/stripe/webhook
+    depends_on:
+      - app
+
+volumes:
+  app_node_modules:
+  emulator-data:
