@@ -29,6 +29,16 @@ describe("env schema", () => {
     expect(env.STRIPE_SECRET_KEY).toBe("sk_test_example");
   });
 
+  it("trims Stripe keys before validating", () => {
+    const env = parseEnv({
+      ...validEnv,
+      STRIPE_SECRET_KEY: "  sk_test_example  ",
+      STRIPE_WEBHOOK_SECRET: "  whsec_example  ",
+    });
+    expect(env.STRIPE_SECRET_KEY).toBe("sk_test_example");
+    expect(env.STRIPE_WEBHOOK_SECRET).toBe("whsec_example");
+  });
+
   it("rejects live Stripe secret keys", () => {
     const result = envSchema.safeParse({
       ...validEnv,
@@ -40,6 +50,22 @@ describe("env schema", () => {
         true,
       );
     }
+  });
+
+  it("rejects a sk_test_ prefix with no key material", () => {
+    const result = envSchema.safeParse({
+      ...validEnv,
+      STRIPE_SECRET_KEY: "sk_test_",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a blank webhook secret", () => {
+    const result = envSchema.safeParse({
+      ...validEnv,
+      STRIPE_WEBHOOK_SECRET: "   ",
+    });
+    expect(result.success).toBe(false);
   });
 
   it("rejects non-demo Firebase project ids", () => {

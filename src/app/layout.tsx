@@ -35,7 +35,7 @@ export default function RootLayout({
         >
           Skip to content
         </a>
-        <main id="main-content" className="flex flex-1 flex-col">
+        <main id="main-content" tabIndex={-1} className="flex flex-1 flex-col">
           {children}
         </main>
       </body>

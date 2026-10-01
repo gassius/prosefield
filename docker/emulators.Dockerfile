@@ -7,6 +7,8 @@ RUN apt-get update \
   && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
   && apt-get install -y --no-install-recommends nodejs \
   && npm install -g "firebase-tools@${FIREBASE_TOOLS_VERSION}" \
+  && firebase setup:emulators:firestore \
+  && firebase setup:emulators:ui \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 
@@ -15,6 +17,6 @@ WORKDIR /workspace
 COPY docker/emulators-entrypoint.sh /usr/local/bin/emulators-entrypoint.sh
 RUN chmod +x /usr/local/bin/emulators-entrypoint.sh
 
-EXPOSE 4000 8080 9099
+EXPOSE 4000 8080 9099 9150
 
 ENTRYPOINT ["/usr/local/bin/emulators-entrypoint.sh"]

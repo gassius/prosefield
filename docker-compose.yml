@@ -12,13 +12,12 @@ services:
       - "127.0.0.1:4000:4000"
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:9099:9099"
+      - "127.0.0.1:9150:9150"
     healthcheck:
       test:
         [
-          "CMD",
-          "curl",
-          "-fsS",
-          "http://127.0.0.1:4000",
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:4000 >/dev/null && curl -fsS http://127.0.0.1:9099 >/dev/null && curl -fsS http://127.0.0.1:8080 >/dev/null",
         ]
       interval: 5s
       timeout: 5s
@@ -36,7 +35,7 @@ services:
       - -lc
       - corepack enable && pnpm install --frozen-lockfile && pnpm dev --hostname 0.0.0.0 --port 3000
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     env_file:
       - .env
     environment:
@@ -52,13 +51,13 @@ services:
 
   stripe-cli:
     profiles: ["stripe"]
-    image: stripe/stripe-cli:latest
+    # Pin by tag + digest (not :latest). STRIPE_API_KEY is what the CLI reads;
+    # map it from STRIPE_SECRET_KEY in .env so `docker compose run --rm stripe-cli listen --print-secret` works.
+    image: stripe/stripe-cli:v1.53.0@sha256:92dbb87a9342196d6b4c0aa305ef8d0cacc1edd81da12f1e819ed78e9e99bead
     environment:
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_API_KEY: ${STRIPE_SECRET_KEY:?set STRIPE_SECRET_KEY in .env}
     command:
       - listen
-      - --api-key
-      - ${STRIPE_SECRET_KEY}
       - --forward-to
       - app:3000/api/stripe/webhook
     depends_on:
