@@ -112,3 +112,107 @@ jobs:
         # rhysd/actionlint:1.7.7
         uses: docker://rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
 
+  commit-trailers:
+    name: Commit trailers
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify agent commit trailers
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          mapfile -t KNOWN < <(
+            sed -n '/^### Known identities$/,/^### /p' AGENTS.md \
+              | sed -n 's/^- \*\*\([^*]*\)\*\*.*/\1/p'
+          )
+          if [ "${#KNOWN[@]}" -eq 0 ]; then
+            echo "::error::Failed to load Known identities from AGENTS.md"
+            exit 1
+          fi
+          echo "Known identities: ${KNOWN[*]}"
+
+          is_known() {
+            local agent="$1"
+            local name
+            for name in "${KNOWN[@]}"; do
+              if [ "$name" = "$agent" ]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          failed=0
+          while IFS= read -r sha; do
+            [ -n "$sha" ] || continue
+
+            author_email=$(git log -1 --format='%ae' "$sha")
+            author_name=$(git log -1 --format='%an' "$sha")
+            case "$author_email" in
+              gassius@*|*\+gassius@*) continue ;;
+            esac
+            if [ "$author_name" = "gassius" ]; then
+              continue
+            fi
+
+            subject=$(git log -1 --format='%s' "$sha")
+            msg=$(git log -1 --format='%B' "$sha")
+            parsed=$(printf '%s\n' "$msg" | git interpret-trailers --parse || true)
+
+            agent=$(printf '%s\n' "$parsed" | awk -F': ' '$1=="Agent" { print substr($0, index($0,": ")+2); exit }')
+            ticket=$(printf '%s\n' "$parsed" | awk -F': ' '$1=="Agent-Ticket" { print substr($0, index($0,": ")+2); exit }')
+            run=$(printf '%s\n' "$parsed" | awk -F': ' '$1=="Agent-Run" { print substr($0, index($0,": ")+2); exit }')
+            agent_count=$(printf '%s\n' "$parsed" | awk -F': ' '$1=="Agent" { c++ } END { print c+0 }')
+
+            reasons=()
+            if [ -z "$parsed" ]; then
+              reasons+=("git interpret-trailers --parse produced no trailer block")
+            fi
+            if [ "$agent_count" -ne 1 ]; then
+              reasons+=("expected exactly one Agent trailer in the single trailer block (found ${agent_count})")
+            fi
+            if [ -z "$agent" ]; then
+              reasons+=("missing required Agent trailer")
+            elif ! is_known "$agent"; then
+              reasons+=("Agent '${agent}' is not a Known identity from AGENTS.md")
+            fi
+            if [ -z "$ticket" ]; then
+              reasons+=("missing required Agent-Ticket trailer")
+            fi
+            if [ -z "$run" ]; then
+              reasons+=("missing required Agent-Run trailer")
+            fi
+
+            if [ "${#reasons[@]}" -gt 0 ]; then
+              failed=1
+              echo "::error title=Bad commit trailers::${sha} (${subject})"
+              echo "Commit ${sha} failed trailer checks:"
+              printf '  - %s\n' "${reasons[@]}"
+              echo "Parsed trailers:"
+              if [ -n "$parsed" ]; then
+                printf '%s\n' "$parsed"
+              else
+                echo "  (empty)"
+              fi
+              echo
+            else
+              echo "ok: ${sha} Agent=${agent} Agent-Ticket=${ticket}"
+            fi
+          done < <(git rev-list --no-merges "${BASE_SHA}..${HEAD_SHA}")
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::One or more commits are missing a valid single Agent / Agent-Ticket / Agent-Run trailer block."
+            exit 1
+          fi
+          echo "All non-merge, non-gassius commits in ${BASE_SHA}..${HEAD_SHA} have valid trailers."
+

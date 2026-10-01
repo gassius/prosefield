@@ -37,7 +37,7 @@ git commit -m "subject" -m "body" \
 
 `Agent-Ticket:` is the ClickUp task id. When there is no ClickUp task, use `Agent-Ticket: none`, or the GitHub issue/PR reference if there is one (for example `Agent-Ticket: #64`).
 
-`Agent-Run:` names the Cursor agent or Project thread that authored the commit or opened the PR — **not** the Project coordinator. For Cursor cloud agents use the full `https://cursor.com/agents/<bc id>` URL of that agent or thread. For GasNet Hermes use `hermes-session:<session id>`. Omit the line when the run id is unknown.
+`Agent-Run:` names the Cursor agent or Project thread that authored the commit or opened the PR — **not** the Project coordinator. For Cursor cloud agents use the full `https://cursor.com/agents/<bc id>` URL of that agent or thread. For GasNet Hermes use `hermes-session:<session id>`. Required on every agent commit that lands on `main` (each commit is preserved as-is under merge commits).
 
 Optional `Agent-Coordinator: https://cursor.com/agents/<coordinator id>` may follow in the same trailer block when a Project coordinator launched the authoring thread.
 
@@ -51,9 +51,16 @@ git log -1 --format='%(trailers:key=Agent,valueonly)'
 
 It must print the agent name. `git interpret-trailers --parse` on the commit message must list every `Agent*` trailer (and `Co-authored-by:` if present) in one block.
 
-**Carve-out:** merge commits created by GitHub's update-branch button or API have no trailers. That is acceptable. Attribute those updates in a PR comment instead.
+**Carve-outs (no trailers required):**
 
-**Squash merges (Carlos):** always *Squash and merge*. Replace the entire default squash message in the dialog so that its final paragraph is exactly one contiguous trailer block (`Agent:`, `Agent-Ticket:`, `Agent-Run:`, optional `Agent-Coordinator:`, `Co-authored-by:`), with no co-author lines left in a separate paragraph. GitHub's default squash body here is `COMMIT_MESSAGES`, which concatenates every commit message — including broken trailer blocks and mixed identities. GitHub may also append `Co-authored-by:` lines as a separate final paragraph, which silently strips the `Agent*` trailers from git's trailer parse. *Create a merge commit* and *Rebase and merge* are not allowed.
+- GitHub merge commits: PR merges (*Create a merge commit*) and update-branch merges (button or API). Attribute update-branch merges in a PR comment when practical.
+- Carlos's own commits (`gassius`).
+
+**Merge commits (Carlos):** Carlos merges with *Create a merge commit* only. *Squash and merge* and *Rebase and merge* are disabled in repo settings. Because every PR-branch commit lands on `main` as-is, each commit on the branch must carry its own valid single trailer block (`Agent:`, `Agent-Ticket:`, `Agent-Run:`, optional `Agent-Coordinator:`, `Co-authored-by:`).
+
+**Draft-only trailer fixes:** If a commit on a **draft** PR has a bad trailer block, the agent that owns that PR branch may reword and force-push with `--force-with-lease` to fix it. Only on that agent's own PR branch while the PR is still draft. Never force-push to `main` or to a ready (non-draft) PR.
+
+**Known exception on `main` (do not rewrite):** `d7a4098`, `cf06361`, and `c7f6888` predate this check and have malformed or incorrect trailers. They are attributed via PRs #1 / #2 and ClickUp `869faehaz`. Leave them as-is.
 
 ### Pull requests
 
@@ -65,6 +72,8 @@ In the PR body, the footer may use the bare bc id for `Agent-Run:` / `Agent-Coor
 
 Every agent comment starts with `### Agent: <name>` as the first line.
 
+**Exempt:** command comments that only trigger tooling (for example `/hermes run docker-smoke` with Head/Ticket/Reason). Those do not need the `### Agent:` header.
+
 `**Verdict:**` is required on reviews and on verdict or status comments only. Pull Request Reviewer uses `**Verdict:** Approve | Request changes | Comment`. GasNet Hermes status comments use `**Verdict:** Pass | Fail | Blocked` (never Approve or Request changes). Plain replies need only the `### Agent:` header.
 
 ### Known identities
@@ -73,7 +82,7 @@ Every agent comment starts with `### Agent: <name>` as the first line.
 - **Engineer Supervisor**: writes as GitHub App `gasnet-supervisor-gassius[bot]` (since 2026-09-30).
 - **Pull Request Reviewer**: writes as GitHub App `gasnet-reviewer-gassius[bot]` (since 2026-09-30). Approve and Request changes are reserved for this identity.
 - **Nightly Audit Engineer**: also uses Cursor cloud agents; identified by `Agent: Nightly Audit Engineer`.
-- **GasNet Hermes**: external build/verification agent writing as GitHub App `gasnet-hermes-agent[bot]` (since 2026-10-01). Every Hermes comment ends with a footer paragraph of `Agent: GasNet Hermes`, `Agent-Ticket:`, and `Agent-Run: hermes-session:<id>` (contiguous, no blank lines). Status comments use `**Verdict:** Pass | Fail | Blocked` together with the tested head SHA; they never use Approve or Request changes. Hermes may commit or open PRs only if Carlos explicitly allows it for a given job; such commits follow the [Commits](#commits) rules with `Agent: GasNet Hermes` and `Agent-Run: hermes-session:<id>`. Session unit: one job run on one head SHA — a new session for every PR and every task; one result comment per session. First job: Prosefield Docker build and smoke test on its own server.
+- **GasNet Hermes** *(prosefield only for now)*: external build/verification agent writing as GitHub App `gasnet-hermes-agent[bot]` (since 2026-10-01). Every Hermes comment ends with a footer paragraph of `Agent: GasNet Hermes`, `Agent-Ticket:`, and `Agent-Run: hermes-session:<id>` (contiguous, no blank lines). Status comments use `**Verdict:** Pass | Fail | Blocked` together with the tested head SHA; they never use Approve or Request changes. Hermes may commit or open PRs only if Carlos explicitly allows it for a given job; such commits follow the [Commits](#commits) rules with `Agent: GasNet Hermes` and `Agent-Run: hermes-session:<id>`. Session unit: one job run on one head SHA — a new session for every PR and every task; one result comment per session. First job: Prosefield Docker build and smoke test on its own server.
 
 Before 2026-09-30, Engineer Supervisor and Pull Request Reviewer actions appear as `gassius`. The `### Agent:` header is then the only attribution.
 
@@ -81,4 +90,6 @@ PRs opened by Cursor agents show `gassius` as author; the footer identifies the 
 
 ### Merge policy
 
-Only Carlos (`gassius`) merges PRs, and only via *Squash and merge* (see [Commits](#commits)). Agents never merge, enable auto-merge, or mark PRs Ready unless Carlos asks.
+Only Carlos (`gassius`) merges PRs, and only via *Create a merge commit* (see [Commits](#commits)). *Squash and merge* and *Rebase and merge* are disabled in repo settings.
+
+Engineer Supervisor marks a PR ready only after **all** of the following hold on the **same** head SHA: Pull Request Reviewer **Approve**, GasNet Hermes **Pass**, and green CI. Agents never merge, enable auto-merge, or mark PRs Ready.
