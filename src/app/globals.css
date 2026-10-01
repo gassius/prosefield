@@ -1,26 +1,72 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+
+  --background: #fcfbf7; /* Paper */
+  --foreground: #1b1d21; /* Ink */
+  --card: #fdfdfc;
+  --card-foreground: #1b1d21;
+  --primary: #1b1d21; /* Ink: all primary CTAs */
+  --primary-foreground: #fcfbf7;
+  --secondary: #f0eee8; /* Soil */
+  --secondary-foreground: #1b1d21;
+  --muted: #f0eee8;
+  --muted-foreground: #686b73; /* Muted ink */
+  --accent: #e8edfc; /* Growth (single pale blue token) */
+  --accent-foreground: #405ca8;
+  --border: #e3e0d8; /* decorative separators only */
+  --input: #857f73; /* control boundaries, 3.8:1 */
+  --ring: #405ca8; /* always with a 2px Paper offset */
+
+  --brand: #6c8eea; /* Field: large and decorative only */
+  --brand-deep: #405ca8; /* Field deep: small coloured text */
+
+  --success: #327a57;
+  --success-soft: #e7f2ec;
+  --warning: #8a5a00;
+  --warning-soft: #fbf0dc;
+  --destructive: #b5473c;
+  --destructive-foreground: #fcfbf7;
+  --destructive-soft: #fbeae7;
+
+  --radius: 0.75rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-brand: var(--brand);
+  --color-brand-deep: var(--brand-deep);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --font-sans: var(--font-dm-sans);
+  --font-display: var(--font-fraunces);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-dm-sans), system-ui, sans-serif;
 }

@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+import { envSchema, parseEnv } from "@/lib/env";
+
+const validEnv = {
+  NEXT_PUBLIC_FIREBASE_API_KEY: "demo-api-key",
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "demo-prosefield.firebaseapp.com",
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: "demo-prosefield",
+  NEXT_PUBLIC_FIREBASE_APP_ID: "1:000000000000:web:0000000000000000000000",
+  NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST: "localhost:9099",
+  APP_URL: "http://localhost:3000",
+  FIREBASE_PROJECT_ID: "demo-prosefield",
+  STRIPE_SECRET_KEY: "sk_test_example",
+  STRIPE_WEBHOOK_SECRET: "whsec_example",
+  STRIPE_PRICE_ID: "price_example",
+  FEATURE_CUSTOMER_PORTAL: "false",
+  PLAN_DISPLAY_NAME: "Prosefield",
+  PLAN_DISPLAY_PRICE: "9",
+  PLAN_DISPLAY_CURRENCY: "EUR",
+  PLAN_DISPLAY_INTERVAL: "month",
+  FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
+  FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+} as const;
+
+describe("env schema", () => {
+  it("accepts a complete test configuration", () => {
+    const env = parseEnv(validEnv);
+    expect(env.FIREBASE_PROJECT_ID).toBe("demo-prosefield");
+    expect(env.FEATURE_CUSTOMER_PORTAL).toBe(false);
+    expect(env.STRIPE_SECRET_KEY).toBe("sk_test_example");
+  });
+
+  it("rejects live Stripe secret keys", () => {
+    const result = envSchema.safeParse({
+      ...validEnv,
+      STRIPE_SECRET_KEY: "sk_live_example",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path[0] === "STRIPE_SECRET_KEY")).toBe(
+        true,
+      );
+    }
+  });
+
+  it("rejects non-demo Firebase project ids", () => {
+    const result = envSchema.safeParse({
+      ...validEnv,
+      FIREBASE_PROJECT_ID: "production-prosefield",
+      NEXT_PUBLIC_FIREBASE_PROJECT_ID: "production-prosefield",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("parses FEATURE_CUSTOMER_PORTAL as a boolean", () => {
+    const env = parseEnv({
+      ...validEnv,
+      FEATURE_CUSTOMER_PORTAL: "true",
+    });
+    expect(env.FEATURE_CUSTOMER_PORTAL).toBe(true);
+  });
+});
