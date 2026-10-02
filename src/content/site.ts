@@ -29,7 +29,7 @@ export const siteCopy = {
   },
   home: {
     eyebrow: "A focused home for your writing",
-    headline: "Turn scattered thoughts into something worth reading.",
+    headline: "BREAK visual regression headline for deliberate CI failure.",
     supporting:
       "Prosefield gives your ideas a quiet, capable workspace—from the rough first line to the draft you are ready to share.",
     explore: "Explore the editor",
