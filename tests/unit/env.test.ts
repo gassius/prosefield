@@ -84,4 +84,20 @@ describe("env schema", () => {
     });
     expect(env.FEATURE_CUSTOMER_PORTAL).toBe(true);
   });
+
+  it("accepts config without emulator hosts (frontend without backend)", () => {
+    const { FIREBASE_AUTH_EMULATOR_HOST, FIRESTORE_EMULATOR_HOST, ...withoutEmulators } =
+      validEnv;
+    void FIREBASE_AUTH_EMULATOR_HOST;
+    void FIRESTORE_EMULATOR_HOST;
+    const {
+      NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST,
+      ...withoutPublicEmulator
+    } = withoutEmulators;
+    void NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST;
+    const env = parseEnv(withoutPublicEmulator);
+    expect(env.FIREBASE_AUTH_EMULATOR_HOST).toBeUndefined();
+    expect(env.FIRESTORE_EMULATOR_HOST).toBeUndefined();
+    expect(env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST).toBeUndefined();
+  });
 });

@@ -262,3 +262,70 @@ jobs:
           fi
           echo "All commits in ${BASE_SHA}..${HEAD_SHA} have valid trailers or an allowed exemption."
 
+  no-host-java:
+    name: No host Java / native emulators
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Guard against host Java and native emulator scripts
+        run: |
+          set -euo pipefail
+          failed=0
+
+          # package.json scripts must not invoke the native emulator CLI
+          if python3 - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          scripts = json.loads(Path("package.json").read_text(encoding="utf-8")).get("scripts", {})
+          bad = []
+          for name, cmd in scripts.items():
+              text = f"{name}={cmd}"
+              if "firebase emulators:start" in cmd:
+                  bad.append(text)
+              if __import__("re").search(r"(?i)\bjava\b", cmd):
+                  bad.append(text)
+          if bad:
+              print("Forbidden patterns in package.json scripts:")
+              for item in bad:
+                  print(f"  - {item}")
+              sys.exit(1)
+          print("ok: package.json scripts")
+          PY
+          then
+            :
+          else
+            failed=1
+          fi
+
+          # README + docs: forbid host-Java guidance and native emulator start
+          # outside docker/. Skip non-text files (e.g. images under docs/).
+          while IFS= read -r path; do
+            [ -n "$path" ] || continue
+            case "$path" in
+              docker/*) continue ;;
+              *.md|*.mdx|*.json|*.yml|*.yaml|*.ts|*.tsx|*.js|*.mjs|*.cjs|*.sh) ;;
+              *) continue ;;
+            esac
+            if grep -nEiq '\bjava\b' "$path"; then
+              echo "::error file=${path}::Forbidden word 'java' outside docker/ (use Docker-only backend wording)"
+              grep -nEi '\bjava\b' "$path" || true
+              failed=1
+            fi
+            if grep -nF 'firebase emulators:start' "$path"; then
+              echo "::error file=${path}::Forbidden 'firebase emulators:start' outside docker/"
+              failed=1
+            fi
+          done < <(git ls-files 'README.md' 'docs' 'package.json')
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::Host Java / native emulator references found outside docker/."
+            exit 1
+          fi
+          echo "ok: no host Java or native emulator start outside docker/"
+

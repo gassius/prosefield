@@ -45,7 +45,7 @@ export const envSchema = z.object({
   PLAN_DISPLAY_CURRENCY: nonEmpty,
   PLAN_DISPLAY_INTERVAL: nonEmpty,
 
-  // Emulators (set by compose / native scripts)
+  // Emulators (optional; point at Docker backend when running)
   FIREBASE_AUTH_EMULATOR_HOST: nonEmpty.optional(),
   FIRESTORE_EMULATOR_HOST: nonEmpty.optional(),
 });

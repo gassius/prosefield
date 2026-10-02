@@ -7,12 +7,16 @@ services:
         FIREBASE_TOOLS_VERSION: "15.32.1"
     volumes:
       - .:/workspace
+      # Named volume: emulator Auth/Firestore data survives compose stop/down
+      # (use `docker compose down -v` only when you intend to wipe it).
       - emulator-data:/workspace/.emulator-data
     ports:
       - "127.0.0.1:4000:4000"
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:9099:9099"
       - "127.0.0.1:9150:9150"
+    # export-on-exit needs time after SIGTERM before the container is killed
+    stop_grace_period: 60s
     healthcheck:
       test:
         [
@@ -24,7 +28,10 @@ services:
       retries: 30
       start_period: 40s
 
+  # Optional full-stack path. Default `docker compose up` is backend-only so
+  # host `pnpm dev` can own :3000 without a port clash.
   app:
+    profiles: ["app"]
     image: node:24-bookworm
     working_dir: /app
     volumes:
@@ -60,8 +67,8 @@ services:
       - listen
       - --forward-to
       - app:3000/api/stripe/webhook
-    depends_on:
-      - app
+    # Webhook forwarding needs the `app` profile (or host networking).
+    # No depends_on so `docker compose run --rm stripe-cli listen --print-secret` works alone.
 
 volumes:
   app_node_modules:
