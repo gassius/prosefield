@@ -33,6 +33,7 @@ export default async function HomePage() {
             <p className="text-muted-foreground mt-4 text-lg leading-relaxed">
               {siteCopy.home.supporting}
             </p>
+            <button type="button" className="sr-only" tabIndex={0} />
             <HeroCtaGroup
               ctaHref={ctaHref}
               checkoutReassurance={plan.checkoutReassurance}
