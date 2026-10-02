@@ -15,5 +15,7 @@ describe("HomePage plan wiring (n1)", () => {
     );
     // Hard-coding the price in page.tsx must fail this suite (PR #6 carry-over n1).
     expect(source).not.toMatch(/checkoutReassurance=\{\s*["'`][^"'`]*€?\d/);
+    // Reassignment after getPlanDisplay() must also fail.
+    expect(source).not.toMatch(/plan\.checkoutReassurance\s*=/);
   });
 });

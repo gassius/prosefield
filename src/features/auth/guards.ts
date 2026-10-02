@@ -31,7 +31,8 @@ async function isSubscriptionActive(uid: string): Promise<boolean> {
 export async function getAccountState(): Promise<AccountState> {
   let session: DecodedIdToken | null = null;
   try {
-    session = await getOptionalSession(false);
+    // Always check revocation so a copied cookie dies immediately after logout.
+    session = await getOptionalSession(true);
   } catch {
     return { kind: "logged_out" };
   }
@@ -60,13 +61,13 @@ export async function getAccountState(): Promise<AccountState> {
 }
 
 /**
- * Require a verified session cookie.
- * Use checkRevoked=true for mutations (logout, document writes, checkout).
+ * Require a verified session cookie with revocation checked.
+ * Pass `checkRevoked: false` only for rare non-security reads (tests).
  */
 export async function requireSession(
   options: { checkRevoked?: boolean } = {},
 ): Promise<DecodedIdToken> {
-  const session = await getOptionalSession(options.checkRevoked ?? false);
+  const session = await getOptionalSession(options.checkRevoked ?? true);
   if (!session) {
     throw new SessionError("Authentication required", "unauthorized");
   }
@@ -77,7 +78,7 @@ export async function requireSessionOrRedirect(
   loginPath = "/login",
 ): Promise<DecodedIdToken> {
   try {
-    return await requireSession();
+    return await requireSession({ checkRevoked: true });
   } catch {
     redirect(loginPath);
   }

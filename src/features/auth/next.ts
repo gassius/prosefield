@@ -7,7 +7,7 @@ const allowSet = new Set<string>(NEXT_PATH_ALLOW_LIST);
 
 /**
  * Validate `next` query values against the internal allow-list.
- * Returns null when missing or not allow-listed (caller picks a default).
+ * Returns `fallback` when missing or not allow-listed.
  */
 export function resolveNextPath(
   raw: string | null | undefined,

@@ -27,7 +27,7 @@ test("registers a new account and lands on subscribe with a session", async ({
   ).toBeVisible();
 });
 
-test("register with an existing email shows an error", async ({ page }) => {
+test("register with an existing email shows a generic error", async ({ page }) => {
   const email = uniqueEmail("dup");
   await registerViaUi(page, email, "password-123");
   await expect(page).toHaveURL(/\/subscribe/);
@@ -39,7 +39,7 @@ test("register with an existing email shows an error", async ({ page }) => {
 
   await registerViaUi(page, email, "password-123");
   await expect(
-    page.getByText("An account with this email already exists."),
+    page.getByRole("alert").filter({ hasText: "Email or password is incorrect." }),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/register/);
 });

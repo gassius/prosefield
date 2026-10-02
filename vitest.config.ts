@@ -10,17 +10,17 @@ const sharedResolve = {
 };
 
 const highBar = {
-  lines: 90,
-  functions: 90,
-  branches: 80,
-  statements: 90,
+  lines: 95,
+  functions: 95,
+  branches: 85,
+  statements: 95,
 } as const;
 
 const authSurfaceBar = {
-  lines: 80,
-  functions: 70,
-  branches: 65,
-  statements: 80,
+  lines: 92,
+  functions: 90,
+  branches: 75,
+  statements: 92,
 } as const;
 
 export default defineConfig({
@@ -35,21 +35,21 @@ export default defineConfig({
       // Client Firebase bootstrap is browser-only; covered indirectly by E2E.
       exclude: ["src/lib/firebase/client.ts"],
       thresholds: {
-        // Ticket: ≥80% lines on src/lib and auth code.
-        lines: 80,
-        functions: 75,
-        branches: 70,
-        statements: 80,
+        // Ratcheted to measured Component+coverage values minus a small margin.
+        lines: 95,
+        functions: 95,
+        branches: 88,
+        statements: 95,
         "src/features/auth/{account-state,auth-time,constants,csrf,map-auth-error,next}.ts":
           highBar,
         "src/lib/env.ts": highBar,
         "src/lib/utils.ts": highBar,
         "src/features/auth/{session,guards,users}.ts": authSurfaceBar,
         "src/lib/firebase/**": {
-          lines: 80,
-          functions: 80,
-          branches: 70,
-          statements: 80,
+          lines: 95,
+          functions: 95,
+          branches: 90,
+          statements: 95,
         },
       },
     },

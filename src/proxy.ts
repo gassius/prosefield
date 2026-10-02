@@ -12,10 +12,14 @@ function isSecureHost(request: NextRequest): boolean {
   if (host === "localhost" || host === "127.0.0.1") {
     return false;
   }
+  const forwarded = request.headers.get("x-forwarded-proto");
+  if (forwarded) {
+    return forwarded.split(",")[0]?.trim() === "https";
+  }
   return request.nextUrl.protocol === "https:";
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const response = NextResponse.next();
   if (!request.cookies.get(CSRF_COOKIE_NAME)?.value) {
     response.cookies.set({

@@ -93,7 +93,7 @@ describe("AuthForm", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("shows a duplicate-email field error", async () => {
+  it("shows a generic summary error for duplicate email (no enumeration)", async () => {
     const user = userEvent.setup();
     createUser.mockRejectedValue({ code: "auth/email-already-in-use" });
 
@@ -104,9 +104,9 @@ describe("AuthForm", () => {
       screen.getByRole("button", { name: siteCopy.auth.registerSubmit }),
     );
 
-    expect(
-      await screen.findByText("An account with this email already exists."),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      siteCopy.auth.genericError,
+    );
     expect(replace).not.toHaveBeenCalled();
   });
 

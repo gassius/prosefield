@@ -27,7 +27,24 @@ export class SessionError extends Error {
   }
 }
 
-function isSecureRequest(): boolean {
+/** Prefer the incoming request protocol (incl. x-forwarded-proto); fall back to APP_URL. */
+export function isSecureCookieRequest(request?: Request): boolean {
+  if (request) {
+    try {
+      const url = new URL(request.url);
+      if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+        return false;
+      }
+      const forwarded = request.headers.get("x-forwarded-proto");
+      if (forwarded) {
+        return forwarded.split(",")[0]?.trim() === "https";
+      }
+      return url.protocol === "https:";
+    } catch {
+      // fall through to APP_URL
+    }
+  }
+
   const { APP_URL } = getEnv();
   try {
     const url = new URL(APP_URL);
@@ -44,7 +61,7 @@ export async function createSessionCookieFromIdToken(
   idToken: string,
 ): Promise<{ sessionCookie: string; decoded: DecodedIdToken }> {
   const auth = getAdminAuth();
-  const decoded = await auth.verifyIdToken(idToken);
+  const decoded = await auth.verifyIdToken(idToken, true);
 
   if (!isRecentAuthTime(decoded.auth_time)) {
     throw new SessionError(
@@ -60,22 +77,25 @@ export async function createSessionCookieFromIdToken(
   return { sessionCookie, decoded };
 }
 
-export async function setSessionCookie(sessionCookie: string): Promise<void> {
+export async function setSessionCookie(
+  sessionCookie: string,
+  request?: Request,
+): Promise<void> {
   const jar = await cookies();
   jar.set(SESSION_COOKIE_NAME, sessionCookie, {
     httpOnly: true,
-    secure: isSecureRequest(),
+    secure: isSecureCookieRequest(request),
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_EXPIRES_IN_MS / 1000,
   });
 }
 
-export async function clearSessionCookie(): Promise<void> {
+export async function clearSessionCookie(request?: Request): Promise<void> {
   const jar = await cookies();
   jar.set(SESSION_COOKIE_NAME, "", {
     httpOnly: true,
-    secure: isSecureRequest(),
+    secure: isSecureCookieRequest(request),
     sameSite: "lax",
     path: "/",
     maxAge: 0,
@@ -89,7 +109,7 @@ export async function readSessionCookie(): Promise<string | undefined> {
 
 export async function verifySessionCookieValue(
   sessionCookie: string,
-  checkRevoked = false,
+  checkRevoked = true,
 ): Promise<DecodedIdToken> {
   return getAdminAuth().verifySessionCookie(sessionCookie, checkRevoked);
 }
@@ -99,7 +119,7 @@ export async function revokeUserSessions(uid: string): Promise<void> {
 }
 
 export async function getOptionalSession(
-  checkRevoked = false,
+  checkRevoked = true,
 ): Promise<DecodedIdToken | null> {
   const sessionCookie = await readSessionCookie();
   if (!sessionCookie) {

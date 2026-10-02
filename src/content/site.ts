@@ -25,7 +25,7 @@ export const siteCopy = {
     needAccount: "Need an account?",
     genericError: "Email or password is incorrect.",
     networkError: "Something went wrong. Please try again.",
-    passwordHint: "Use at least 6 characters.",
+    passwordHint: "Use at least 8 characters.",
   },
   home: {
     eyebrow: "A focused home for your writing",

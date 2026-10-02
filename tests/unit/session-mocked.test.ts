@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetCookieStore } from "../mocks/next-headers";
+import { __getCookieRecord, __resetCookieStore } from "../mocks/next-headers";
 
 const verifyIdToken = vi.fn();
 const createSessionCookie = vi.fn();
@@ -40,6 +40,7 @@ describe("session helpers (mocked admin)", () => {
       code: "recent_auth_required",
     });
     expect(createSessionCookie).not.toHaveBeenCalled();
+    expect(verifyIdToken).toHaveBeenCalledWith("tok", true);
   });
 
   it("returns null from getOptionalSession when verification fails", async () => {
@@ -50,12 +51,59 @@ describe("session helpers (mocked admin)", () => {
     } = await import("@/features/auth/session");
     await setSessionCookie("bad-cookie");
     verifySessionCookie.mockRejectedValue(new Error("invalid"));
-    expect(await getOptionalSession(true)).toBeNull();
+    expect(await getOptionalSession()).toBeNull();
     expect(verifySessionCookie).toHaveBeenCalledWith("bad-cookie", true);
-    // Cookie jar still holds the value until cleared.
     const { cookies } = await import("next/headers");
     const jar = await cookies();
     expect(jar.get(SESSION_COOKIE_NAME)?.value).toBe("bad-cookie");
+  });
+
+  it("defaults getOptionalSession to checkRevoked true (copied cookie dies after revoke)", async () => {
+    const { setSessionCookie, getOptionalSession } = await import(
+      "@/features/auth/session"
+    );
+    await setSessionCookie("session-cookie");
+    verifySessionCookie.mockResolvedValue({
+      uid: "u1",
+      email: "a@example.com",
+      auth_time: Math.floor(Date.now() / 1000),
+    });
+    await getOptionalSession();
+    expect(verifySessionCookie).toHaveBeenCalledWith("session-cookie", true);
+  });
+
+  it("sets HttpOnly / SameSite=Lax cookie attributes; Secure follows request protocol", async () => {
+    const { setSessionCookie, SESSION_COOKIE_NAME, SESSION_EXPIRES_IN_MS } =
+      await import("@/features/auth/session");
+
+    await setSessionCookie("sess", new Request("http://localhost:3000/api/session"));
+    expect(__getCookieRecord(SESSION_COOKIE_NAME)).toMatchObject({
+      value: "sess",
+      httpOnly: true,
+      secure: false,
+      sameSite: "lax",
+      path: "/",
+      maxAge: SESSION_EXPIRES_IN_MS / 1000,
+    });
+
+    await setSessionCookie(
+      "sess-secure",
+      new Request("https://app.example/api/session"),
+    );
+    expect(__getCookieRecord(SESSION_COOKIE_NAME)).toMatchObject({
+      value: "sess-secure",
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+    });
+
+    await setSessionCookie(
+      "sess-fwd",
+      new Request("http://app.example/api/session", {
+        headers: { "x-forwarded-proto": "https" },
+      }),
+    );
+    expect(__getCookieRecord(SESSION_COOKIE_NAME)?.secure).toBe(true);
   });
 
   it("revokes refresh tokens for a uid", async () => {

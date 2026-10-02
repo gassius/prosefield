@@ -95,3 +95,20 @@ PRs opened by Cursor agents show `gassius` as author; the footer identifies the 
 Only Carlos (`gassius`) merges PRs, and only via *Create a merge commit* (see [Commits](#commits)). *Squash and merge* and *Rebase and merge* are disabled in repo settings.
 
 Engineer Supervisor marks a PR ready after Pull Request Reviewer **Approve** + GasNet Hermes **Pass** + green CI on the **same** head SHA. Other agents never mark Ready unless Carlos asks. Agents never merge or enable auto-merge.
+
+## Testing requirements
+
+Every PR that changes behaviour must ship tests in the **same** PR. Mirror the ClickUp Definition of Done:
+
+1. **Same-PR tests for behaviour changes**
+   - Vitest **unit** and **component** (RTL) coverage for logic and UI wiring
+   - Playwright **E2E** for user flows (register, login, logout, redirects, CTAs)
+   - **axe** accessibility checks for new pages (`e2e/a11y.spec.ts` project)
+   - Docker-only **visual** baselines for UI changes (`pnpm test:visual` / `pnpm test:visual:update`)
+2. **Bug fixes** include a **regression test that fails before the fix** (prove it bites).
+3. **Tests must bite** — be ready to show a red run when the feature is removed or weakened.
+4. **Coverage thresholds only go up.** New files under `src/lib/**` and `src/features/auth/**` must stay inside Vitest coverage `include` globs. Do not lower thresholds to get green.
+5. **No weakening to get green:** no `.skip` / `.only`, no loosened assertions, no extra visual diff allowance, no retries used to hide flakes.
+6. **PR body** lists which tests cover each scope item / behaviour change.
+
+See also [README.md](README.md#testing) for how to run the suites locally.
