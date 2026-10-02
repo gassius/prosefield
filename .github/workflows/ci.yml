@@ -84,21 +84,22 @@ jobs:
       - name: Start emulators
         run: docker compose up -d --wait
 
-      - name: Integration tests + coverage thresholds
+      - name: Integration tests
         env:
           FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
           APP_URL: http://localhost:3000
-        run: pnpm test:coverage
+        run: pnpm test:integration
 
       - name: Stop emulators
         if: always()
         run: docker compose down -v
 
+  # Exact name required by branch protection (do not rename).
   component:
-    name: Component
+    name: Component + coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         # actions/checkout@v4
@@ -120,9 +121,25 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare example env
+        run: cp .env.example .env
+
+      - name: Start emulators
+        run: docker compose up -d --wait
+
       - name: Component tests
         run: pnpm test:component
 
+      - name: Coverage thresholds (unit + component + integration)
+        env:
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+          FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+          APP_URL: http://localhost:3000
+        run: pnpm test:coverage
+
+      - name: Stop emulators
+        if: always()
+        run: docker compose down -v
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
@@ -237,26 +254,11 @@ jobs:
       - name: Prepare example env
         run: cp .env.example .env
 
-      - name: Cache Playwright Docker image
-        # actions/cache@v4
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
-        with:
-          path: /tmp/playwright-docker.tar
-          key: playwright-docker-v1.63.0-jammy-167d0506
-
-      - name: Load or pull Playwright Docker image
-        run: |
-          IMAGE="mcr.microsoft.com/playwright:v1.63.0-jammy@sha256:167d0506cfbe3c294fb214b2d11737326eeee028aa611fa1ba538e5057675847"
-          if [ -f /tmp/playwright-docker.tar ]; then
-            docker load -i /tmp/playwright-docker.tar
-          else
-            docker pull "$IMAGE"
-            docker save "$IMAGE" -o /tmp/playwright-docker.tar
-          fi
+      # Image pull is left to scripts/test-visual.sh (single source of truth for
+      # version+digest). Tar-caching the digest-pinned image was a net slowdown.
 
       - name: Start emulators
         run: docker compose up -d --wait
-
       - name: Build
         run: pnpm build
 

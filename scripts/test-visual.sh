@@ -12,11 +12,8 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-PLAYWRIGHT_VERSION="$(
-  node -p "require('./node_modules/@playwright/test/package.json').version"
-)"
-# Tag + digest so local/CI cannot silently float to a different image.
-IMAGE="mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-jammy@sha256:167d0506cfbe3c294fb214b2d11737326eeee028aa611fa1ba538e5057675847"
+# shellcheck source=scripts/playwright-image.sh
+source "$ROOT/scripts/playwright-image.sh"
 APP_URL="${APP_URL:-http://localhost:3000}"
 UPDATE="${UPDATE:-0}"
 
@@ -41,5 +38,5 @@ docker run --rm --network host \
   -e FIREBASE_AUTH_EMULATOR_HOST="${FIREBASE_AUTH_EMULATOR_HOST:-127.0.0.1:9099}" \
   -e FIRESTORE_EMULATOR_HOST="${FIRESTORE_EMULATOR_HOST:-127.0.0.1:8080}" \
   -e FIREBASE_PROJECT_ID="${FIREBASE_PROJECT_ID:-demo-prosefield}" \
-  "$IMAGE" \
+  "$PLAYWRIGHT_DOCKER_IMAGE" \
   npx playwright test --project=visual "${EXTRA_ARGS[@]}" "$@"

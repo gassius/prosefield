@@ -9,6 +9,20 @@ const sharedResolve = {
   },
 };
 
+const highBar = {
+  lines: 90,
+  functions: 90,
+  branches: 80,
+  statements: 90,
+} as const;
+
+const authSurfaceBar = {
+  lines: 80,
+  functions: 70,
+  branches: 65,
+  statements: 80,
+} as const;
+
 export default defineConfig({
   resolve: sharedResolve,
   test: {
@@ -21,43 +35,21 @@ export default defineConfig({
       // Client Firebase bootstrap is browser-only; covered indirectly by E2E.
       exclude: ["src/lib/firebase/client.ts"],
       thresholds: {
-        // Overall floor (unit + component + integration).
-        lines: 70,
-        functions: 70,
-        branches: 65,
-        statements: 70,
-        // Pure modules: csrf etc. cannot hide under the average.
+        // Ticket: ≥80% lines on src/lib and auth code.
+        lines: 80,
+        functions: 75,
+        branches: 70,
+        statements: 80,
         "src/features/auth/{account-state,auth-time,constants,csrf,map-auth-error,next}.ts":
-          {
-            lines: 90,
-            functions: 90,
-            branches: 80,
-            statements: 90,
-          },
-        "src/lib/env.ts": {
-          lines: 90,
-          functions: 90,
-          branches: 80,
-          statements: 90,
-        },
-        "src/lib/utils.ts": {
-          lines: 90,
-          functions: 90,
-          branches: 80,
-          statements: 90,
-        },
-        // Emulator-backed surface: integration must keep these above the floor.
-        "src/features/auth/{session,guards,users}.ts": {
-          lines: 30,
-          functions: 40,
-          branches: 50,
-          statements: 30,
-        },
+          highBar,
+        "src/lib/env.ts": highBar,
+        "src/lib/utils.ts": highBar,
+        "src/features/auth/{session,guards,users}.ts": authSurfaceBar,
         "src/lib/firebase/**": {
-          lines: 70,
-          functions: 70,
-          branches: 60,
-          statements: 70,
+          lines: 80,
+          functions: 80,
+          branches: 70,
+          statements: 80,
         },
       },
     },
