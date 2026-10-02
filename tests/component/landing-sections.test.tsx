@@ -55,6 +55,14 @@ describe("AssuranceStrip", () => {
     );
     expect(gbp.querySelector(".lucide-pound-sterling")).not.toBeNull();
   });
+
+  it("defaults unknown plan currencies to BadgeEuro", () => {
+    const { container } = render(
+      createElement(AssuranceStrip, { currency: "JPY" }),
+    );
+    expect(container.querySelector(".lucide-badge-euro")).not.toBeNull();
+    expect(container.querySelector(".lucide-dollar-sign")).toBeNull();
+  });
 });
 
 describe("Benefits", () => {

@@ -17,6 +17,33 @@ async function expectNoHorizontalOverflow(page: import("@playwright/test").Page)
   ).toBeLessThanOrEqual(overflow.clientWidth + 1);
 }
 
+async function expectReducedMotion(
+  locator: import("@playwright/test").Locator,
+) {
+  const motion = await locator.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return {
+      animationName: style.animationName,
+      animationDuration: style.animationDuration,
+      transitionDuration: style.transitionDuration,
+      transitionProperty: style.transitionProperty,
+    };
+  });
+  const animMs = Number.parseFloat(motion.animationDuration) * 1000;
+  const transitionMs = Number.parseFloat(motion.transitionDuration) * 1000;
+  expect(
+    motion.animationName === "none" ||
+      motion.animationName === "" ||
+      Number.isNaN(animMs) ||
+      animMs <= 10,
+  ).toBe(true);
+  expect(
+    motion.transitionProperty === "none" ||
+      Number.isNaN(transitionMs) ||
+      transitionMs <= 10,
+  ).toBe(true);
+}
+
 test.describe("landing marketing surface", () => {
   for (const width of WIDTHS) {
     test(`renders sections without overflow at ${width}px`, async ({ page }) => {
@@ -69,7 +96,7 @@ test.describe("landing marketing surface", () => {
     });
   }
 
-  test("skip link targets main; icon and apple-touch links return 200", async ({
+  test("skip link targets main; every brand icon link returns 200", async ({
     page,
   }) => {
     await page.goto("/");
@@ -78,25 +105,32 @@ test.describe("landing marketing surface", () => {
     await expect(skip).toHaveAttribute("href", "#main-content");
     await expect(page.locator("main#main-content")).toHaveCount(1);
 
-    const iconHref = await page
-      .locator('link[rel="icon"][href*="icon"]')
-      .first()
-      .getAttribute("href");
-    expect(iconHref).toBeTruthy();
-    const iconRes = await page.request.get(
-      new URL(iconHref!, page.url()).toString(),
-    );
-    expect(iconRes.status()).toBe(200);
+    const expectedIcons: Array<{
+      rel: string;
+      hrefIncludes: string;
+      type?: string;
+    }> = [
+      { rel: "icon", hrefIncludes: "favicon.ico" },
+      { rel: "icon", hrefIncludes: "icon.svg", type: "image/svg+xml" },
+      { rel: "apple-touch-icon", hrefIncludes: "apple-icon" },
+    ];
 
-    const appleHref = await page
-      .locator('link[rel="apple-touch-icon"]')
-      .first()
-      .getAttribute("href");
-    expect(appleHref).toBeTruthy();
-    const appleRes = await page.request.get(
-      new URL(appleHref!, page.url()).toString(),
-    );
-    expect(appleRes.status()).toBe(200);
+    for (const expected of expectedIcons) {
+      const locator = expected.type
+        ? page.locator(
+            `link[rel="${expected.rel}"][type="${expected.type}"][href*="${expected.hrefIncludes}"]`,
+          )
+        : page.locator(
+            `link[rel="${expected.rel}"][href*="${expected.hrefIncludes}"]`,
+          );
+      await expect(locator.first()).toHaveCount(1);
+      const href = await locator.first().getAttribute("href");
+      expect(href).toBeTruthy();
+      const res = await page.request.get(new URL(href!, page.url()).toString());
+      expect(res.status(), `${expected.hrefIncludes} should return 200`).toBe(
+        200,
+      );
+    }
   });
 
   test("FAQ accordion honours prefers-reduced-motion", async ({ page }) => {
@@ -109,33 +143,26 @@ test.describe("landing marketing surface", () => {
       '[data-testid="faq-accordion-content"][data-state="open"]',
     );
     await expect(content).toBeVisible();
-
-    const motion = await content.evaluate((el) => {
-      const style = getComputedStyle(el);
-      return {
-        animationName: style.animationName,
-        animationDuration: style.animationDuration,
-      };
-    });
-    // Prefer none; also accept ≤10ms duration under the global reduced-motion rule.
-    const durationMs = Number.parseFloat(motion.animationDuration) * 1000;
-    expect(
-      motion.animationName === "none" ||
-        motion.animationName === "" ||
-        durationMs <= 10,
-    ).toBe(true);
+    await expectReducedMotion(content);
 
     const chevron = page
       .getByRole("button", { name: "Are my documents private?" })
       .locator('[data-testid="faq-chevron"]');
-    const chevronTransition = await chevron.evaluate((el) => {
-      const style = getComputedStyle(el);
-      return {
-        duration: style.transitionDuration,
-        property: style.transitionProperty,
-      };
-    });
-    const chevronMs = Number.parseFloat(chevronTransition.duration) * 1000;
-    expect(chevronMs <= 10 || chevronTransition.property === "none").toBe(true);
+    await expectReducedMotion(chevron);
+  });
+
+  test("Sheet honours prefers-reduced-motion at 375px", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Open menu" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expectReducedMotion(dialog);
+
+    const overlay = page.getByTestId("sheet-overlay");
+    await expect(overlay).toBeVisible();
+    await expectReducedMotion(overlay);
   });
 });

@@ -101,6 +101,20 @@ describe("HomePage plan price and portal FAQ wiring", () => {
     expect(lines.length).toBeGreaterThanOrEqual(3);
   });
 
+  it("wires plan.currency into AssuranceStrip (fails if currency is hard-coded EUR)", async () => {
+    vi.stubEnv("PLAN_DISPLAY_CURRENCY", "USD");
+    vi.resetModules();
+    const HomePage = (await import("@/app/page")).default;
+    const ui = await HomePage();
+    const { container } = render(ui);
+
+    expect(container.querySelector(".lucide-dollar-sign")).not.toBeNull();
+    expect(container.querySelector(".lucide-badge-euro")).toBeNull();
+    expect(screen.getByTestId("pricing-card-price")).toHaveTextContent(
+      "$9 /month",
+    );
+  });
+
   it("omits cancel FAQ when the portal route is not ready even if the flag is on", async () => {
     vi.stubEnv("FEATURE_CUSTOMER_PORTAL", "true");
     vi.resetModules();

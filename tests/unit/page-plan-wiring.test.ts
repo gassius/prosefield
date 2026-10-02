@@ -28,4 +28,27 @@ describe("HomePage plan wiring (n1)", () => {
     expect(source).toContain("FinalCta");
     expect(source).not.toMatch(/id="benefits"\s+className="sr-only"/);
   });
+
+  it("passes plan.currency into AssuranceStrip (not a hard-coded EUR)", () => {
+    expect(source).toMatch(/currency=\{\s*plan\.currency\s*\}/);
+    expect(source).not.toMatch(/currency=\{\s*["'`]EUR["'`]\s*\}/);
+    expect(source).not.toMatch(/currency=["'`]EUR["'`]/);
+  });
+});
+
+describe("RootLayout skip link copy", () => {
+  const layout = readFileSync(
+    path.resolve(__dirname, "../../src/app/layout.tsx"),
+    "utf8",
+  );
+  const site = readFileSync(
+    path.resolve(__dirname, "../../src/content/site.ts"),
+    "utf8",
+  );
+
+  it("reads Skip to content from siteCopy.a11y (not a hard-coded string)", () => {
+    expect(site).toMatch(/skipToContent:\s*["']Skip to content["']/);
+    expect(layout).toContain("siteCopy.a11y.skipToContent");
+    expect(layout).not.toMatch(/>\s*Skip to content\s*</);
+  });
 });

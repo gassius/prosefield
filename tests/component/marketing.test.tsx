@@ -14,14 +14,27 @@ vi.mock("next/link", () => ({
   default: ({
     children,
     href,
+    onClick,
     ...props
   }: {
     children: React.ReactNode;
     href: string;
+    onClick?: (event: React.MouseEvent<HTMLAnchorElement>) => void;
     [key: string]: unknown;
-  }) => createElement("a", { href, ...props }, children),
+  }) =>
+    createElement(
+      "a",
+      {
+        href,
+        ...props,
+        onClick: (event: React.MouseEvent<HTMLAnchorElement>) => {
+          event.preventDefault();
+          onClick?.(event);
+        },
+      },
+      children,
+    ),
 }));
-
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { SiteHeader } from "@/components/marketing/site-header";
@@ -108,6 +121,72 @@ describe("SiteHeader", () => {
     expect(
       within(mobileNav).getByRole("link", { name: siteCopy.header.cta }),
     ).toHaveAttribute("href", "/register?next=/subscribe");
+  });
+
+  it("closes the Sheet when a mobile nav link is clicked", async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(SiteHeader, {
+        accountState: { kind: "logged_out" },
+        ctaHref: "/register?next=/subscribe",
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: siteCopy.header.menu }));
+    const mobileNav = await screen.findByRole("dialog");
+    await user.click(
+      within(mobileNav).getByRole("link", { name: siteCopy.header.navFaq }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("closes the Sheet from Sign in and CTA onClick handlers", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(
+      createElement(SiteHeader, {
+        accountState: { kind: "logged_out" },
+        ctaHref: "/register?next=/subscribe",
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: siteCopy.header.menu }));
+    let mobileNav = await screen.findByRole("dialog");
+    await user.click(
+      within(mobileNav).getByRole("link", { name: siteCopy.header.signIn }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    unmount();
+    render(
+      createElement(SiteHeader, {
+        accountState: { kind: "logged_out" },
+        ctaHref: "/register?next=/subscribe",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: siteCopy.header.menu }));
+    mobileNav = await screen.findByRole("dialog");
+    await user.click(
+      within(mobileNav).getByRole("link", { name: siteCopy.header.cta }),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("falls back to signed-in copy when email is empty", () => {
+    render(
+      createElement(SiteHeader, {
+        accountState: {
+          kind: "logged_in",
+          uid: "u1",
+          email: "",
+          subscriptionActive: false,
+        },
+        ctaHref: "/subscribe",
+      }),
+    );
+
+    expect(
+      screen.getByText(siteCopy.header.signedInFallback),
+    ).toBeInTheDocument();
   });
 });
 

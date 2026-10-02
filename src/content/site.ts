@@ -38,6 +38,9 @@ export const siteCopy = {
     networkError: "Something went wrong. Please try again.",
     passwordHint: "Use at least 8 characters.",
   },
+  a11y: {
+    skipToContent: "Skip to content",
+  },
   home: {
     eyebrow: "A focused home for your writing",
     headline: "Turn scattered thoughts into something worth reading.",
