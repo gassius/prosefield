@@ -12,7 +12,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { siteCopy } from "@/content/site";
-import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "@/features/auth/constants";
+import {
+  CSRF_COOKIE_NAME,
+  CSRF_HEADER_NAME,
+  PASSWORD_MIN_LENGTH,
+} from "@/features/auth/constants";
 import { mapAuthError } from "@/features/auth/map-auth-error";
 import { getClientAuth } from "@/lib/firebase/client";
 
@@ -189,7 +193,7 @@ export function AuthForm({ mode, nextPath }: AuthFormProps) {
           aria-describedby={
             passwordError ? `${passwordId}-error` : `${passwordId}-hint`
           }
-          minLength={6}
+          minLength={PASSWORD_MIN_LENGTH}
           required
         />
         {passwordError ? (

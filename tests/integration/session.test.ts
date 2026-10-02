@@ -4,7 +4,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { __resetCookieStore } from "../mocks/next-headers";
+import { __getCookieRecord, __resetCookieStore } from "../mocks/next-headers";
+import { SESSION_COOKIE_NAME, SESSION_EXPIRES_IN_MS } from "@/features/auth/constants";
 
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
@@ -175,25 +176,53 @@ describe("session exchange (emulators)", () => {
     const { sessionCookie } = await createSessionCookieFromIdToken(idToken);
     await setSessionCookie(sessionCookie);
 
+    // Seed an active subscription first so the outage path is the only reason
+    // subscriptionActive becomes false (would be subscriber without the spy).
+    await admin
+      .getAdminFirestore()
+      .collection("subscriptions")
+      .doc(localId)
+      .set({
+        status: "active",
+        stripeCustomerId: "cus_outage",
+        stripeSubscriptionId: "sub_outage",
+        stripePriceId: "price_test",
+        currentPeriodEnd: null,
+        cancelAtPeriodEnd: false,
+        updatedAt: new Date(),
+        lastEventId: "evt_outage",
+      });
+
+    expect(await getAccountState()).toMatchObject({
+      kind: "subscriber",
+      uid: localId,
+      subscriptionActive: true,
+    });
+
     const spy = vi.spyOn(admin, "getAdminFirestore").mockImplementation(() => {
       throw new Error("emulator down");
     });
 
-    expect(await getAccountState()).toMatchObject({
-      kind: "logged_in",
-      uid: localId,
-      subscriptionActive: false,
-    });
-    await expect(requireActiveSubscription(localId)).rejects.toBeInstanceOf(
-      SessionError,
-    );
-    spy.mockRestore();
+    try {
+      expect(await getAccountState()).toMatchObject({
+        kind: "logged_in",
+        uid: localId,
+        subscriptionActive: false,
+      });
+      await expect(requireActiveSubscription(localId)).rejects.toBeInstanceOf(
+        SessionError,
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("returns null for missing users/{uid}", async () => {
     const { getUserDocument } = await import("@/features/auth/users");
     expect(await getUserDocument(`missing-${randomUUID()}`)).toBeNull();
-  });  it("rejects CSRF and Origin failures on POST /api/session", async () => {
+  });
+
+  it("rejects CSRF and Origin failures on POST /api/session", async () => {
     const { POST } = await import("@/app/api/session/route");
     const email = `csrf-${randomUUID()}@example.com`;
     const { idToken } = await signUp(email, "password-123");
@@ -212,6 +241,19 @@ describe("session exchange (emulators)", () => {
     );
     expect(badOrigin.status).toBe(403);
 
+    const missingOrigin = await POST(
+      new Request("http://localhost:3000/api/session", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          cookie: "csrf_token=abc",
+          "x-csrf-token": "abc",
+        },
+        body: JSON.stringify({ idToken }),
+      }),
+    );
+    expect(missingOrigin.status).toBe(403);
+
     const badCsrf = await POST(
       new Request("http://localhost:3000/api/session", {
         method: "POST",
@@ -227,7 +269,7 @@ describe("session exchange (emulators)", () => {
     expect(badCsrf.status).toBe(403);
   });
 
-  it("exchanges a valid session via POST and clears it via DELETE", async () => {
+  it("exchanges a valid session via POST with cookie attributes and clears via DELETE", async () => {
     const { POST, DELETE } = await import("@/app/api/session/route");
     const email = `api-${randomUUID()}@example.com`;
     const { idToken } = await signUp(email, "password-123");
@@ -249,6 +291,16 @@ describe("session exchange (emulators)", () => {
     expect(body.ok).toBe(true);
     expect(body.email).toBe(email);
 
+    const cookie = __getCookieRecord(SESSION_COOKIE_NAME);
+    expect(cookie).toMatchObject({
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      secure: false,
+      maxAge: SESSION_EXPIRES_IN_MS / 1000,
+    });
+    expect(cookie?.value).toBeTruthy();
+
     const cleared = await DELETE(
       new Request("http://localhost:3000/api/session", {
         method: "DELETE",
@@ -260,5 +312,126 @@ describe("session exchange (emulators)", () => {
       }),
     );
     expect(cleared.status).toBe(200);
+    expect(__getCookieRecord(SESSION_COOKIE_NAME)?.value).toBe("");
+    expect(__getCookieRecord(SESSION_COOKIE_NAME)?.maxAge).toBe(0);
+  });
+
+  it("rejects DELETE with bad Origin or CSRF", async () => {
+    const { DELETE } = await import("@/app/api/session/route");
+
+    const badOrigin = await DELETE(
+      new Request("http://localhost:3000/api/session", {
+        method: "DELETE",
+        headers: {
+          origin: "https://evil.example",
+          cookie: "csrf_token=tok",
+          "x-csrf-token": "tok",
+        },
+      }),
+    );
+    expect(badOrigin.status).toBe(403);
+
+    const badCsrf = await DELETE(
+      new Request("http://localhost:3000/api/session", {
+        method: "DELETE",
+        headers: {
+          origin: "http://localhost:3000",
+          cookie: "csrf_token=abc",
+          "x-csrf-token": "xyz",
+        },
+      }),
+    );
+    expect(badCsrf.status).toBe(403);
+  });
+
+  it("rejects stale auth_time and invalid ID tokens on POST", async () => {
+    const { POST } = await import("@/app/api/session/route");
+    const { createSessionCookieFromIdToken, SessionError } = await import(
+      "@/features/auth/session"
+    );
+
+    const forged = await POST(
+      new Request("http://localhost:3000/api/session", {
+        method: "POST",
+        headers: {
+          origin: "http://localhost:3000",
+          "content-type": "application/json",
+          cookie: "csrf_token=tok",
+          "x-csrf-token": "tok",
+        },
+        body: JSON.stringify({ idToken: "not-a-real-token" }),
+      }),
+    );
+    expect(forged.status).toBe(401);
+
+    const email = `stale-${randomUUID()}@example.com`;
+    const { idToken } = await signUp(email, "password-123");
+    // Mint once so we know the token is otherwise valid, then force stale auth_time
+    // via a mocked clock on isRecentAuthTime path — createSessionCookieFromIdToken
+    // rejects when auth_time is older than the recent window.
+    const auth = await import("@/lib/firebase/admin");
+    const decoded = await auth.getAdminAuth().verifyIdToken(idToken);
+    // Overwrite auth_time far in the past by verifying through a spy.
+    const verifySpy = vi
+      .spyOn(auth.getAdminAuth(), "verifyIdToken")
+      .mockResolvedValue({
+        ...decoded,
+        auth_time: 1,
+      } as never);
+
+    try {
+      await expect(createSessionCookieFromIdToken(idToken)).rejects.toMatchObject({
+        code: "recent_auth_required",
+      });
+      await expect(createSessionCookieFromIdToken(idToken)).rejects.toBeInstanceOf(
+        SessionError,
+      );
+
+      const stalePost = await POST(
+        new Request("http://localhost:3000/api/session", {
+          method: "POST",
+          headers: {
+            origin: "http://localhost:3000",
+            "content-type": "application/json",
+            cookie: "csrf_token=tok",
+            "x-csrf-token": "tok",
+          },
+          body: JSON.stringify({ idToken }),
+        }),
+      );
+      expect(stalePost.status).toBe(401);
+      const staleBody = (await stalePost.json()) as { code?: string };
+      expect(staleBody.code).toBe("recent_auth_required");
+    } finally {
+      verifySpy.mockRestore();
+    }
+  });
+
+  it("exercises page guards with a real session cookie", async () => {
+    const {
+      createSessionCookieFromIdToken,
+      setSessionCookie,
+      clearSessionCookie,
+      SessionError,
+    } = await import("@/features/auth/session");
+    const { requireSession, requireSessionOrRedirect, getAccountState } =
+      await import("@/features/auth/guards");
+
+    const email = `guard-${randomUUID()}@example.com`;
+    const { idToken, localId } = await signUp(email, "password-123");
+    const { sessionCookie } = await createSessionCookieFromIdToken(idToken);
+
+    await setSessionCookie(sessionCookie);
+    await expect(requireSession()).resolves.toMatchObject({ uid: localId });
+    await expect(requireSessionOrRedirect("/login")).resolves.toMatchObject({
+      uid: localId,
+    });
+    expect(await getAccountState()).toMatchObject({
+      kind: "logged_in",
+      uid: localId,
+    });
+
+    await clearSessionCookie();
+    await expect(requireSession()).rejects.toBeInstanceOf(SessionError);
   });
 });

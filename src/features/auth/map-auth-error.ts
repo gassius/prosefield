@@ -15,11 +15,8 @@ export function mapAuthError(code: string | undefined): MappedAuthError {
         field: "password",
         message: siteCopy.auth.passwordHint,
       };
+    // Do not reveal whether an email is already registered (same copy as bad login).
     case "auth/email-already-in-use":
-      return {
-        field: "email",
-        message: "An account with this email already exists.",
-      };
     case "auth/invalid-credential":
     case "auth/user-not-found":
     case "auth/wrong-password":

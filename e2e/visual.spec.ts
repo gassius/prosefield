@@ -7,19 +7,13 @@ import {
 } from "./helpers";
 
 // Baselines must be generated/compared inside scripts/test-visual.sh
-// (official Playwright Docker image). Refuse host runs that would drift fonts.
+// (official Playwright Docker image). Refuse host runs and generic containers.
 test.beforeAll(async () => {
-  const { access } = await import("node:fs/promises");
-  let inDocker = false;
-  try {
-    await access("/.dockerenv");
-    inDocker = true;
-  } catch {
-    inDocker = false;
-  }
-  if (process.env.PROSEFIELD_VISUAL_DOCKER !== "1" && !inDocker) {
+  // Require the marker set only by scripts/test-visual.sh — /.dockerenv alone
+  // (e.g. a random devcontainer) must not pass.
+  if (process.env.PROSEFIELD_VISUAL_DOCKER !== "1") {
     throw new Error(
-      "Visual tests must run via `pnpm test:visual` / `pnpm test:visual:update` (Playwright Docker image).",
+      "Visual tests must run via `pnpm test:visual` / `pnpm test:visual:update` (Playwright Docker image marker PROSEFIELD_VISUAL_DOCKER=1).",
     );
   }
 });

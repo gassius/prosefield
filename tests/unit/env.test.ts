@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { envSchema, mergeEnvSource, parseEnv } from "@/lib/env";
+import {
+  __resetEnvCacheForTests,
+  applyLocalDevDefaultsToProcessEnv,
+  envSchema,
+  mergeEnvSource,
+  parseEnv,
+} from "@/lib/env";
 
 const validEnv = {
   NEXT_PUBLIC_FIREBASE_API_KEY: "demo-api-key",
   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "demo-prosefield.firebaseapp.com",
   NEXT_PUBLIC_FIREBASE_PROJECT_ID: "demo-prosefield",
   NEXT_PUBLIC_FIREBASE_APP_ID: "1:000000000000:web:0000000000000000000000",
-  NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST: "localhost:9099",
+  NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
   APP_URL: "http://localhost:3000",
   FIREBASE_PROJECT_ID: "demo-prosefield",
   STRIPE_SECRET_KEY: "sk_test_example",
@@ -22,6 +28,11 @@ const validEnv = {
 } as const;
 
 describe("env schema", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    __resetEnvCacheForTests();
+  });
+
   it("accepts a complete test configuration", () => {
     const env = parseEnv(validEnv);
     expect(env.FIREBASE_PROJECT_ID).toBe("demo-prosefield");
@@ -101,16 +112,48 @@ describe("env schema", () => {
     expect(env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST).toBeUndefined();
   });
 
-  describe("mergeEnvSource local defaults", () => {
-    afterEach(() => {
-      vi.unstubAllEnvs();
-    });
+  it("rejects emulator hosts in production without ALLOW_EMULATORS", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ALLOW_EMULATORS", "");
+    const result = envSchema.safeParse(validEnv);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some((issue) =>
+          String(issue.path[0]).includes("EMULATOR"),
+        ),
+      ).toBe(true);
+    }
+  });
 
+  it("allows emulator hosts in production when ALLOW_EMULATORS=1", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ALLOW_EMULATORS", "1");
+    expect(envSchema.safeParse(validEnv).success).toBe(true);
+  });
+
+  it("accepts production config without emulator hosts", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const {
+      FIREBASE_AUTH_EMULATOR_HOST,
+      FIRESTORE_EMULATOR_HOST,
+      NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST,
+      ...prod
+    } = validEnv;
+    void FIREBASE_AUTH_EMULATOR_HOST;
+    void FIRESTORE_EMULATOR_HOST;
+    void NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST;
+    expect(envSchema.safeParse(prod).success).toBe(true);
+  });
+
+  describe("mergeEnvSource local defaults", () => {
     it("fills blanks outside production so bare pnpm dev can start", () => {
       vi.stubEnv("NODE_ENV", "development");
       const merged = mergeEnvSource({});
       expect(merged.APP_URL).toBe("http://localhost:3000");
       expect(merged.STRIPE_SECRET_KEY).toBe("sk_test_replaceme");
+      expect(merged.FIREBASE_AUTH_EMULATOR_HOST).toBe("127.0.0.1:9099");
+      expect(merged.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST).toBe("127.0.0.1:9099");
       expect(parseEnv(merged).FIREBASE_PROJECT_ID).toBe("demo-prosefield");
     });
 
@@ -118,6 +161,22 @@ describe("env schema", () => {
       vi.stubEnv("NODE_ENV", "production");
       const merged = mergeEnvSource({});
       expect(merged.APP_URL).toBeUndefined();
+    });
+
+    it("writes defaults into process.env for Admin SDK / NEXT_PUBLIC consumers", () => {
+      vi.stubEnv("NODE_ENV", "development");
+      const target: Record<string, string | undefined> = {};
+      applyLocalDevDefaultsToProcessEnv(target as NodeJS.ProcessEnv);
+      expect(target.FIREBASE_AUTH_EMULATOR_HOST).toBe("127.0.0.1:9099");
+      expect(target.FIRESTORE_EMULATOR_HOST).toBe("127.0.0.1:8080");
+      expect(target.NEXT_PUBLIC_FIREBASE_API_KEY).toBe("demo-api-key");
+    });
+
+    it("does not mutate process.env defaults in production", () => {
+      vi.stubEnv("NODE_ENV", "production");
+      const target: Record<string, string | undefined> = {};
+      applyLocalDevDefaultsToProcessEnv(target as NodeJS.ProcessEnv);
+      expect(target.FIREBASE_AUTH_EMULATOR_HOST).toBeUndefined();
     });
   });
 });

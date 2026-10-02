@@ -16,6 +16,16 @@ function createAdminApp(): App {
     env.FIREBASE_AUTH_EMULATOR_HOST || env.FIRESTORE_EMULATOR_HOST,
   );
 
+  if (
+    usingEmulators &&
+    process.env.NODE_ENV === "production" &&
+    process.env.ALLOW_EMULATORS !== "1"
+  ) {
+    throw new Error(
+      "Firebase emulator hosts are set in a production environment without ALLOW_EMULATORS=1. Refusing to start (unsigned tokens would be accepted).",
+    );
+  }
+
   // Emulator mode: no credentials. Production/App Hosting: ADC / service account.
   if (usingEmulators) {
     return initializeApp({ projectId: env.FIREBASE_PROJECT_ID });

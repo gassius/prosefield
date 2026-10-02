@@ -50,7 +50,7 @@ export async function POST(request: Request) {
       typeof decoded.email === "string" ? decoded.email : "";
 
     await upsertUserDocument({ uid: decoded.uid, email });
-    await setSessionCookie(sessionCookie);
+    await setSessionCookie(sessionCookie, request);
 
     return NextResponse.json({
       ok: true,
@@ -59,9 +59,10 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof SessionError) {
-      const status =
-        error.code === "recent_auth_required" ? 401 : 401;
-      return NextResponse.json({ error: error.message, code: error.code }, { status });
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: 401 },
+      );
     }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -78,13 +79,17 @@ export async function DELETE(request: Request) {
   }
 
   const session = await getOptionalSession(true);
-  await clearSessionCookie();
+  await clearSessionCookie(request);
 
   if (session?.uid) {
     try {
       await revokeUserSessions(session.uid);
-    } catch {
-      // Cookie already cleared; revocation best-effort (emulator/offline).
+    } catch (error) {
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? String((error as { code?: string }).code)
+          : "unknown";
+      console.error("[session] revokeRefreshTokens failed", { code });
     }
   }
 

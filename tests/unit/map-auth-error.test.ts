@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { siteCopy } from "@/content/site";
+import { PASSWORD_MIN_LENGTH } from "@/features/auth/constants";
 import { mapAuthError } from "@/features/auth/map-auth-error";
 
 describe("mapAuthError", () => {
@@ -10,18 +11,18 @@ describe("mapAuthError", () => {
     });
   });
 
-  it("maps weak password to the password hint (6+ characters)", () => {
+  it("maps weak password to the password hint (8+ characters)", () => {
     expect(mapAuthError("auth/weak-password")).toEqual({
       field: "password",
       message: siteCopy.auth.passwordHint,
     });
-    expect(siteCopy.auth.passwordHint.toLowerCase()).toContain("6");
+    expect(siteCopy.auth.passwordHint.toLowerCase()).toContain("8");
+    expect(PASSWORD_MIN_LENGTH).toBeGreaterThanOrEqual(8);
   });
 
-  it("maps duplicate email to a field error", () => {
+  it("maps duplicate email to the generic summary (no account enumeration)", () => {
     expect(mapAuthError("auth/email-already-in-use")).toEqual({
-      field: "email",
-      message: "An account with this email already exists.",
+      message: siteCopy.auth.genericError,
     });
   });
 

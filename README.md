@@ -74,12 +74,14 @@ Compose maps `STRIPE_SECRET_KEY` from `.env` to the CLI's `STRIPE_API_KEY`. Put 
 
 ## Testing
 
+Full policy: [AGENTS.md → Testing requirements](AGENTS.md#testing-requirements) (same-PR tests, regression tests that bite, coverage only up, no skip/weaken, PR body maps scope → tests).
+
 ### Unit + component
 
 ```bash
 pnpm test              # Vitest unit project
 pnpm test:component    # RTL + jsdom
-pnpm backend:up && pnpm test:coverage   # lib + auth coverage (per-file thresholds)
+pnpm test:coverage     # unit + component with V8 coverage thresholds
 ```
 
 Landing polish before/after captures used in PR #6 live under [`docs/screenshots/`](docs/screenshots/) ([index](docs/screenshots/README.md)).
@@ -90,6 +92,8 @@ Landing polish before/after captures used in PR #6 live under [`docs/screenshots
 pnpm backend:up
 pnpm test:integration
 ```
+
+Integration runs once in CI inside **Component + coverage** (`pnpm test:coverage`). The **Auth integration (emulators)** job only verifies Compose emulator health so the suites are not duplicated.
 
 ### E2E + accessibility (Playwright)
 
@@ -130,4 +134,12 @@ Update baselines only when the UI change is intentional. Do not regenerate to si
 
 ### Optional `app` profile notes
 
-The Compose `app` service builds from [`docker/app.Dockerfile`](docker/app.Dockerfile): dependencies are installed at **image build** time (not on every start), the process runs as UID/GID `1000` (`node`), and a healthcheck probes `/api/health` so `docker compose --profile app up -d --wait` waits for the Next.js server. Rebuild after lockfile changes: `docker compose --profile app build app`.
+The Compose `app` service builds from [`docker/app.Dockerfile`](docker/app.Dockerfile): dependencies are installed at **image build** time (not on every start), the process runs as `APP_UID`/`APP_GID` (default `1000:1000` — set these to your host ids on Linux so bind-mounted `.next` is writable), and a healthcheck probes `/api/health` so `docker compose --profile app up -d --wait` waits for the Next.js server.
+
+`node_modules` uses an **anonymous** volume (seeded from the image). After lockfile changes, refresh modules with:
+
+```bash
+docker compose --profile app up --build --renew-anon-volumes
+```
+
+Or `docker compose down` then `up --build`. Do not rely on a named `app_node_modules` volume — it silently keeps stale installs.

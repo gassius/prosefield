@@ -38,6 +38,9 @@ export async function getClientAuth(): Promise<Auth> {
       await setPersistence(auth, inMemoryPersistence);
 
       const emulatorHost = process.env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST;
+      // Connect whenever the public emulator host is present. Real production
+      // builds omit that var (env schema + ALLOW_EMULATORS gate); CI/`pnpm start`
+      // against Docker keeps it so Auth works with NODE_ENV=production.
       if (emulatorHost && !auth.__prosefieldEmulatorConnected) {
         connectAuthEmulator(auth, `http://${emulatorHost}`, {
           disableWarnings: true,
