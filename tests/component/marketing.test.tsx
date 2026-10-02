@@ -84,7 +84,7 @@ describe("SiteHeader", () => {
     ).toHaveAttribute("href", "/subscribe");
   });
 
-  it("opens the mobile menu and exposes FAQ / pricing anchors", async () => {
+  it("opens the mobile Sheet and exposes FAQ / pricing anchors", async () => {
     const user = userEvent.setup();
     render(
       createElement(SiteHeader, {
@@ -94,14 +94,20 @@ describe("SiteHeader", () => {
     );
 
     await user.click(screen.getByRole("button", { name: siteCopy.header.menu }));
-    const mobileNav = document.getElementById("mobile-nav");
-    expect(mobileNav).not.toBeNull();
+    const mobileNav = await screen.findByRole("dialog");
+    expect(mobileNav).toHaveAttribute("id", "mobile-nav");
     expect(
-      within(mobileNav!).getByRole("link", { name: siteCopy.header.navFaq }),
+      within(mobileNav).getByRole("link", { name: siteCopy.header.navFaq }),
     ).toHaveAttribute("href", "/#faq");
     expect(
-      within(mobileNav!).getByRole("link", { name: siteCopy.header.navPricing }),
+      within(mobileNav).getByRole("link", { name: siteCopy.header.navPricing }),
     ).toHaveAttribute("href", "/#pricing");
+    expect(
+      within(mobileNav).getByRole("link", { name: siteCopy.header.signIn }),
+    ).toHaveAttribute("href", "/login");
+    expect(
+      within(mobileNav).getByRole("link", { name: siteCopy.header.cta }),
+    ).toHaveAttribute("href", "/register?next=/subscribe");
   });
 });
 

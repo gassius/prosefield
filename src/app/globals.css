@@ -63,6 +63,8 @@
   --font-sans: var(--font-dm-sans);
   --font-display: var(--font-fraunces);
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --animate-accordion-down: accordion-down 0.2s cubic-bezier(0.2, 0, 0, 1);
+  --animate-accordion-up: accordion-up 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
 body {
@@ -114,5 +116,31 @@ body {
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
 }
 

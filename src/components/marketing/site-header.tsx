@@ -2,10 +2,17 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu } from "lucide-react";
 import { ProsefieldLogo } from "@/components/brand/prosefield-logo";
 import { SignOutButton } from "@/components/auth/sign-out-button";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { siteCopy } from "@/content/site";
 import type {
   AccountState,
@@ -18,28 +25,34 @@ type SiteHeaderProps = {
   ctaHref: CtaDestination;
 };
 
+const navLinks = [
+  { href: "/#benefits", label: siteCopy.header.navBenefits },
+  { href: "/#pricing", label: siteCopy.header.navPricing },
+  { href: "/#faq", label: siteCopy.header.navFaq },
+] as const;
+
 export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
   const [open, setOpen] = useState(false);
   const loggedIn = accountState.kind !== "logged_out";
 
   return (
     <header className="border-border bg-background/95 relative border-b">
-      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-4 sm:px-6">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
         <ProsefieldLogo />
 
         <nav
-          className="text-muted-foreground hidden items-center gap-6 text-sm md:flex"
+          className="text-muted-foreground hidden items-center gap-6 text-sm sm:flex"
           aria-label="Primary"
         >
-          <Link href="/#benefits" className="hover:text-foreground transition-colors">
-            {siteCopy.header.navBenefits}
-          </Link>
-          <Link href="/#pricing" className="hover:text-foreground transition-colors">
-            {siteCopy.header.navPricing}
-          </Link>
-          <Link href="/#faq" className="hover:text-foreground transition-colors">
-            {siteCopy.header.navFaq}
-          </Link>
+          {navLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="hover:text-foreground transition-colors"
+            >
+              {link.label}
+            </Link>
+          ))}
         </nav>
 
         <div className="hidden items-center gap-2 sm:flex">
@@ -66,64 +79,67 @@ export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
           </Link>
         </div>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="sm:hidden"
-          aria-expanded={open}
-          aria-controls="mobile-nav"
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? <X className="size-5" /> : <Menu className="size-5" />}
-          <span className="sr-only">{siteCopy.header.menu}</span>
-        </Button>
-      </div>
-
-      {open ? (
-        <div
-          id="mobile-nav"
-          className="border-border bg-background absolute inset-x-0 top-full z-40 border-b px-4 py-4 shadow-sm sm:hidden"
-        >
-          <div className="flex flex-col gap-3">
-            <Link href="/#benefits" className="text-sm" onClick={() => setOpen(false)}>
-              {siteCopy.header.navBenefits}
-            </Link>
-            <Link href="/#pricing" className="text-sm" onClick={() => setOpen(false)}>
-              {siteCopy.header.navPricing}
-            </Link>
-            <Link href="/#faq" className="text-sm" onClick={() => setOpen(false)}>
-              {siteCopy.header.navFaq}
-            </Link>
-            {loggedIn ? (
-              <>
-                <p className="text-muted-foreground truncate text-sm">
-                  {accountState.email || "Signed in"}
-                </p>
-                <SignOutButton />
-              </>
-            ) : (
+        <Sheet open={open} onOpenChange={setOpen}>
+          <SheetTrigger
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "icon" }),
+              "sm:hidden",
+            )}
+            aria-controls="mobile-nav"
+          >
+            <Menu className="size-5" aria-hidden />
+            <span className="sr-only">{siteCopy.header.menu}</span>
+          </SheetTrigger>
+          <SheetContent
+            id="mobile-nav"
+            side="right"
+            className="sm:hidden"
+            aria-describedby={undefined}
+          >
+            <SheetHeader>
+              <SheetTitle>{siteCopy.header.menuTitle}</SheetTitle>
+            </SheetHeader>
+            <nav className="flex flex-col gap-3" aria-label="Mobile">
+              {navLinks.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="text-foreground py-2 text-sm font-medium"
+                  onClick={() => setOpen(false)}
+                >
+                  {link.label}
+                </Link>
+              ))}
+              {loggedIn ? (
+                <>
+                  <p className="text-muted-foreground truncate text-sm">
+                    {accountState.email || "Signed in"}
+                  </p>
+                  <SignOutButton />
+                </>
+              ) : (
+                <Link
+                  href="/login"
+                  className="text-sm font-medium"
+                  onClick={() => setOpen(false)}
+                >
+                  {siteCopy.header.signIn}
+                </Link>
+              )}
               <Link
-                href="/login"
-                className="text-sm font-medium"
+                href={ctaHref}
+                className={cn(
+                  buttonVariants({ variant: "default", size: "default" }),
+                  "w-full",
+                )}
                 onClick={() => setOpen(false)}
               >
-                {siteCopy.header.signIn}
+                {siteCopy.header.cta}
               </Link>
-            )}
-            <Link
-              href={ctaHref}
-              className={cn(
-                buttonVariants({ variant: "default", size: "default" }),
-                "w-full",
-              )}
-              onClick={() => setOpen(false)}
-            >
-              {siteCopy.header.cta}
-            </Link>
-          </div>
-        </div>
-      ) : null}
+            </nav>
+          </SheetContent>
+        </Sheet>
+      </div>
     </header>
   );
 }

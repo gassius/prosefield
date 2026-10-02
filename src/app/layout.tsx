@@ -17,6 +17,20 @@ const display = Fraunces({
 export const metadata: Metadata = {
   title: "Prosefield",
   description: "A calm writing workspace for professionals.",
+  icons: {
+    icon: [
+      { url: "/brand/favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/brand/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/brand/prosefield-favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      {
+        url: "/brand/apple-touch-icon.png",
+        sizes: "180x180",
+        type: "image/png",
+      },
+    ],
+  },
 };
 
 export default function RootLayout({

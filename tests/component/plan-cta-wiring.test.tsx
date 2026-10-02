@@ -89,7 +89,9 @@ describe("HomePage renders plan.checkoutReassurance from env", () => {
     const ui = await HomePage();
     render(ui);
 
-    expect(screen.getByText("€9/month · Secure checkout")).toBeInTheDocument();
+    const lines = screen.getAllByText("€9/month · Secure checkout");
+    // Hero, pricing card, and final CTA all share the plan line.
+    expect(lines.length).toBeGreaterThanOrEqual(3);
     expect(screen.queryByText(/€8\/month/)).not.toBeInTheDocument();
   });
 });

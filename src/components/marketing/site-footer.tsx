@@ -5,7 +5,7 @@ import { siteCopy } from "@/content/site";
 export function SiteFooter() {
   return (
     <footer className="border-border mt-auto border-t">
-      <div className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10 sm:flex-row sm:items-end sm:justify-between">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-10 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-2">
           <ProsefieldLogo href="/" tone="field" />
           <p className="text-muted-foreground max-w-xs text-sm">
