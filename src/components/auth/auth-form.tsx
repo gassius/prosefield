@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { siteCopy } from "@/content/site";
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "@/features/auth/constants";
+import { mapAuthError } from "@/features/auth/map-auth-error";
 import { getClientAuth } from "@/lib/firebase/client";
 
 type Mode = "login" | "register";
@@ -30,33 +31,6 @@ function readCsrfFromDocument(): string | undefined {
     .split("; ")
     .find((row) => row.startsWith(`${CSRF_COOKIE_NAME}=`));
   return match ? decodeURIComponent(match.split("=").slice(1).join("=")) : undefined;
-}
-
-function mapAuthError(code: string | undefined): {
-  field?: "email" | "password";
-  message: string;
-} {
-  switch (code) {
-    case "auth/invalid-email":
-      return { field: "email", message: "Enter a valid email address." };
-    case "auth/weak-password":
-      return {
-        field: "password",
-        message: siteCopy.auth.passwordHint,
-      };
-    case "auth/email-already-in-use":
-      return {
-        field: "email",
-        message: "An account with this email already exists.",
-      };
-    case "auth/invalid-credential":
-    case "auth/user-not-found":
-    case "auth/wrong-password":
-    case "auth/invalid-login-credentials":
-      return { message: siteCopy.auth.genericError };
-    default:
-      return { message: siteCopy.auth.genericError };
-  }
 }
 
 export function AuthForm({ mode, nextPath }: AuthFormProps) {
