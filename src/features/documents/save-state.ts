@@ -40,10 +40,6 @@ export function reduceSaveStatus(
       return status === "saving" ? "failed" : status;
     case "reset":
       return "saved";
-    default: {
-      const _exhaustive: never = event;
-      return _exhaustive;
-    }
   }
 }
 

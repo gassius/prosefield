@@ -38,6 +38,11 @@ describe("save-state machine", () => {
     expect(reduceSaveStatus(status, { type: "edit" })).toBe("saving");
     status = "failed";
     expect(reduceSaveStatus(status, { type: "save" })).toBe("saving");
+    expect(reduceSaveStatus("saved", { type: "save" })).toBe("saving");
+    expect(reduceSaveStatus("saving", { type: "save" })).toBe("saving");
+    expect(reduceSaveStatus("unsaved", { type: "success" })).toBe("unsaved");
+    expect(reduceSaveStatus("unsaved", { type: "failure" })).toBe("unsaved");
+    expect(reduceSaveStatus("failed", { type: "reset" })).toBe("saved");
   });
 
   it("detects Ctrl/Cmd+S and builds platform tooltips", () => {

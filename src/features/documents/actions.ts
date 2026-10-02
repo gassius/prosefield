@@ -17,8 +17,6 @@ import {
   getDocumentById,
   renameDocument,
   updateDocumentContent,
-  type DocumentListItem,
-  type DocumentRecord,
 } from "@/features/documents/repository";
 import {
   createDocumentInputSchema,
@@ -166,24 +164,4 @@ export async function deleteDocumentAction(
   } catch (error) {
     return mapError(error);
   }
-}
-
-/** Server-only helper for pages: load owned document or null (caller maps to 404). */
-export async function loadOwnedDocument(
-  documentId: string,
-): Promise<DocumentRecord | null> {
-  const session = await guardSessionAndSubscription();
-  const doc = await getDocumentById(documentId);
-  if (!doc || doc.ownerId !== session.uid) {
-    return null;
-  }
-  return doc;
-}
-
-export async function loadDocumentList(): Promise<DocumentListItem[]> {
-  const session = await guardSessionAndSubscription();
-  const { listDocumentsForOwner } = await import(
-    "@/features/documents/repository"
-  );
-  return listDocumentsForOwner(session.uid);
 }

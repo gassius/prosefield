@@ -50,7 +50,7 @@ test("CRUD: create, edit, save, rename, delete", async ({ page }) => {
   await expect(page.getByText("Unsaved changes")).toBeVisible();
 
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("Saved");
 
   await page.getByRole("button", { name: "Delete document" }).first().click();
   await expect(
@@ -84,7 +84,7 @@ test("persistence across logout and login", async ({ page }) => {
   await editor.click();
   await page.keyboard.type("Survives the session.");
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("Saved");
   const url = page.url();
 
   await page.getByRole("button", { name: "Sign out" }).click();
@@ -107,5 +107,5 @@ test("Ctrl/Cmd+S saves from unsaved state", async ({ page }) => {
   await page.keyboard.type("Shortcut save");
   await expect(page.getByText("Unsaved changes")).toBeVisible();
   await page.keyboard.press("Control+s");
-  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveText("Saved");
 });

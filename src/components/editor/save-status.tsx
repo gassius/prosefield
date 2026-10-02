@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  SAVE_STATUS_LABEL,
   type SaveStatus,
 } from "@/features/documents/save-state";
 import { siteCopy } from "@/content/site";
@@ -63,7 +62,6 @@ export function SaveStatusIndicator({ status, className }: SaveStatusProps) {
       >
         {label}
       </span>
-      <span className="sr-only">{SAVE_STATUS_LABEL[status]}</span>
     </div>
   );
 }

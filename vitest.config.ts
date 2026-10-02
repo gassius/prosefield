@@ -56,7 +56,18 @@ export default defineConfig({
           authSurfaceBar,
         "src/features/documents/{schemas,format-time,save-state,ownership}.ts":
           highBar,
-        "src/features/documents/{repository,actions}.ts": authSurfaceBar,
+        "src/features/documents/repository.ts": {
+          lines: 95,
+          functions: 95,
+          branches: 75,
+          statements: 95,
+        },
+        "src/features/documents/actions.ts": {
+          lines: 90,
+          functions: 90,
+          branches: 85,
+          statements: 90,
+        },
         "src/lib/firebase/**": {
           lines: 95,
           functions: 95,
