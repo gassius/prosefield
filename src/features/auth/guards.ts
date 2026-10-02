@@ -7,6 +7,7 @@ import {
   getOptionalSession,
   SessionError,
 } from "@/features/auth/session";
+import { isEntitledStatus } from "@/features/billing/entitlement";
 import { getAdminFirestore } from "@/lib/firebase/admin";
 
 export type { AccountState, CtaDestination } from "@/features/auth/account-state";
@@ -21,7 +22,9 @@ async function isSubscriptionActive(uid: string): Promise<boolean> {
     if (!snap.exists) {
       return false;
     }
-    return snap.data()?.status === "active";
+    return isEntitledStatus(
+      typeof snap.data()?.status === "string" ? snap.data()?.status : null,
+    );
   } catch {
     // Backend down / emulator unreachable — treat as not subscribed so marketing still renders.
     return false;

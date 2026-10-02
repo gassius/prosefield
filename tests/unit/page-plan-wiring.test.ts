@@ -8,14 +8,14 @@ describe("HomePage plan wiring (n1)", () => {
     "utf8",
   );
 
-  it("passes getPlanDisplay().checkoutReassurance into HeroCtaGroup", () => {
-    expect(source).toContain("const plan = getPlanDisplay()");
+  it("passes getPlan().checkoutReassurance into HeroCtaGroup", () => {
+    expect(source).toContain("const plan = await getPlan()");
     expect(source).toMatch(
       /checkoutReassurance=\{\s*plan\.checkoutReassurance\s*\}/,
     );
     // Hard-coding the price in page.tsx must fail this suite (PR #6 carry-over n1).
     expect(source).not.toMatch(/checkoutReassurance=\{\s*["'`][^"'`]*€?\d/);
-    // Reassignment after getPlanDisplay() must also fail.
+    // Reassignment after getPlan() must also fail.
     expect(source).not.toMatch(/plan\.checkoutReassurance\s*=/);
   });
 });

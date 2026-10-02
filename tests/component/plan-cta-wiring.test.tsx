@@ -36,6 +36,13 @@ vi.mock("@/features/auth/guards", () => ({
   ctaDestinationForState: () => "/register?next=/subscribe",
 }));
 
+vi.mock("@/features/billing/plan", async () => {
+  const { getPlanDisplay } = await import("@/features/billing/plan-display");
+  return {
+    getPlan: async () => getPlanDisplay(),
+  };
+});
+
 vi.mock("@/components/marketing/site-header", () => ({
   SiteHeader: () => null,
 }));
@@ -57,7 +64,11 @@ vi.mock("next/link", () => ({
     children: React.ReactNode;
     href: string;
     [key: string]: unknown;
-  }) => <a href={href} {...props}>{children}</a>,
+  }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  ),
 }));
 
 describe("HomePage renders plan.checkoutReassurance from env", () => {

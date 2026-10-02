@@ -20,6 +20,7 @@
     "test:e2e:offline": "playwright test e2e/offline.spec.ts --project=e2e",
     "test:visual": "bash scripts/test-visual.sh",
     "test:visual:update": "UPDATE=1 bash scripts/test-visual.sh",
+    "stripe:seed": "tsx scripts/stripe-seed.ts",
     "backend:up": "bash scripts/require-docker.sh up -d --wait",
     "backend:down": "bash scripts/require-docker.sh down",
     "backend:logs": "bash scripts/require-docker.sh logs -f emulators"
@@ -34,6 +35,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
+    "stripe": "^23.0.0",
     "tailwind-merge": "^3.7.0",
     "zod": "^4.1.11"
   },
@@ -52,6 +54,7 @@
     "eslint-config-next": "16.3.7",
     "jsdom": "^30.1.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^3.2.7"
   },

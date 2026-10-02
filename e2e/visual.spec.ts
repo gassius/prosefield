@@ -94,4 +94,21 @@ test.describe("visual regression", () => {
       mask: [page.getByText(email), page.locator("time")],
     });
   });
+
+  test("billing status pending", async ({ page }) => {
+    await resetEmulators();
+    const email = uniqueEmail("visual-billing");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await registerViaUi(page, email, "password-123");
+    await expectSignedIn(page, email);
+    await preparePage(page, "/billing/status", { width: 1440, height: 900 });
+    await expect(
+      page.getByText("Confirming your payment with Stripe…"),
+    ).toBeVisible();
+    await expect(page).toHaveScreenshot("billing-status-pending.png", {
+      fullPage: true,
+      mask: [page.getByText(email), page.locator("time")],
+    });
+  });
 });
