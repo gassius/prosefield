@@ -19,12 +19,20 @@ const toneClass: Record<LogoTone, string> = {
   paper: "text-primary-foreground",
 };
 
-function CultivatedMark({
+/** Path counts for the full vs simplified cultivated-P marks (Art Direction 5.4). */
+export function cultivatedMarkPathCount(size: number): number {
+  return size < 24 ? 3 : 6;
+}
+
+export function CultivatedMark({
   size,
   className,
+  labelled = false,
 }: {
   size: number;
   className?: string;
+  /** When true, expose the mark alone to AT (mark-only surfaces). */
+  labelled?: boolean;
 }) {
   const simplified = size < 24;
   const strokeWidth = simplified ? 2.4 : 1.75;
@@ -39,7 +47,9 @@ function CultivatedMark({
       strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-hidden="true"
+      role={labelled ? "img" : undefined}
+      aria-label={labelled ? siteCopy.brand.name : undefined}
+      aria-hidden={labelled ? undefined : true}
       className={className}
     >
       <path d="M6 21.2V2.8h7.2a5.9 5.9 0 0 1 0 11.8H6" />
@@ -61,7 +71,12 @@ function CultivatedMark({
   );
 }
 
-/** Official cultivated-P lockup (Art Direction 5.2–5.4). */
+/**
+ * Official cultivated-P lockup (Art Direction 5.2–5.4).
+ * Header/footer lockups stay at markSize 24 (full mark). The simplified
+ * two-line mark applies under 24 px — used by `public/brand/prosefield-mark-simplified.svg`,
+ * `prosefield-favicon.svg`, `src/app/icon.svg`, and any caller with markSize < 24.
+ */
 export function ProsefieldLogo({
   className,
   href = "/",
@@ -69,9 +84,14 @@ export function ProsefieldLogo({
   tone = "field",
   showWordmark = true,
 }: ProsefieldLogoProps) {
+  const markOnly = !showWordmark;
   const mark = (
     <span className={cn("inline-flex items-center gap-2", className)}>
-      <CultivatedMark size={markSize} className={toneClass[tone]} />
+      <CultivatedMark
+        size={markSize}
+        className={toneClass[tone]}
+        labelled={markOnly && !href}
+      />
       {showWordmark ? (
         <span className="font-display text-[18px] leading-none font-medium tracking-tight text-foreground">
           {siteCopy.brand.name}
@@ -87,10 +107,10 @@ export function ProsefieldLogo({
   return (
     <Link
       href={href}
+      aria-label={`${siteCopy.brand.name} home`}
       className="rounded-sm focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
     >
       {mark}
-      <span className="sr-only">{siteCopy.brand.name} home</span>
     </Link>
   );
 }
