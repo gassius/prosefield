@@ -35,16 +35,17 @@ export default defineConfig({
         "src/lib/**/*.{ts,tsx}",
         "src/features/auth/**/*.{ts,tsx}",
         "src/features/billing/**/*.{ts,tsx}",
+        "src/features/documents/**/*.{ts,tsx}",
       ],
       // Client Firebase bootstrap is browser-only; covered indirectly by E2E.
       exclude: ["src/lib/firebase/client.ts"],
       thresholds: {
         // Ratcheted to measured Component+coverage values minus a small margin.
-        // Billing added to include; thresholds must not go down (ticket + AGENTS.md).
-        lines: 95,
-        functions: 95,
-        branches: 88,
-        statements: 95,
+        // Must stay ≥ main (98.66% lines / 94.86% branches) and only go up.
+        lines: 99,
+        functions: 99,
+        branches: 94.9,
+        statements: 99,
         "src/features/auth/{account-state,auth-time,constants,csrf,map-auth-error,next}.ts":
           highBar,
         "src/lib/env.ts": highBar,
@@ -53,6 +54,25 @@ export default defineConfig({
         "src/features/billing/{entitlement,plan-display,configured}.ts": highBar,
         "src/features/billing/{projection,webhook,checkout,customers,session-sync,plan,actions}.ts":
           authSurfaceBar,
+        "src/features/documents/{schemas,format-time,save-state,ownership,editor-extensions}.ts":
+          {
+            lines: 99,
+            functions: 99,
+            branches: 95,
+            statements: 99,
+          },
+        "src/features/documents/repository.ts": {
+          lines: 99,
+          functions: 99,
+          branches: 97,
+          statements: 99,
+        },
+        "src/features/documents/actions.ts": {
+          lines: 99,
+          functions: 99,
+          branches: 99,
+          statements: 99,
+        },
         "src/lib/firebase/**": {
           lines: 95,
           functions: 95,

@@ -12,6 +12,8 @@ export const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-secondary/80 border border-border",
         ghost: "hover:bg-secondary text-foreground",
         link: "text-brand-deep underline-offset-4 hover:underline",
+        destructive:
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
       },
       size: {
         default: "h-10 px-4 py-2",

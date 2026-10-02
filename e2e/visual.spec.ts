@@ -1,8 +1,10 @@
 import { test, expect } from "@playwright/test";
 import {
   expectSignedIn,
+  lookupUidByEmail,
   registerViaUi,
   resetEmulators,
+  seedSubscriptionProjection,
   uniqueEmail,
 } from "./helpers";
 
@@ -107,6 +109,51 @@ test.describe("visual regression", () => {
       page.getByText("Confirming your payment with Stripe…"),
     ).toBeVisible();
     await expect(page).toHaveScreenshot("billing-status-pending.png", {
+      fullPage: true,
+      mask: [page.getByText(email), page.locator("time")],
+    });
+  });
+
+  test("documents empty state", async ({ page }) => {
+    await resetEmulators();
+    const email = uniqueEmail("visual-docs-empty");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await registerViaUi(page, email, "password-123");
+    await expectSignedIn(page, email);
+    const uid = await lookupUidByEmail(email);
+    await seedSubscriptionProjection(uid, "active");
+    await preparePage(page, "/documents", { width: 1440, height: 900 });
+    await expect(
+      page.getByRole("heading", { name: "Your first page is waiting." }),
+    ).toBeVisible();
+    await expect(page).toHaveScreenshot("documents-empty.png", {
+      fullPage: true,
+      mask: [page.getByText(email), page.locator("time")],
+    });
+  });
+
+  test("documents editor and delete dialog", async ({ page }) => {
+    await resetEmulators();
+    const email = uniqueEmail("visual-docs-editor");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await registerViaUi(page, email, "password-123");
+    await expectSignedIn(page, email);
+    const uid = await lookupUidByEmail(email);
+    await seedSubscriptionProjection(uid, "active");
+    await page.goto("/documents");
+    await page.getByRole("button", { name: "New document" }).click();
+    await expect(page.getByLabel("Document title")).toBeVisible();
+    await page.addStyleTag({ content: FREEZE_CSS });
+    await expect(page).toHaveScreenshot("documents-editor.png", {
+      fullPage: true,
+      mask: [page.getByText(email), page.locator("time")],
+    });
+
+    await page.getByRole("button", { name: "Delete document" }).first().click();
+    await expect(page.getByRole("heading", { name: /Delete/ })).toBeVisible();
+    await expect(page).toHaveScreenshot("documents-delete-dialog.png", {
       fullPage: true,
       mask: [page.getByText(email), page.locator("time")],
     });

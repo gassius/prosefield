@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { DM_Sans, Fraunces } from "next/font/google";
+import { Toaster } from "@/components/ui/toaster";
 import "./globals.css";
 
 const sans = DM_Sans({
@@ -38,6 +39,7 @@ export default function RootLayout({
         <main id="main-content" tabIndex={-1} className="flex flex-1 flex-col">
           {children}
         </main>
+        <Toaster />
       </body>
     </html>
   );

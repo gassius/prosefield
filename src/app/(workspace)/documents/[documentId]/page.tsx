@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { DocumentsWorkspace } from "@/components/documents/documents-workspace";
+import { DocumentEditor } from "@/components/editor/document-editor";
 import { buttonVariants } from "@/components/ui/button";
 import { siteCopy } from "@/content/site";
 import {
@@ -9,11 +11,23 @@ import {
   requireSessionOrRedirect,
 } from "@/features/auth/guards";
 import { getPlan } from "@/features/billing/plan";
-import { listDocumentsForOwner } from "@/features/documents/repository";
+import { canAccessDocument } from "@/features/documents/ownership";
+import {
+  getDocumentById,
+  listDocumentsForOwner,
+} from "@/features/documents/repository";
+import { documentIdSchema } from "@/features/documents/schemas";
 import { cn } from "@/lib/utils";
 
-export default async function DocumentsPage() {
-  await requireSessionOrRedirect("/login?next=/documents");
+type DocumentPageProps = {
+  params: Promise<{ documentId: string }>;
+};
+
+export default async function DocumentPage({ params }: DocumentPageProps) {
+  const { documentId } = await params;
+  await requireSessionOrRedirect(
+    `/login?next=${encodeURIComponent(`/documents/${documentId}`)}`,
+  );
   const account = await getAccountState();
   const ctaHref = ctaDestinationForState(account);
 
@@ -48,17 +62,43 @@ export default async function DocumentsPage() {
     );
   }
 
+  // Reject path traversal / non-id shapes before Firestore lookup (§9).
+  if (!documentIdSchema.safeParse(documentId).success) {
+    notFound();
+  }
+
+  const doc = await getDocumentById(documentId);
+  // 404 for missing and non-owned (Architecture §5.5 / §9) — never 403.
+  if (!canAccessDocument(doc, account.uid)) {
+    notFound();
+  }
+
   const documents = await listDocumentsForOwner(account.uid);
-  const entries = documents.map((doc) => ({
-    id: doc.id,
-    title: doc.title,
-    updatedAt: doc.updatedAt.toISOString(),
+  const entries = documents.map((item) => ({
+    id: item.id,
+    title: item.title,
+    updatedAt: item.updatedAt.toISOString(),
   }));
 
   return (
     <>
       <SiteHeader accountState={account} ctaHref={ctaHref} />
-      <DocumentsWorkspace documents={entries} />
+      <div className="border-border flex items-center gap-3 border-b px-4 py-3 md:hidden">
+        <Link
+          href="/documents"
+          className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
+        >
+          {siteCopy.documents.backToList}
+        </Link>
+      </div>
+      <DocumentsWorkspace documents={entries} activeId={doc.id}>
+        <DocumentEditor
+          documentId={doc.id}
+          initialTitle={doc.title}
+          initialContent={doc.content}
+          contentAllowed={doc.contentAllowed}
+        />
+      </DocumentsWorkspace>
     </>
   );
 }
