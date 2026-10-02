@@ -28,8 +28,11 @@ type DocumentEditorProps = {
   documentId: string;
   initialTitle: string;
   initialContent: TiptapJson;
-  /** When false, stored JSON failed the allow-list — block save to avoid empty overwrite. */
-  contentAllowed?: boolean;
+  /**
+   * Required — no fail-open default. When false, stored JSON failed the
+   * allow-list; save is blocked so an emptied editor cannot overwrite storage.
+   */
+  contentAllowed: boolean;
   /** Test hook: exposes the live TipTap editor after mount. */
   onEditorReady?: (editor: import("@tiptap/react").Editor) => void;
 };
@@ -38,7 +41,7 @@ export function DocumentEditor({
   documentId,
   initialTitle,
   initialContent,
-  contentAllowed = true,
+  contentAllowed,
   onEditorReady,
 }: DocumentEditorProps) {
   const [title, setTitle] = useState(initialTitle);

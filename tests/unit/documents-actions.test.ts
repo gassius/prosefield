@@ -164,6 +164,40 @@ describe("document actions (mocked guards)", () => {
     });
   });
 
+  it("rejects foreign rename and foreign invalid body before Zod (unit)", async () => {
+    const {
+      saveDocumentAction,
+      renameDocumentAction,
+    } = await import("@/features/documents/actions");
+
+    getDocumentById.mockResolvedValue({
+      id: DOC_ID,
+      ownerId: "someone-else",
+      title: "Keep",
+      content: EMPTY_DOCUMENT_CONTENT,
+      contentAllowed: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    await expect(
+      renameDocumentAction({ documentId: DOC_ID, title: "Stolen" }),
+    ).resolves.toMatchObject({ ok: false, code: "not_found" });
+    expect(renameDocument).not.toHaveBeenCalled();
+
+    await expect(
+      renameDocumentAction({ documentId: DOC_ID, title: "" }),
+    ).resolves.toMatchObject({ ok: false, code: "not_found" });
+
+    await expect(
+      saveDocumentAction({
+        documentId: DOC_ID,
+        content: { type: "codeBlock", content: [] },
+      }),
+    ).resolves.toMatchObject({ ok: false, code: "not_found" });
+    expect(updateDocumentContent).not.toHaveBeenCalled();
+  });
+
   it("rejects invalid zod input after owner check", async () => {
     const { renameDocumentAction } = await import(
       "@/features/documents/actions"

@@ -218,13 +218,17 @@ describe("documents guard chain (emulators)", () => {
     }
   });
 
-  it("foreign save and delete → not_found; owner doc unchanged", async () => {
+  it("foreign save, rename, and delete → not_found; owner doc unchanged", async () => {
     const ownerEmail = `docs-owner-${randomUUID()}@example.com`;
     const { localId: ownerUid } = await establishSession(ownerEmail);
     await seedActiveSubscription(ownerUid);
 
-    const { createDocumentAction, saveDocumentAction, deleteDocumentAction } =
-      await import("@/features/documents/actions");
+    const {
+      createDocumentAction,
+      saveDocumentAction,
+      renameDocumentAction,
+      deleteDocumentAction,
+    } = await import("@/features/documents/actions");
     const { getDocumentById } = await import(
       "@/features/documents/repository"
     );
@@ -260,6 +264,15 @@ describe("documents guard chain (emulators)", () => {
       expect(foreignSave.code).toBe("not_found");
     }
 
+    const foreignRename = await renameDocumentAction({
+      documentId: created.data.id,
+      title: "Stolen title",
+    });
+    expect(foreignRename.ok).toBe(false);
+    if (!foreignRename.ok) {
+      expect(foreignRename.code).toBe("not_found");
+    }
+
     const foreignDelete = await deleteDocumentAction({
       documentId: created.data.id,
     });
@@ -272,6 +285,51 @@ describe("documents guard chain (emulators)", () => {
     expect(stillThere?.title).toBe("Owner doc");
     expect(stillThere?.ownerId).toBe(ownerUid);
     expect(JSON.stringify(stillThere?.content)).not.toContain("hijacked");
+  });
+
+  it("foreign doc + invalid body → not_found (owner before Zod)", async () => {
+    const ownerEmail = `docs-order-own-${randomUUID()}@example.com`;
+    const { localId: ownerUid } = await establishSession(ownerEmail);
+    await seedActiveSubscription(ownerUid);
+
+    const { createDocumentAction, saveDocumentAction, renameDocumentAction } =
+      await import("@/features/documents/actions");
+    const created = await createDocumentAction({ title: "Keep me" });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+
+    __resetCookieStore();
+    const otherEmail = `docs-order-other-${randomUUID()}@example.com`;
+    const { localId: otherUid } = await establishSession(otherEmail);
+    await seedActiveSubscription(otherUid);
+
+    const rename = await renameDocumentAction({
+      documentId: created.data.id,
+      title: "",
+    });
+    expect(rename.ok).toBe(false);
+    if (!rename.ok) {
+      expect(rename.code).toBe("not_found");
+    }
+
+    const save = await saveDocumentAction({
+      documentId: created.data.id,
+      content: { type: "codeBlock", content: [] },
+    });
+    expect(save.ok).toBe(false);
+    if (!save.ok) {
+      expect(save.code).toBe("not_found");
+    }
+
+    const { getDocumentById } = await import(
+      "@/features/documents/repository"
+    );
+    const still = await getDocumentById(created.data.id);
+    expect(still?.title).toBe("Keep me");
+    expect(still?.ownerId).toBe(ownerUid);
+    void otherUid;
   });
 
   it("nonexistent save/rename/delete → not_found", async () => {

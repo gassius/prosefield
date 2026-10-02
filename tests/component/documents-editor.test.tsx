@@ -196,7 +196,7 @@ describe("DocumentEditor (real component)", () => {
     });
   });
 
-  it("blocks save when contentAllowed is false (no overwrite)", async () => {
+  it("blocks Save button and Ctrl/Cmd+S when contentAllowed is false", async () => {
     const user = userEvent.setup();
     const { DocumentEditor } = await import(
       "@/components/editor/document-editor"
@@ -212,7 +212,16 @@ describe("DocumentEditor (real component)", () => {
     );
 
     expect(screen.getByTestId("content-blocked")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Save" }));
+    const saveButton = screen.getByRole("button", { name: "Save" });
+    expect(saveButton).toBeDisabled();
+    await user.click(saveButton);
+    expect(saveDocumentAction).not.toHaveBeenCalled();
+
+    // Ctrl/Cmd+S calls performSave directly — must still no-op when blocked
+    // (bites if `|| blocked` is removed from performSave while Save stays disabled).
+    await user.keyboard("{Control>}s{/Control}");
+    expect(saveDocumentAction).not.toHaveBeenCalled();
+    await user.keyboard("{Meta>}s{/Meta}");
     expect(saveDocumentAction).not.toHaveBeenCalled();
   });
 

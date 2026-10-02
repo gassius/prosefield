@@ -1,45 +1,17 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Document bounds (Architecture §8). Title 1–120 chars; content is
-    // serialised Tiptap JSON string ≤ 512 KiB (rules string.size() = UTF-8 bytes).
-    // Browser access is not used by the app (Admin SDK); these rules are
-    // defence-in-depth: only the signed-in owner may write, and only when
-    // bounds pass. Read/delete stay denied for clients.
-    function titleWithinBounds(title) {
-      return title is string
-        && title.size() >= 1
-        && title.size() <= 120;
-    }
-
-    function contentWithinBounds(content) {
-      return content is string
-        && content.size() <= 524288;
-    }
-
-    function validDocumentWrite() {
-      return request.resource.data.keys().hasAll([
-          'ownerId',
-          'title',
-          'content',
-          'createdAt',
-          'updatedAt',
-        ])
-        && request.resource.data.ownerId is string
-        && titleWithinBounds(request.resource.data.title)
-        && contentWithinBounds(request.resource.data.content);
-    }
-
+    // Architecture §5.6: browser clients never read or write. All document
+    // access goes through Server Actions + the Admin SDK (bypasses rules).
+    // Title (1–120 chars) and content (≤ 512 KiB UTF-8 bytes when serialised)
+    // are enforced server-side in Zod (`src/features/documents/schemas.ts`),
+    // not here — clients are not granted any create/update path that could
+    // evaluate those bounds.
     match /documents/{documentId} {
       allow read: if false;
+      allow create: if false;
+      allow update: if false;
       allow delete: if false;
-      allow create: if request.auth != null
-        && request.resource.data.ownerId == request.auth.uid
-        && validDocumentWrite();
-      allow update: if request.auth != null
-        && resource.data.ownerId == request.auth.uid
-        && request.resource.data.ownerId == resource.data.ownerId
-        && validDocumentWrite();
     }
 
     match /{document=**} {
