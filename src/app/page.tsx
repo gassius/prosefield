@@ -35,7 +35,7 @@ export default async function HomePage() {
             </p>
             <HeroCtaGroup
               ctaHref={ctaHref}
-              checkoutReassurance={plan.checkoutReassurance}
+              checkoutReassurance={"€8/month · Secure checkout"}
             />
           </div>
 
