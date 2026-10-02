@@ -112,3 +112,153 @@ jobs:
         # rhysd/actionlint:1.7.7
         uses: docker://rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
 
+  commit-trailers:
+    name: Commit trailers
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify agent commit trailers
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          agents_md=$(git show "${BASE_SHA}:AGENTS.md")
+          mapfile -t KNOWN < <(
+            printf '%s\n' "$agents_md" \
+              | sed -n '/^### Known identities$/,/^### /p' \
+              | sed -n 's/^- \*\*\([^*]*\)\*\*.*/\1/p'
+          )
+          if [ "${#KNOWN[@]}" -eq 0 ]; then
+            echo "::error::Failed to load Known identities from ${BASE_SHA}:AGENTS.md"
+            exit 1
+          fi
+          echo "Known identities (from ${BASE_SHA}): ${KNOWN[*]}"
+
+          is_known() {
+            local agent="$1"
+            local name
+            for name in "${KNOWN[@]}"; do
+              if [ "$name" = "$agent" ]; then
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          # Returns: parents\tcommitter_login\tauthor_login\tverified (true/false)
+          github_commit_meta() {
+            local sha="$1"
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}" \
+              --jq '[(.parents|length), (.committer.login // ""), (.author.login // ""), (.commit.verification.verified|tostring)] | @tsv'
+          }
+
+          has_agent_lines() {
+            local msg="$1"
+            printf '%s\n' "$msg" | grep -Eq '^Agent(-[A-Za-z]+)?:'
+          }
+
+          failed=0
+          while IFS= read -r sha; do
+            [ -n "$sha" ] || continue
+
+            subject=$(git log -1 --format='%s' "$sha")
+            msg=$(git log -1 --format='%B' "$sha")
+
+            meta=$(github_commit_meta "$sha")
+            IFS=$'\t' read -r api_parents committer_login author_login verified <<<"$meta"
+            verified=${verified:-false}
+            api_parents=${api_parents:-0}
+
+            # Exemptions only when the message has no Agent* lines (agents can't forge web-flow / verified gassius).
+            if ! has_agent_lines "$msg"; then
+              if [ "$api_parents" -ge 2 ] \
+                && [ "$committer_login" = "web-flow" ] \
+                && [ "$verified" = "true" ]; then
+                echo "skip: ${sha} (GitHub merge, web-flow verified)"
+                continue
+              fi
+              if [ "$verified" = "true" ] && [ "$committer_login" = "gassius" ]; then
+                echo "skip: ${sha} (Carlos, verified committer gassius)"
+                continue
+              fi
+              if [ "$verified" = "true" ] \
+                && [ "$committer_login" = "web-flow" ] \
+                && [ "$author_login" = "gassius" ]; then
+                echo "skip: ${sha} (Carlos, verified web-flow author gassius)"
+                continue
+              fi
+            fi
+
+            parsed=$(printf '%s\n' "$msg" | git interpret-trailers --parse || true)
+
+            agent=$(printf '%s\n' "$parsed" | awk -F': ' '$1=="Agent" { print substr($0, index($0,": ")+2); exit }')
+            ticket=$(printf '%s\n' "$parsed" | awk -F': ' '$1=="Agent-Ticket" { print substr($0, index($0,": ")+2); exit }')
+            run=$(printf '%s\n' "$parsed" | awk -F': ' '$1=="Agent-Run" { print substr($0, index($0,": ")+2); exit }')
+            agent_count=$(printf '%s\n' "$parsed" | awk -F': ' '$1=="Agent" { c++ } END { print c+0 }')
+            run_count=$(printf '%s\n' "$parsed" | awk -F': ' '$1=="Agent-Run" { c++ } END { print c+0 }')
+            ticket_count=$(printf '%s\n' "$parsed" | awk -F': ' '$1=="Agent-Ticket" { c++ } END { print c+0 }')
+
+            reasons=()
+            if [ -z "$parsed" ]; then
+              reasons+=("git interpret-trailers --parse produced no trailer block")
+            fi
+            if [ "$agent_count" -ne 1 ]; then
+              reasons+=("expected exactly one Agent trailer in the single trailer block (found ${agent_count})")
+            fi
+            if [ "$ticket_count" -ne 1 ]; then
+              reasons+=("expected exactly one Agent-Ticket trailer (found ${ticket_count})")
+            fi
+            if [ "$run_count" -ne 1 ]; then
+              reasons+=("expected exactly one Agent-Run trailer (found ${run_count})")
+            fi
+            if [ -z "$agent" ]; then
+              reasons+=("missing required Agent trailer")
+            elif ! is_known "$agent"; then
+              reasons+=("Agent '${agent}' is not a Known identity from base AGENTS.md")
+            fi
+            if [ -z "$ticket" ]; then
+              reasons+=("missing required Agent-Ticket trailer")
+            elif ! printf '%s\n' "$ticket" | grep -Eq '^(none|[0-9a-z]{9}|#[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+)$'; then
+              reasons+=("Agent-Ticket '${ticket}' must be a ClickUp id, none, or a GitHub issue/PR reference")
+            fi
+            if [ -z "$run" ]; then
+              reasons+=("missing required Agent-Run trailer")
+            elif ! printf '%s\n' "$run" | grep -Eq '^https://cursor\.com/agents/bc-[0-9a-f-]{36}$|^hermes-session:[^[:space:]]+$'; then
+              reasons+=("Agent-Run '${run}' must be https://cursor.com/agents/bc-… or hermes-session:<id>")
+            fi
+
+            if [ "${#reasons[@]}" -gt 0 ]; then
+              failed=1
+              echo "::error title=Bad commit trailers::${sha} (${subject})"
+              echo "Commit ${sha} failed trailer checks:"
+              printf '  - %s\n' "${reasons[@]}"
+              echo "Parsed trailers:"
+              if [ -n "$parsed" ]; then
+                printf '%s\n' "$parsed" | sed 's/^/  /'
+              else
+                echo "  (empty)"
+              fi
+              echo "GitHub meta: parents=${api_parents} committer=${committer_login} author=${author_login} verified=${verified}"
+              echo
+            else
+              echo "ok: ${sha} Agent=${agent} Agent-Ticket=${ticket}"
+            fi
+          done < <(git rev-list "${BASE_SHA}..${HEAD_SHA}")
+
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::One or more commits are missing a valid single Agent / Agent-Ticket / Agent-Run trailer block."
+            exit 1
+          fi
+          echo "All commits in ${BASE_SHA}..${HEAD_SHA} have valid trailers or an allowed exemption."
+
