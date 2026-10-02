@@ -34,7 +34,7 @@ export function CultivatedMark({
   /** When true, expose the mark alone to AT (mark-only surfaces). */
   labelled?: boolean;
 }) {
-  const simplified = size < 24;
+  const simplified = cultivatedMarkPathCount(size) === 3;
   const strokeWidth = simplified ? 2.4 : 1.75;
 
   return (

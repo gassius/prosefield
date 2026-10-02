@@ -1,6 +1,4 @@
-import "server-only";
-
-import { getEnv } from "@/lib/env";
+import { localDevDefaults } from "@/lib/env";
 
 const currencySymbols: Record<string, string> = {
   EUR: "€",
@@ -8,22 +6,41 @@ const currencySymbols: Record<string, string> = {
   GBP: "£",
 };
 
+function readPlanField(
+  key:
+    | "PLAN_DISPLAY_NAME"
+    | "PLAN_DISPLAY_PRICE"
+    | "PLAN_DISPLAY_CURRENCY"
+    | "PLAN_DISPLAY_INTERVAL",
+): string {
+  const fromEnv = process.env[key]?.trim();
+  if (fromEnv) {
+    return fromEnv;
+  }
+  // Soft fallback so `pnpm build` without `.env` still prerenders (same as main).
+  // Production runtime should still set PLAN_DISPLAY_*; getEnv() remains required elsewhere.
+  return localDevDefaults[key];
+}
+
 /**
  * Plan display fallback from `PLAN_DISPLAY_*` env.
  * TODO(P2 Billing / getPlan): replace with Stripe Price when billing lands.
  * Default price left as configured in env (Carlos confirming Art Direction €8).
+ *
+ * Does not call `getEnv()` so a missing full env does not break marketing prerender.
  */
 export function getPlanDisplay() {
-  const env = getEnv();
-  const symbol =
-    currencySymbols[env.PLAN_DISPLAY_CURRENCY] ??
-    `${env.PLAN_DISPLAY_CURRENCY} `;
-  const priceLabel = `${symbol}${env.PLAN_DISPLAY_PRICE}/${env.PLAN_DISPLAY_INTERVAL}`;
+  const name = readPlanField("PLAN_DISPLAY_NAME");
+  const price = readPlanField("PLAN_DISPLAY_PRICE");
+  const currency = readPlanField("PLAN_DISPLAY_CURRENCY");
+  const interval = readPlanField("PLAN_DISPLAY_INTERVAL");
+  const symbol = currencySymbols[currency] ?? `${currency} `;
+  const priceLabel = `${symbol}${price}/${interval}`;
   return {
-    name: env.PLAN_DISPLAY_NAME,
-    price: env.PLAN_DISPLAY_PRICE,
-    currency: env.PLAN_DISPLAY_CURRENCY,
-    interval: env.PLAN_DISPLAY_INTERVAL,
+    name,
+    price,
+    currency,
+    interval,
     priceLabel,
     checkoutReassurance: `${priceLabel} · Secure checkout`,
   };

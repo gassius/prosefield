@@ -100,24 +100,24 @@ export function HeroEditorPreview({ className }: HeroEditorPreviewProps) {
           </aside>
 
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="border-border flex flex-wrap items-center gap-1 border-b px-3 py-2.5 sm:gap-1.5">
-              <Undo2 className="text-muted-foreground size-4" strokeWidth={1.75} />
-              <span className="text-muted-foreground px-0.5 text-xs font-semibold tracking-tight">
+            <div className="border-border flex flex-nowrap items-center gap-0.5 overflow-hidden border-b px-2.5 py-2 sm:gap-1 sm:px-3">
+              <Undo2 className="text-muted-foreground size-3.5 shrink-0" strokeWidth={1.75} />
+              <span className="text-muted-foreground shrink-0 px-0.5 text-[11px] font-semibold tracking-tight">
                 H2
               </span>
-              <span className="bg-accent text-accent-foreground inline-flex size-7 items-center justify-center rounded-md">
-                <Bold className="size-4" strokeWidth={2.25} />
+              <span className="bg-accent text-accent-foreground inline-flex size-6 shrink-0 items-center justify-center rounded-md">
+                <Bold className="size-3.5" strokeWidth={2.25} />
               </span>
-              <Italic className="text-muted-foreground size-4" strokeWidth={1.75} />
-              <List className="text-muted-foreground size-4" strokeWidth={1.75} />
-              <Quote className="text-muted-foreground size-4" strokeWidth={1.75} />
-              <span className="ml-auto flex items-center gap-2">
-                <span className="flex items-center gap-1.5">
-                  <span className="bg-success size-2 rounded-full" aria-hidden />
-                  <span className="text-muted-foreground text-xs">Saved</span>
+              <Italic className="text-muted-foreground size-3.5 shrink-0" strokeWidth={1.75} />
+              <List className="text-muted-foreground size-3.5 shrink-0" strokeWidth={1.75} />
+              <Quote className="text-muted-foreground size-3.5 shrink-0" strokeWidth={1.75} />
+              <span className="ml-auto flex shrink-0 items-center gap-1.5">
+                <span className="flex items-center gap-1">
+                  <span className="bg-success size-1.5 rounded-full" aria-hidden />
+                  <span className="text-muted-foreground text-[11px]">Saved</span>
                 </span>
-                <span className="border-input text-foreground inline-flex items-center gap-1.5 rounded-md border bg-background px-2.5 py-1 text-xs font-medium">
-                  <Save className="size-3.5" strokeWidth={1.75} aria-hidden />
+                <span className="border-input text-foreground inline-flex items-center gap-1 rounded-md border bg-background px-2 py-0.5 text-[11px] font-medium">
+                  <Save className="size-3" strokeWidth={1.75} aria-hidden />
                   Save
                 </span>
               </span>

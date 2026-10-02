@@ -19,7 +19,16 @@ import {
   ProsefieldLogo,
   cultivatedMarkPathCount,
 } from "@/components/brand/prosefield-logo";
+import { HeroCtaGroup } from "@/components/marketing/hero-cta-group";
 import { HeroEditorPreview } from "@/components/marketing/hero-editor-preview";
+
+function rootTag(html: string): string {
+  const match = html.match(/^<([a-z0-9]+)([^>]*)>/i);
+  if (!match) {
+    throw new Error(`Expected a root tag in: ${html.slice(0, 80)}`);
+  }
+  return match[0];
+}
 
 describe("cultivatedMarkPathCount", () => {
   it("uses the simplified three-path mark under 24px", () => {
@@ -51,14 +60,43 @@ describe("ProsefieldLogo", () => {
 });
 
 describe("HeroEditorPreview", () => {
-  it("is decorative: aria-hidden and inert, with no focusable controls", () => {
+  it("is decorative: root aria-hidden + inert, no focusable controls", () => {
     const html = renderToStaticMarkup(createElement(HeroEditorPreview));
-    expect(html).toContain('aria-hidden="true"');
-    expect(html).toMatch(/\sinert(\s|>|=)/);
-    expect(html).not.toMatch(/<a\b|<button\b|<input\b|<select\b|<textarea\b/);
+    const root = rootTag(html);
+    expect(root).toContain('aria-hidden="true"');
+    expect(root).toMatch(/\sinert(=""|\s|>)/);
+    expect(html).not.toMatch(
+      /<a\b|<button\b|<input\b|<select\b|<textarea\b|tabindex=/i,
+    );
+  });
+
+  it("shows three document timestamps and a Quote toolbar icon", () => {
+    const html = renderToStaticMarkup(createElement(HeroEditorPreview));
+    expect((html.match(/<time\b/g) ?? []).length).toBe(3);
+    expect(html).toContain("Edited 2 minutes ago");
+    expect(html).toContain("Edited yesterday");
+    expect(html).toContain("Edited 28 September");
+    expect(html).toContain("lucide-quote");
+    expect(html).not.toContain("lucide-image");
     expect(html).toContain("the tools close");
     expect(html).toContain(
       "A short brief that the whole team can read in two minutes",
     );
+  });
+});
+
+describe("HeroCtaGroup", () => {
+  it("uses full-width mobile CTAs and the plan reassurance line", () => {
+    const html = renderToStaticMarkup(
+      createElement(HeroCtaGroup, {
+        ctaHref: "/register?next=/subscribe",
+        checkoutReassurance: "€9/month · Secure checkout",
+      }),
+    );
+    expect(html).toContain("€9/month · Secure checkout");
+    expect(html).not.toContain("€8/month");
+    // Both CTAs must include w-full for mobile stacking (§16).
+    const fullWidthMatches = html.match(/w-full/g) ?? [];
+    expect(fullWidthMatches.length).toBeGreaterThanOrEqual(2);
   });
 });
