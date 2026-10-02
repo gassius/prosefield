@@ -34,6 +34,10 @@ export const siteCopy = {
       "Prosefield gives your ideas a quiet, capable workspace—from the rough first line to the draft you are ready to share.",
     explore: "Explore the editor",
   },
+  footer: {
+    privacy: "Privacy",
+    terms: "Terms",
+  },
   subscribe: {
     title: "Subscribe to start writing",
     body: "Billing arrives in the next phase. Your account is ready.",
