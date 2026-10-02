@@ -11,10 +11,12 @@ import {
   requireSessionOrRedirect,
 } from "@/features/auth/guards";
 import { getPlan } from "@/features/billing/plan";
+import { canAccessDocument } from "@/features/documents/ownership";
 import {
   getDocumentById,
   listDocumentsForOwner,
 } from "@/features/documents/repository";
+import { documentIdSchema } from "@/features/documents/schemas";
 import { cn } from "@/lib/utils";
 
 type DocumentPageProps = {
@@ -60,9 +62,14 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
     );
   }
 
+  // Reject path traversal / non-id shapes before Firestore lookup (§9).
+  if (!documentIdSchema.safeParse(documentId).success) {
+    notFound();
+  }
+
   const doc = await getDocumentById(documentId);
   // 404 for missing and non-owned (Architecture §5.5 / §9) — never 403.
-  if (!doc || doc.ownerId !== account.uid) {
+  if (!canAccessDocument(doc, account.uid)) {
     notFound();
   }
 
@@ -89,6 +96,7 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
           documentId={doc.id}
           initialTitle={doc.title}
           initialContent={doc.content}
+          contentAllowed={doc.contentAllowed}
         />
       </DocumentsWorkspace>
     </>

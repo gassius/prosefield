@@ -25,3 +25,11 @@ export function requireOwner(
   }
   return doc;
 }
+
+/** Page/loader access: same 404 semantics without throwing. */
+export function canAccessDocument(
+  doc: DocumentRecord | null,
+  uid: string,
+): doc is DocumentRecord {
+  return Boolean(doc && doc.ownerId === uid);
+}

@@ -10,8 +10,9 @@ import {
 } from "@/features/documents/save-state";
 
 /**
- * Minimal harness mirroring DocumentEditor save + beforeunload wiring.
- * Bites if hotkey or beforeunload dirty guard is removed.
+ * Supplemental save-state harness. Prefer DocumentEditor tests in
+ * documents-editor.test.tsx for beforeunload / hotkey / save transitions —
+ * those are the ones that must bite on the real editor.
  */
 function SaveHarness() {
   const [status, setStatus] = useState<SaveStatus>("saved");

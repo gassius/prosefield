@@ -97,6 +97,31 @@ test("persistence across logout and login", async ({ page }) => {
   await expect(page.getByText("Survives the session.")).toBeVisible();
 });
 
+test("foreign document URL returns 404", async ({ page }) => {
+  const ownerEmail = uniqueEmail("docs-owner");
+  const password = "password-123";
+  await registerViaUi(page, ownerEmail, password);
+  await expectSignedIn(page, ownerEmail);
+  const ownerUid = await lookupUidByEmail(ownerEmail, password);
+  await seedSubscriptionProjection(ownerUid, "active");
+  await page.goto("/documents");
+  await page.getByRole("button", { name: "New document" }).click();
+  await expect(page).toHaveURL(/\/documents\/[^/]+/);
+  const ownerUrl = page.url();
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByRole("link", { name: "Sign in" }).first()).toBeVisible();
+
+  const otherEmail = uniqueEmail("docs-intruder");
+  await registerViaUi(page, otherEmail, password);
+  await expectSignedIn(page, otherEmail);
+  const otherUid = await lookupUidByEmail(otherEmail, password);
+  await seedSubscriptionProjection(otherUid, "active");
+
+  const response = await page.goto(ownerUrl);
+  expect(response?.status()).toBe(404);
+});
+
 test("Ctrl/Cmd+S saves from unsaved state", async ({ page }) => {
   await registerActiveSubscriber(page);
   await page.getByRole("button", { name: "New document" }).click();

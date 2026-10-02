@@ -15,7 +15,7 @@ vi.mock("@/lib/firebase/admin", () => ({
         set,
         update,
         delete: del,
-        id: "new-doc-id",
+        id: "newdocid00000000001",
       }),
       where: () => ({
         orderBy: () => ({
@@ -35,7 +35,7 @@ describe("documents repository", () => {
     docsQueryGet.mockReset();
   });
 
-  it("parses string, map, and invalid content; lists and mutates", async () => {
+  it("parses string, map, invalid JSON, and non-object content", async () => {
     const { getDocumentById, listDocumentsForOwner, createDocument, updateDocumentContent, renameDocument, deleteDocument } =
       await import("@/features/documents/repository");
 
@@ -54,6 +54,7 @@ describe("documents repository", () => {
       }),
     });
     const parsed = await getDocumentById("d1");
+    expect(parsed?.contentAllowed).toBe(true);
     expect(parsed?.content).toMatchObject({ type: "doc" });
 
     get.mockResolvedValueOnce({
@@ -62,13 +63,13 @@ describe("documents repository", () => {
       data: () => ({
         ownerId: "u1",
         title: "Map",
-        content: { type: "doc", content: [] },
+        content: { type: "doc", content: [{ type: "paragraph" }] },
         createdAt: null,
         updatedAt: null,
       }),
     });
     const mapped = await getDocumentById("d2");
-    expect(mapped?.content.type).toBe("doc");
+    expect(mapped?.contentAllowed).toBe(true);
 
     get.mockResolvedValueOnce({
       exists: true,
@@ -80,10 +81,67 @@ describe("documents repository", () => {
       }),
     });
     const bad = await getDocumentById("d3");
-    expect(bad?.content).toEqual(EMPTY_DOCUMENT_CONTENT);
+    expect(bad?.contentAllowed).toBe(false);
 
-    get.mockResolvedValueOnce({ exists: false });
-    expect(await getDocumentById("missing")).toBeNull();
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "d4",
+      data: () => ({
+        ownerId: "u1",
+        title: "Nullish",
+        content: 42,
+      }),
+    });
+    const nullish = await getDocumentById("d4");
+    expect(nullish?.contentAllowed).toBe(false);
+    expect(nullish?.content).toEqual(EMPTY_DOCUMENT_CONTENT);
+
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "d5",
+      data: () => ({
+        ownerId: "u1",
+        title: "Evil",
+        content: JSON.stringify({
+          type: "doc",
+          content: [{ type: "codeBlock", content: [] }],
+        }),
+      }),
+    });
+    const evil = await getDocumentById("d5");
+    expect(evil?.contentAllowed).toBe(false);
+
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "d6",
+      data: () => ({
+        ownerId: "u1",
+        title: 99,
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        // Duck-typed toDate is not Timestamp/Date — parseTimestamp falls to epoch.
+        createdAt: { toDate: () => new Date("2026-03-01") },
+        updatedAt: { toDate: () => new Date("2026-03-02") },
+      }),
+    });
+    const coerced = await getDocumentById("d6");
+    expect(coerced?.title).toBe("Untitled document");
+    expect(coerced?.createdAt.toISOString()).toBe("1970-01-01T00:00:00.000Z");
+
+    const { Timestamp } = await import("firebase-admin/firestore");
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "d7",
+      data: () => ({
+        ownerId: "u1",
+        title: "Stamped",
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        createdAt: Timestamp.fromDate(new Date("2026-04-01T00:00:00Z")),
+        updatedAt: Timestamp.fromDate(new Date("2026-04-02T00:00:00Z")),
+      }),
+    });
+    const stamped = await getDocumentById("d7");
+    expect(stamped?.createdAt.toISOString()).toContain("2026-04-01");
+    expect(stamped?.title).toBe("Stamped");
 
     docsQueryGet.mockResolvedValueOnce({
       docs: [
@@ -91,15 +149,20 @@ describe("documents repository", () => {
           id: "a",
           data: () => ({ title: "A", updatedAt: new Date("2026-02-01") }),
         },
+        {
+          id: "b",
+          data: () => ({ updatedAt: new Date("2026-02-01") }),
+        },
       ],
     });
     const list = await listDocumentsForOwner("u1");
     expect(list[0]?.title).toBe("A");
+    expect(list[1]?.title).toBe("Untitled document");
 
     set.mockResolvedValue(undefined);
     get.mockResolvedValueOnce({
       exists: true,
-      id: "new-doc-id",
+      id: "newdocid00000000001",
       data: () => ({
         ownerId: "u1",
         title: "Untitled document",
@@ -109,7 +172,8 @@ describe("documents repository", () => {
       }),
     });
     const created = await createDocument({ ownerId: "u1" });
-    expect(created.id).toBe("new-doc-id");
+    expect(created.id).toBe("newdocid00000000001");
+    expect(created.contentAllowed).toBe(true);
 
     get.mockResolvedValueOnce({ exists: true, data: () => ({ ownerId: "u1" }) });
     get.mockResolvedValueOnce({
@@ -153,5 +217,81 @@ describe("documents repository", () => {
     expect(await deleteDocument("d1")).toBe(true);
     get.mockResolvedValueOnce({ exists: false });
     expect(await deleteDocument("missing")).toBe(false);
+
+    // createDocument title/content branches + post-write empty snapshot fallbacks
+    set.mockResolvedValue(undefined);
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "newdocid00000000001",
+      data: () => undefined,
+    });
+    const createdFallback = await createDocument({
+      ownerId: "u1",
+      title: "   ",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(createdFallback.title).toBe("Untitled document");
+    expect(createdFallback.ownerId).toBe("u1");
+
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => ({ ownerId: "u1" }),
+    });
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => undefined,
+    });
+    update.mockResolvedValue(undefined);
+    const updatedEmpty = await updateDocumentContent({
+      documentId: "d1",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    // Empty snapshot falls back to {} → contentAllowed false (no stored content).
+    expect(updatedEmpty?.contentAllowed).toBe(false);
+    expect(updatedEmpty?.title).toBe("Untitled document");
+
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => ({ ownerId: "u1" }),
+    });
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => undefined,
+    });
+    const renamedEmpty = await renameDocument({
+      documentId: "d1",
+      title: "After",
+    });
+    expect(renamedEmpty?.title).toBe("Untitled document");
+
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "d8",
+      data: () => ({
+        ownerId: 42,
+        title: "No owner string",
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        createdAt: new Date("2026-05-01"),
+        updatedAt: new Date("2026-05-02"),
+      }),
+    });
+    const noOwner = await getDocumentById("d8");
+    expect(noOwner?.ownerId).toBe("");
+
+    get.mockResolvedValueOnce({ exists: false });
+    expect(await getDocumentById("missing-doc-id-0001")).toBeNull();
+
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "d9",
+      data: () => undefined,
+    });
+    const emptySnap = await getDocumentById("d9");
+    expect(emptySnap?.title).toBe("Untitled document");
+    expect(emptySnap?.contentAllowed).toBe(false);
   });
 });

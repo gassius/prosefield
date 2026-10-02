@@ -12,6 +12,9 @@ describe("formatEditedLabel (Art Direction 12.1)", () => {
       formatEditedLabel(new Date("2026-10-02T11:59:30"), now),
     ).toBe("Edited just now");
     expect(
+      formatEditedLabel(new Date("2026-10-02T11:59:00"), now),
+    ).toBe("Edited 1 minute ago");
+    expect(
       formatEditedLabel(new Date("2026-10-02T11:58:00"), now),
     ).toBe("Edited 2 minutes ago");
     expect(

@@ -7,6 +7,7 @@ import {
 } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase/admin";
 import {
+  assertAllowedTiptapJson,
   DEFAULT_DOCUMENT_TITLE,
   EMPTY_DOCUMENT_CONTENT,
   type TiptapJson,
@@ -17,6 +18,8 @@ export type DocumentRecord = {
   ownerId: string;
   title: string;
   content: TiptapJson;
+  /** False when stored JSON fails the allow-list — editor must not save until repaired. */
+  contentAllowed: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -37,19 +40,36 @@ function parseTimestamp(value: unknown): Date {
   return new Date(0);
 }
 
-function parseContent(raw: unknown): TiptapJson {
+/**
+ * Parse stored content. Off-spec JSON is NOT coerced to an empty doc for
+ * editing — contentAllowed=false blocks save so Tiptap cannot overwrite
+ * the stored payload with an emptied schema load (Architecture data-loss fix).
+ */
+function parseContent(raw: unknown): {
+  content: TiptapJson;
+  contentAllowed: boolean;
+} {
+  let parsed: unknown;
   if (typeof raw === "string") {
     try {
-      return JSON.parse(raw) as TiptapJson;
+      parsed = JSON.parse(raw);
     } catch {
-      return { ...EMPTY_DOCUMENT_CONTENT };
+      return { content: { ...EMPTY_DOCUMENT_CONTENT }, contentAllowed: false };
     }
+  } else if (raw && typeof raw === "object") {
+    parsed = raw;
+  } else {
+    return { content: { ...EMPTY_DOCUMENT_CONTENT }, contentAllowed: false };
   }
-  // Legacy / Admin map writes — accept object-shaped content too.
-  if (raw && typeof raw === "object") {
-    return raw as TiptapJson;
+
+  try {
+    return {
+      content: assertAllowedTiptapJson(parsed),
+      contentAllowed: true,
+    };
+  } catch {
+    return { content: { ...EMPTY_DOCUMENT_CONTENT }, contentAllowed: false };
   }
-  return { ...EMPTY_DOCUMENT_CONTENT };
 }
 
 /** Persist as serialised JSON string so firestore.rules can bound size(). */
@@ -58,11 +78,13 @@ function serialiseContent(content: TiptapJson): string {
 }
 
 function toRecord(id: string, data: DocumentData): DocumentRecord {
+  const { content, contentAllowed } = parseContent(data.content);
   return {
     id,
     ownerId: typeof data.ownerId === "string" ? data.ownerId : "",
     title: typeof data.title === "string" ? data.title : DEFAULT_DOCUMENT_TITLE,
-    content: parseContent(data.content),
+    content,
+    contentAllowed,
     createdAt: parseTimestamp(data.createdAt),
     updatedAt: parseTimestamp(data.updatedAt),
   };
@@ -163,4 +185,18 @@ export async function deleteDocument(documentId: string): Promise<boolean> {
   }
   await ref.delete();
   return true;
+}
+
+/** Test/helper: raw Firestore content string without going through allow-list. */
+export async function __unsafeSetDocumentContentForTests(input: {
+  documentId: string;
+  contentJson: string;
+}): Promise<void> {
+  await getAdminFirestore()
+    .collection("documents")
+    .doc(input.documentId)
+    .update({
+      content: input.contentJson,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
 }

@@ -1,10 +1,11 @@
 /**
- * Firestore rules: default-deny + document title/content bounds helpers.
+ * Firestore rules: owner-scoped writes with real title/content bounds.
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   assertFails,
+  assertSucceeds,
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
@@ -21,14 +22,27 @@ if (!firestoreHost) {
 const [host, portString] = firestoreHost.split(":");
 const port = Number(portString ?? "8080");
 
-describe("firestore.rules documents bounds + default deny", () => {
+function validPayload(ownerId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    ownerId,
+    title: "Valid title",
+    content: JSON.stringify({ type: "doc", content: [{ type: "paragraph" }] }),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
+describe("firestore.rules documents bounds (real)", () => {
   let testEnv: RulesTestEnvironment;
 
   beforeAll(async () => {
     const rules = readFileSync(resolve(process.cwd(), "firestore.rules"), "utf8");
-    expect(rules).toMatch(/title\.size\(\) <= 120/);
-    expect(rules).toMatch(/content\.size\(\) <= 524288/);
-    expect(rules).toMatch(/allow read, write: if false/);
+    // Anchored so `<= 1200` cannot sneak past.
+    expect(rules).toMatch(/title\.size\(\) <= 120;/);
+    expect(rules).toMatch(/title\.size\(\) >= 1/);
+    expect(rules).toMatch(/content\.size\(\) <= 524288;/);
+    expect(rules).not.toMatch(/&& false/);
 
     testEnv = await initializeTestEnvironment({
       projectId: "demo-prosefield-rules",
@@ -48,56 +62,56 @@ describe("firestore.rules documents bounds + default deny", () => {
     await testEnv.clearFirestore();
   });
 
-  it("denies client create even with valid bounds", async () => {
+  it("allows owner create at the title boundary (120) and denies 121", async () => {
     const db = testEnv.authenticatedContext("user-a").firestore();
+    await assertSucceeds(
+      db.collection("documents").add(
+        validPayload("user-a", { title: "x".repeat(120) }),
+      ),
+    );
     await assertFails(
-      db.collection("documents").add({
-        ownerId: "user-a",
-        title: "Valid title",
-        content: JSON.stringify({ type: "doc", content: [] }),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }),
+      db.collection("documents").add(
+        validPayload("user-a", { title: "x".repeat(121) }),
+      ),
     );
   });
 
-  it("denies client create with overlong title (bounds helper)", async () => {
+  it("denies content over 524288 bytes and allows at the cap", async () => {
     const db = testEnv.authenticatedContext("user-a").firestore();
+    await assertSucceeds(
+      db.collection("documents").add(
+        validPayload("user-a", { content: "y".repeat(524288) }),
+      ),
+    );
     await assertFails(
-      db.collection("documents").add({
-        ownerId: "user-a",
-        title: "x".repeat(121),
-        content: JSON.stringify({ type: "doc", content: [] }),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }),
+      db.collection("documents").add(
+        validPayload("user-a", { content: "y".repeat(524289) }),
+      ),
     );
   });
 
-  it("denies client create with oversize content (bounds helper)", async () => {
+  it("denies create for a different ownerId than auth.uid", async () => {
     const db = testEnv.authenticatedContext("user-a").firestore();
     await assertFails(
-      db.collection("documents").add({
-        ownerId: "user-a",
-        title: "Ok",
-        content: "y".repeat(524289),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }),
+      db.collection("documents").add(validPayload("user-b")),
     );
   });
 
-  it("denies unauthenticated read/write on documents", async () => {
+  it("denies unauthenticated read/write", async () => {
     const db = testEnv.unauthenticatedContext().firestore();
     await assertFails(db.collection("documents").doc("x").get());
     await assertFails(
-      db.collection("documents").doc("x").set({
-        ownerId: "x",
-        title: "T",
-        content: "{}",
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }),
+      db.collection("documents").doc("x").set(validPayload("x")),
     );
+  });
+
+  it("denies client read even for the owner", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().collection("documents").doc("owned").set(
+        validPayload("user-a"),
+      );
+    });
+    const db = testEnv.authenticatedContext("user-a").firestore();
+    await assertFails(db.collection("documents").doc("owned").get());
   });
 });

@@ -21,8 +21,9 @@ import {
 import {
   createDocumentInputSchema,
   deleteDocumentInputSchema,
-  renameDocumentInputSchema,
-  updateDocumentContentInputSchema,
+  documentIdOnlySchema,
+  renameDocumentBodySchema,
+  updateDocumentContentBodySchema,
 } from "@/features/documents/schemas";
 
 export type DocumentActionErrorCode =
@@ -65,6 +66,10 @@ function mapError(error: unknown): DocumentActionResult<never> {
   };
 }
 
+/**
+ * Guard chain (Architecture §5.5): session → active subscription.
+ * Caller then requireOwner, then Zod on the mutation body.
+ */
 async function guardSessionAndSubscription() {
   const session = await requireSession({ checkRevoked: true });
   await requireActiveSubscription(session.uid);
@@ -105,12 +110,14 @@ export async function saveDocumentAction(
 ): Promise<DocumentActionResult<{ id: string; updatedAt: string }>> {
   try {
     const session = await guardSessionAndSubscription();
-    const parsed = updateDocumentContentInputSchema.parse(input);
-    const existing = await getDocumentById(parsed.documentId);
+    // session → subscription → owner → Zod (parse id only, then body)
+    const { documentId } = documentIdOnlySchema.parse(input);
+    const existing = await getDocumentById(documentId);
     requireOwner(existing, session.uid);
+    const { content } = updateDocumentContentBodySchema.parse(input);
     const updated = await updateDocumentContent({
-      documentId: parsed.documentId,
-      content: parsed.content,
+      documentId,
+      content,
     });
     if (!updated) {
       throw new DocumentAccessError("Document not found", "not_found");
@@ -130,12 +137,13 @@ export async function renameDocumentAction(
 ): Promise<DocumentActionResult<{ id: string; title: string }>> {
   try {
     const session = await guardSessionAndSubscription();
-    const parsed = renameDocumentInputSchema.parse(input);
-    const existing = await getDocumentById(parsed.documentId);
+    const { documentId } = documentIdOnlySchema.parse(input);
+    const existing = await getDocumentById(documentId);
     requireOwner(existing, session.uid);
+    const { title } = renameDocumentBodySchema.parse(input);
     const updated = await renameDocument({
-      documentId: parsed.documentId,
-      title: parsed.title,
+      documentId,
+      title,
     });
     if (!updated) {
       throw new DocumentAccessError("Document not found", "not_found");
@@ -152,15 +160,15 @@ export async function deleteDocumentAction(
 ): Promise<DocumentActionResult<{ id: string }>> {
   try {
     const session = await guardSessionAndSubscription();
-    const parsed = deleteDocumentInputSchema.parse(input);
-    const existing = await getDocumentById(parsed.documentId);
+    const { documentId } = deleteDocumentInputSchema.parse(input);
+    const existing = await getDocumentById(documentId);
     requireOwner(existing, session.uid);
-    const deleted = await deleteDocument(parsed.documentId);
+    const deleted = await deleteDocument(documentId);
     if (!deleted) {
       throw new DocumentAccessError("Document not found", "not_found");
     }
-    revalidateDocumentPaths(parsed.documentId);
-    return { ok: true, data: { id: parsed.documentId } };
+    revalidateDocumentPaths(documentId);
+    return { ok: true, data: { id: documentId } };
   } catch (error) {
     return mapError(error);
   }

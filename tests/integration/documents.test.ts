@@ -63,7 +63,7 @@ async function establishSession(email: string) {
   const { sessionCookie } = await createSessionCookieFromIdToken(idToken);
   await upsertUserDocument({ uid: localId, email });
   await setSessionCookie(sessionCookie);
-  return localId;
+  return { localId, idToken };
 }
 
 async function seedActiveSubscription(uid: string) {
@@ -100,10 +100,21 @@ describe("documents guard chain (emulators)", () => {
     }
   });
 
+  it("no session + invalid input → unauthorized (session before Zod)", async () => {
+    const { saveDocumentAction } = await import("@/features/documents/actions");
+    const result = await saveDocumentAction({
+      documentId: "not-valid!!",
+      content: { type: "codeBlock" },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("unauthorized");
+    }
+  });
+
   it("rejects mutations when subscription is inactive", async () => {
     const email = `docs-inactive-${randomUUID()}@example.com`;
     await establishSession(email);
-    // No subscription projection → inactive.
 
     const {
       createDocumentAction,
@@ -115,11 +126,14 @@ describe("documents guard chain (emulators)", () => {
     for (const result of [
       await createDocumentAction({}),
       await saveDocumentAction({
-        documentId: "missing",
+        documentId: "abcABC1234567890wxyz",
         content: EMPTY_DOCUMENT_CONTENT,
       }),
-      await renameDocumentAction({ documentId: "missing", title: "X" }),
-      await deleteDocumentAction({ documentId: "missing" }),
+      await renameDocumentAction({
+        documentId: "abcABC1234567890wxyz",
+        title: "X",
+      }),
+      await deleteDocumentAction({ documentId: "abcABC1234567890wxyz" }),
     ]) {
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -128,13 +142,92 @@ describe("documents guard chain (emulators)", () => {
     }
   });
 
-  it("returns not_found for nonexistent and non-owned documents", async () => {
+  it("inactive subscription + foreign doc → forbidden (subscription before owner)", async () => {
+    const ownerEmail = `docs-own-${randomUUID()}@example.com`;
+    const { localId: ownerUid } = await establishSession(ownerEmail);
+    await seedActiveSubscription(ownerUid);
+    const { createDocumentAction } = await import(
+      "@/features/documents/actions"
+    );
+    const created = await createDocumentAction({ title: "Owned" });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+
+    __resetCookieStore();
+    const otherEmail = `docs-idle-${randomUUID()}@example.com`;
+    await establishSession(otherEmail);
+    // no active subscription
+
+    const { saveDocumentAction, deleteDocumentAction } = await import(
+      "@/features/documents/actions"
+    );
+    const save = await saveDocumentAction({
+      documentId: created.data.id,
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(save.ok).toBe(false);
+    if (!save.ok) {
+      expect(save.code).toBe("forbidden");
+    }
+    const del = await deleteDocumentAction({ documentId: created.data.id });
+    expect(del.ok).toBe(false);
+    if (!del.ok) {
+      expect(del.code).toBe("forbidden");
+    }
+  });
+
+  it("revoked session cannot mutate documents", async () => {
+    const email = `docs-revoked-${randomUUID()}@example.com`;
+    const { localId, idToken } = await establishSession(email);
+    await seedActiveSubscription(localId);
+
+    const { revokeUserSessions, verifySessionCookieValue, createSessionCookieFromIdToken } =
+      await import("@/features/auth/session");
+    const { sessionCookie, decoded } =
+      await createSessionCookieFromIdToken(idToken);
+    // revokeRefreshTokens sets validSince = floor(now/1000). The revoked check
+    // is auth_time*1000 < validSince, so both must fall in different seconds.
+    const waitMs = Math.max(0, (decoded.auth_time + 1) * 1000 - Date.now() + 50);
+    if (waitMs > 0) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, waitMs);
+      });
+    }
+    await revokeUserSessions(localId);
+    await expect(verifySessionCookieValue(sessionCookie, true)).rejects.toMatchObject({
+      code: "auth/session-cookie-revoked",
+    });
+
+    const { createDocumentAction, saveDocumentAction } = await import(
+      "@/features/documents/actions"
+    );
+    const create = await createDocumentAction({});
+    expect(create.ok).toBe(false);
+    if (!create.ok) {
+      expect(create.code).toBe("unauthorized");
+    }
+    const save = await saveDocumentAction({
+      documentId: "abcABC1234567890wxyz",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(save.ok).toBe(false);
+    if (!save.ok) {
+      expect(save.code).toBe("unauthorized");
+    }
+  });
+
+  it("foreign save and delete → not_found; owner doc unchanged", async () => {
     const ownerEmail = `docs-owner-${randomUUID()}@example.com`;
-    const ownerUid = await establishSession(ownerEmail);
+    const { localId: ownerUid } = await establishSession(ownerEmail);
     await seedActiveSubscription(ownerUid);
 
-    const { createDocumentAction, saveDocumentAction, renameDocumentAction } =
+    const { createDocumentAction, saveDocumentAction, deleteDocumentAction } =
       await import("@/features/documents/actions");
+    const { getDocumentById } = await import(
+      "@/features/documents/repository"
+    );
 
     const created = await createDocumentAction({ title: "Owner doc" });
     expect(created.ok).toBe(true);
@@ -142,35 +235,76 @@ describe("documents guard chain (emulators)", () => {
       return;
     }
 
-    const missing = await saveDocumentAction({
-      documentId: "does-not-exist",
-      content: EMPTY_DOCUMENT_CONTENT,
-    });
-    expect(missing.ok).toBe(false);
-    if (!missing.ok) {
-      expect(missing.code).toBe("not_found");
-    }
+    const original = await getDocumentById(created.data.id);
+    expect(original?.title).toBe("Owner doc");
 
-    // Switch to another entitled user.
     __resetCookieStore();
     const otherEmail = `docs-other-${randomUUID()}@example.com`;
-    const otherUid = await establishSession(otherEmail);
+    const { localId: otherUid } = await establishSession(otherEmail);
     await seedActiveSubscription(otherUid);
 
-    const foreign = await renameDocumentAction({
+    const foreignSave = await saveDocumentAction({
       documentId: created.data.id,
-      title: "Hijack",
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "hijacked" }],
+          },
+        ],
+      },
     });
-    expect(foreign.ok).toBe(false);
-    if (!foreign.ok) {
-      expect(foreign.code).toBe("not_found");
+    expect(foreignSave.ok).toBe(false);
+    if (!foreignSave.ok) {
+      expect(foreignSave.code).toBe("not_found");
+    }
+
+    const foreignDelete = await deleteDocumentAction({
+      documentId: created.data.id,
+    });
+    expect(foreignDelete.ok).toBe(false);
+    if (!foreignDelete.ok) {
+      expect(foreignDelete.code).toBe("not_found");
+    }
+
+    const stillThere = await getDocumentById(created.data.id);
+    expect(stillThere?.title).toBe("Owner doc");
+    expect(stillThere?.ownerId).toBe(ownerUid);
+    expect(JSON.stringify(stillThere?.content)).not.toContain("hijacked");
+  });
+
+  it("nonexistent save/rename/delete → not_found", async () => {
+    const email = `docs-missing-${randomUUID()}@example.com`;
+    const { localId } = await establishSession(email);
+    await seedActiveSubscription(localId);
+
+    const {
+      saveDocumentAction,
+      renameDocumentAction,
+      deleteDocumentAction,
+    } = await import("@/features/documents/actions");
+
+    const missingId = "missingdocid00000001";
+    for (const result of [
+      await saveDocumentAction({
+        documentId: missingId,
+        content: EMPTY_DOCUMENT_CONTENT,
+      }),
+      await renameDocumentAction({ documentId: missingId, title: "X" }),
+      await deleteDocumentAction({ documentId: missingId }),
+    ]) {
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.code).toBe("not_found");
+      }
     }
   });
 
-  it("rejects invalid input (empty title, oversize content)", async () => {
+  it("rejects invalid input (121-char title, oversize bytes, unknown nodes)", async () => {
     const email = `docs-invalid-${randomUUID()}@example.com`;
-    const uid = await establishSession(email);
-    await seedActiveSubscription(uid);
+    const { localId } = await establishSession(email);
+    await seedActiveSubscription(localId);
 
     const { createDocumentAction, renameDocumentAction, saveDocumentAction } =
       await import("@/features/documents/actions");
@@ -190,12 +324,21 @@ describe("documents guard chain (emulators)", () => {
       expect(emptyTitle.code).toBe("invalid");
     }
 
+    const longTitle = await renameDocumentAction({
+      documentId: created.data.id,
+      title: "x".repeat(121),
+    });
+    expect(longTitle.ok).toBe(false);
+    if (!longTitle.ok) {
+      expect(longTitle.code).toBe("invalid");
+    }
+
     const oversized = {
       type: "doc",
       content: [
         {
           type: "paragraph",
-          content: [{ type: "text", text: "x".repeat(512 * 1024) }],
+          content: [{ type: "text", text: "é".repeat(300_000) }],
         },
       ],
     };
@@ -207,11 +350,87 @@ describe("documents guard chain (emulators)", () => {
     if (!big.ok) {
       expect(big.code).toBe("invalid");
     }
+
+    const unknown = await saveDocumentAction({
+      documentId: created.data.id,
+      content: {
+        type: "doc",
+        content: [{ type: "codeBlock", content: [] }],
+      },
+    });
+    expect(unknown.ok).toBe(false);
+    if (!unknown.ok) {
+      expect(unknown.code).toBe("invalid");
+    }
+  });
+
+  it("rejects path-like documentId after auth (id Zod before owner)", async () => {
+    const email = `docs-badid-${randomUUID()}@example.com`;
+    const { localId } = await establishSession(email);
+    await seedActiveSubscription(localId);
+
+    const { saveDocumentAction } = await import("@/features/documents/actions");
+    const result = await saveDocumentAction({
+      documentId: "../etc/passwd",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("invalid");
+    }
+  });
+
+  it("off-spec stored JSON loads as contentAllowed=false without overwriting", async () => {
+    const email = `docs-corrupt-${randomUUID()}@example.com`;
+    const { localId } = await establishSession(email);
+    await seedActiveSubscription(localId);
+
+    const { createDocumentAction, saveDocumentAction } = await import(
+      "@/features/documents/actions"
+    );
+    const {
+      getDocumentById,
+      __unsafeSetDocumentContentForTests,
+    } = await import("@/features/documents/repository");
+
+    const created = await createDocumentAction({ title: "Corruptible" });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+
+    const evil = JSON.stringify({
+      type: "doc",
+      content: [{ type: "codeBlock", content: [] }],
+    });
+    await __unsafeSetDocumentContentForTests({
+      documentId: created.data.id,
+      contentJson: evil,
+    });
+
+    const loaded = await getDocumentById(created.data.id);
+    expect(loaded?.contentAllowed).toBe(false);
+
+    // Even if a client tried to save empty after a bad load, Zod allow-list
+    // still accepts empty — the editor must refuse. Repository still holds evil.
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+    const raw = await getAdminFirestore()
+      .collection("documents")
+      .doc(created.data.id)
+      .get();
+    expect(raw.data()?.content).toBe(evil);
+
+    // Saving allow-listed content as owner still works (repair path).
+    const repaired = await saveDocumentAction({
+      documentId: created.data.id,
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(repaired.ok).toBe(true);
   });
 
   it("subscriber CRUD persists content and title", async () => {
     const email = `docs-crud-${randomUUID()}@example.com`;
-    const uid = await establishSession(email);
+    const { localId: uid } = await establishSession(email);
     await seedActiveSubscription(uid);
 
     const {
@@ -253,6 +472,7 @@ describe("documents guard chain (emulators)", () => {
 
     const loaded = await getDocumentById(created.data.id);
     expect(loaded?.title).toBe("Draft two");
+    expect(loaded?.contentAllowed).toBe(true);
     expect(JSON.stringify(loaded?.content)).toContain("Hello field");
     expect(loaded?.ownerId).toBe(uid);
 

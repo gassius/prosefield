@@ -1,8 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Document bounds (Architecture §8). Browser access stays denied
-    // (Architecture §5.6). Title 1–120 chars; content serialised JSON ≤ 512 KiB.
+    // Document bounds (Architecture §8). Title 1–120 chars; content is
+    // serialised Tiptap JSON string ≤ 512 KiB (rules string.size() = UTF-8 bytes).
+    // Browser access is not used by the app (Admin SDK); these rules are
+    // defence-in-depth: only the signed-in owner may write, and only when
+    // bounds pass. Read/delete stay denied for clients.
     function titleWithinBounds(title) {
       return title is string
         && title.size() >= 1
@@ -29,10 +32,14 @@ service cloud.firestore {
 
     match /documents/{documentId} {
       allow read: if false;
-      // Default deny for clients. Bounds helpers are composed so rules tests
-      // can assert oversize title/content still fail; && false keeps deny.
-      allow create, update: if validDocumentWrite() && false;
       allow delete: if false;
+      allow create: if request.auth != null
+        && request.resource.data.ownerId == request.auth.uid
+        && validDocumentWrite();
+      allow update: if request.auth != null
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && validDocumentWrite();
     }
 
     match /{document=**} {
