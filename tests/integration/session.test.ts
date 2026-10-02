@@ -108,22 +108,18 @@ describe("session exchange (emulators)", () => {
 
     await expect(requireActiveSubscription(localId)).resolves.toBeUndefined();
 
+    // revokeRefreshTokens sets validSince = floor(now/1000). The revoked check
+    // is auth_time*1000 < validSince, so both must fall in different seconds.
+    const waitMs = Math.max(0, (decoded.auth_time + 1) * 1000 - Date.now() + 50);
+    if (waitMs > 0) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, waitMs);
+      });
+    }
     await revokeUserSessions(localId);
-    // Auth emulator can lag before tokensValidAfterTime is visible to
-    // verifySessionCookie(checkRevoked=true); poll briefly instead of one-shot.
-    await expect
-      .poll(
-        async () => {
-          try {
-            await verifySessionCookieValue(sessionCookie, true);
-            return "valid";
-          } catch {
-            return "revoked";
-          }
-        },
-        { timeout: 5_000, interval: 100 },
-      )
-      .toBe("revoked");
+    await expect(verifySessionCookieValue(sessionCookie, true)).rejects.toMatchObject({
+      code: "auth/session-cookie-revoked",
+    });
   });
 
   it("rejects CSRF and Origin failures on POST /api/session", async () => {

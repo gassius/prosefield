@@ -14,7 +14,7 @@
     "test": "vitest run --project unit",
     "test:watch": "vitest --project unit",
     "test:component": "vitest run --project component",
-    "test:coverage": "vitest run --project unit --project component --coverage",
+    "test:coverage": "vitest run --project unit --project component --project integration --coverage",
     "test:integration": "vitest run --project integration",
     "test:e2e": "playwright test --project=e2e --project=a11y",
     "test:e2e:offline": "playwright test e2e/offline.spec.ts --project=e2e",

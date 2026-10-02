@@ -6,6 +6,16 @@ import {
   uniqueEmail,
 } from "./helpers";
 
+// Baselines must be generated/compared inside scripts/test-visual.sh
+// (official Playwright Docker image). Refuse host runs that would drift fonts.
+test.beforeAll(() => {
+  if (process.env.PROSEFIELD_VISUAL_DOCKER !== "1") {
+    throw new Error(
+      "Visual tests must run via `pnpm test:visual` / `pnpm test:visual:update` (Playwright Docker image).",
+    );
+  }
+});
+
 const FREEZE_CSS = `
   *, *::before, *::after {
     animation: none !important;
@@ -21,7 +31,7 @@ async function preparePage(
 ) {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.setViewportSize(viewport);
-  await page.goto(path, { waitUntil: "networkidle" });
+  await page.goto(path, { waitUntil: "domcontentloaded" });
   await page.addStyleTag({ content: FREEZE_CSS });
 }
 
@@ -72,7 +82,6 @@ test.describe("visual regression", () => {
     await registerViaUi(page, email, "password-123");
     await expectSignedIn(page, email);
     await page.addStyleTag({ content: FREEZE_CSS });
-    // Mask the email chip — unique per run.
     await expect(page).toHaveScreenshot("logged-in-subscribe.png", {
       fullPage: true,
       mask: [page.getByText(email), page.locator("time")],

@@ -17,23 +17,48 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "text-summary", "json-summary"],
       reportsDirectory: "./coverage",
-      // Pure logic surface. Emulator I/O (session/users/guards/firebase) is
-      // covered by integration + E2E; excluding it keeps the gate meaningful.
-      include: [
-        "src/lib/env.ts",
-        "src/lib/utils.ts",
-        "src/features/auth/account-state.ts",
-        "src/features/auth/auth-time.ts",
-        "src/features/auth/constants.ts",
-        "src/features/auth/csrf.ts",
-        "src/features/auth/map-auth-error.ts",
-        "src/features/auth/next.ts",
-      ],
+      include: ["src/lib/**/*.{ts,tsx}", "src/features/auth/**/*.{ts,tsx}"],
+      // Client Firebase bootstrap is browser-only; covered indirectly by E2E.
+      exclude: ["src/lib/firebase/client.ts"],
       thresholds: {
-        lines: 80,
-        functions: 80,
-        branches: 75,
-        statements: 80,
+        // Overall floor (unit + component + integration).
+        lines: 70,
+        functions: 70,
+        branches: 65,
+        statements: 70,
+        // Pure modules: csrf etc. cannot hide under the average.
+        "src/features/auth/{account-state,auth-time,constants,csrf,map-auth-error,next}.ts":
+          {
+            lines: 90,
+            functions: 90,
+            branches: 80,
+            statements: 90,
+          },
+        "src/lib/env.ts": {
+          lines: 90,
+          functions: 90,
+          branches: 80,
+          statements: 90,
+        },
+        "src/lib/utils.ts": {
+          lines: 90,
+          functions: 90,
+          branches: 80,
+          statements: 90,
+        },
+        // Emulator-backed surface: integration must keep these above the floor.
+        "src/features/auth/{session,guards,users}.ts": {
+          lines: 30,
+          functions: 40,
+          branches: 50,
+          statements: 30,
+        },
+        "src/lib/firebase/**": {
+          lines: 70,
+          functions: 70,
+          branches: 60,
+          statements: 70,
+        },
       },
     },
     projects: [

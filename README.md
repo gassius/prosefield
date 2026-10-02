@@ -62,7 +62,7 @@ Compose maps `STRIPE_SECRET_KEY` from `.env` to the CLI's `STRIPE_API_KEY`. Put 
 | `pnpm dev` | Next.js frontend on the host |
 | `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm build` | Static checks |
 | `pnpm test:component` | React Testing Library component suite (jsdom) |
-| `pnpm test:coverage` | Unit + component with V8 coverage thresholds |
+| `pnpm test:coverage` | Unit + component + integration with V8 coverage thresholds (needs emulators) |
 | `pnpm test:integration` | Session/guard tests against running emulators (`pnpm backend:up` first) |
 | `pnpm test:e2e` | Playwright Chromium E2E + axe a11y (app + emulators running) |
 | `pnpm test:e2e:offline` | Landing page only, backend down (host-only frontend rule) |
@@ -79,8 +79,10 @@ Compose maps `STRIPE_SECRET_KEY` from `.env` to the CLI's `STRIPE_API_KEY`. Put 
 ```bash
 pnpm test              # Vitest unit project
 pnpm test:component    # RTL + jsdom
-pnpm test:coverage     # Enforces ≥80% lines on the pure auth/lib surface
+pnpm backend:up && pnpm test:coverage   # lib + auth coverage (per-file thresholds)
 ```
+
+Landing polish before/after captures used in PR #6 live under [`docs/screenshots/`](docs/screenshots/) ([index](docs/screenshots/README.md)).
 
 ### Integration (Docker emulators)
 

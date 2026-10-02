@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import {
+  expectNoSessionCookie,
   expectSignedIn,
   expectSignedOut,
   loginViaUi,
@@ -56,11 +57,17 @@ test("login succeeds; wrong password and unknown account show errors", async ({
     page.getByRole("alert").filter({ hasText: "Email or password is incorrect." }),
   ).toBeVisible();
   await expect(page).toHaveURL(/\/login/);
+  await expectNoSessionCookie(page);
+  await page.goto("/subscribe");
+  await expect(page).toHaveURL(/\/login/);
 
   await loginViaUi(page, uniqueEmail("unknown"), "password-123");
   await expect(
     page.getByRole("alert").filter({ hasText: "Email or password is incorrect." }),
   ).toBeVisible();
+  await expectNoSessionCookie(page);
+  await page.goto("/subscribe");
+  await expect(page).toHaveURL(/\/login/);
 
   await loginViaUi(page, email, "password-123");
   await expect(page).toHaveURL(/\/subscribe/);

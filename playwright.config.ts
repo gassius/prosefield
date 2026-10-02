@@ -6,7 +6,8 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 1 : 0,
+  // Fail flakes openly; do not hide intermittent visual/e2e issues.
+  retries: 0,
   workers: 1,
   reporter: process.env.CI
     ? [["github"], ["html", { open: "never", outputFolder: "playwright-report" }]]
@@ -15,17 +16,17 @@ export default defineConfig({
   expect: {
     timeout: 15_000,
     toHaveScreenshot: {
-      // Stable across CI retries; update baselines explicitly via test:visual:update.
-      maxDiffPixelRatio: 0.02,
+      // Tight: a single glyph/icon change should fail (~0.1% of 1440×900).
+      maxDiffPixelRatio: 0.001,
+      maxDiffPixels: 100,
       animations: "disabled",
     },
   },
   use: {
     baseURL,
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
-    // Prefer reduced motion for consistent screenshots and a11y.
     reducedMotion: "reduce",
   },
   projects: [

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { expect, type Page } from "@playwright/test";
 
+/** Must match `SESSION_COOKIE_NAME` in src/features/auth/constants.ts. */
+const SESSION_COOKIE_NAME = "__session";
+
 export const AUTH_EMULATOR_HOST =
   process.env.FIREBASE_AUTH_EMULATOR_HOST ?? "127.0.0.1:9099";
 export const FIRESTORE_EMULATOR_HOST =
@@ -8,11 +11,30 @@ export const FIRESTORE_EMULATOR_HOST =
 export const FIREBASE_PROJECT_ID =
   process.env.FIREBASE_PROJECT_ID ?? "demo-prosefield";
 
+function assertDemoEmulatorTargets(): void {
+  if (!FIREBASE_PROJECT_ID.startsWith("demo-")) {
+    throw new Error(
+      `Refusing emulator reset for non-demo project id: ${FIREBASE_PROJECT_ID}`,
+    );
+  }
+  for (const [label, host] of [
+    ["FIREBASE_AUTH_EMULATOR_HOST", AUTH_EMULATOR_HOST],
+    ["FIRESTORE_EMULATOR_HOST", FIRESTORE_EMULATOR_HOST],
+  ] as const) {
+    const hostname = host.split(":")[0] ?? "";
+    if (hostname !== "127.0.0.1" && hostname !== "localhost") {
+      throw new Error(`${label} must be loopback (got ${host})`);
+    }
+  }
+}
+
 export function uniqueEmail(prefix = "e2e"): string {
   return `${prefix}-${randomUUID()}@example.com`;
 }
 
 export async function resetEmulators(): Promise<void> {
+  assertDemoEmulatorTargets();
+
   const authUrl = `http://${AUTH_EMULATOR_HOST}/emulator/v1/projects/${FIREBASE_PROJECT_ID}/accounts`;
   const firestoreUrl = `http://${FIRESTORE_EMULATOR_HOST}/emulator/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents`;
 
@@ -21,10 +43,10 @@ export async function resetEmulators(): Promise<void> {
     fetch(firestoreUrl, { method: "DELETE" }),
   ]);
 
-  if (!authRes.ok && authRes.status !== 200) {
+  if (!authRes.ok) {
     throw new Error(`Auth emulator reset failed: ${authRes.status}`);
   }
-  if (!firestoreRes.ok && firestoreRes.status !== 200) {
+  if (!firestoreRes.ok) {
     throw new Error(`Firestore emulator reset failed: ${firestoreRes.status}`);
   }
 }
@@ -57,4 +79,9 @@ export async function expectSignedIn(page: Page, email: string): Promise<void> {
 
 export async function expectSignedOut(page: Page): Promise<void> {
   await expect(page.getByRole("link", { name: "Sign in" }).first()).toBeVisible();
+}
+
+export async function expectNoSessionCookie(page: Page): Promise<void> {
+  const cookies = await page.context().cookies();
+  expect(cookies.find((cookie) => cookie.name === SESSION_COOKIE_NAME)).toBeUndefined();
 }

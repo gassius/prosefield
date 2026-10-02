@@ -84,19 +84,19 @@ jobs:
       - name: Start emulators
         run: docker compose up -d --wait
 
-      - name: Integration tests
+      - name: Integration tests + coverage thresholds
         env:
           FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
           APP_URL: http://localhost:3000
-        run: pnpm test:integration
+        run: pnpm test:coverage
 
       - name: Stop emulators
         if: always()
         run: docker compose down -v
 
-  component-coverage:
-    name: Component + coverage
+  component:
+    name: Component
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -122,9 +122,6 @@ jobs:
 
       - name: Component tests
         run: pnpm test:component
-
-      - name: Unit + component coverage thresholds
-        run: pnpm test:coverage
 
   e2e:
     name: E2E (Playwright)
@@ -239,6 +236,23 @@ jobs:
 
       - name: Prepare example env
         run: cp .env.example .env
+
+      - name: Cache Playwright Docker image
+        # actions/cache@v4
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
+        with:
+          path: /tmp/playwright-docker.tar
+          key: playwright-docker-v1.63.0-jammy-167d0506
+
+      - name: Load or pull Playwright Docker image
+        run: |
+          IMAGE="mcr.microsoft.com/playwright:v1.63.0-jammy@sha256:167d0506cfbe3c294fb214b2d11737326eeee028aa611fa1ba538e5057675847"
+          if [ -f /tmp/playwright-docker.tar ]; then
+            docker load -i /tmp/playwright-docker.tar
+          else
+            docker pull "$IMAGE"
+            docker save "$IMAGE" -o /tmp/playwright-docker.tar
+          fi
 
       - name: Start emulators
         run: docker compose up -d --wait

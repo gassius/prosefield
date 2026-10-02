@@ -1,3 +1,5 @@
+import "server-only";
+
 import { localDevDefaults } from "@/lib/env";
 
 const currencySymbols: Record<string, string> = {
@@ -25,7 +27,7 @@ function readPlanField(
 /**
  * Plan display fallback from `PLAN_DISPLAY_*` env.
  * TODO(P2 Billing / getPlan): replace with Stripe Price when billing lands.
- * Default price left as configured in env (Carlos confirming Art Direction €8).
+ * Default display price is €8/month (Art Direction v1.1 / PLAN_DISPLAY_* defaults).
  *
  * Does not call `getEnv()` so a missing full env does not break marketing prerender.
  */
