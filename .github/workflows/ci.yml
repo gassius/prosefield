@@ -95,6 +95,196 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  component-coverage:
+    name: Component + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup pnpm
+        # pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        # actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Component tests
+        run: pnpm test:component
+
+      - name: Unit + component coverage thresholds
+        run: pnpm test:coverage
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup pnpm
+        # pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        # actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        # actions/cache@v4
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Prepare example env
+        run: cp .env.example .env
+
+      - name: Build
+        run: pnpm build
+
+      - name: Start Next.js (backend down)
+        env:
+          APP_URL: http://localhost:3000
+        run: |
+          pnpm start --hostname 127.0.0.1 --port 3000 &
+          echo $! > /tmp/next.pid
+          bash scripts/wait-for-url.sh http://localhost:3000/api/health 90
+
+      - name: E2E offline landing
+        env:
+          APP_URL: http://localhost:3000
+        run: pnpm test:e2e:offline
+
+      - name: Start emulators
+        run: docker compose up -d --wait
+
+      - name: E2E + accessibility
+        env:
+          APP_URL: http://localhost:3000
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+          FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+          FIREBASE_PROJECT_ID: demo-prosefield
+        run: pnpm exec playwright test --project=e2e --project=a11y --grep-invert @offline
+
+      - name: Upload Playwright report
+        if: failure()
+        # actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-e2e-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Stop Next.js
+        if: always()
+        run: |
+          if [ -f /tmp/next.pid ]; then kill "$(cat /tmp/next.pid)" || true; fi
+
+      - name: Stop emulators
+        if: always()
+        run: docker compose down -v
+
+  visual:
+    name: Visual regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup pnpm
+        # pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        # actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare example env
+        run: cp .env.example .env
+
+      - name: Start emulators
+        run: docker compose up -d --wait
+
+      - name: Build
+        run: pnpm build
+
+      - name: Start Next.js
+        env:
+          APP_URL: http://localhost:3000
+        run: |
+          pnpm start --hostname 127.0.0.1 --port 3000 &
+          echo $! > /tmp/next.pid
+          bash scripts/wait-for-url.sh http://localhost:3000/api/health 90
+
+      - name: Visual regression (Playwright Docker)
+        env:
+          APP_URL: http://localhost:3000
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+          FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
+          FIREBASE_PROJECT_ID: demo-prosefield
+          CI: "1"
+        run: pnpm test:visual
+
+      - name: Upload visual diff artifacts
+        if: failure()
+        # actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-visual-report
+          path: |
+            playwright-report/
+            test-results/
+            e2e/**/*-snapshots/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Stop Next.js
+        if: always()
+        run: |
+          if [ -f /tmp/next.pid ]; then kill "$(cat /tmp/next.pid)" || true; fi
+
+      - name: Stop emulators
+        if: always()
+        run: docker compose down -v
+
   compose:
     name: Compose and YAML
     runs-on: ubuntu-latest

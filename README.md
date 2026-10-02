@@ -61,10 +61,70 @@ Compose maps `STRIPE_SECRET_KEY` from `.env` to the CLI's `STRIPE_API_KEY`. Put 
 |---|---|
 | `pnpm dev` | Next.js frontend on the host |
 | `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm build` | Static checks |
+| `pnpm test:component` | React Testing Library component suite (jsdom) |
+| `pnpm test:coverage` | Unit + component with V8 coverage thresholds |
 | `pnpm test:integration` | Session/guard tests against running emulators (`pnpm backend:up` first) |
+| `pnpm test:e2e` | Playwright Chromium E2E + axe a11y (app + emulators running) |
+| `pnpm test:e2e:offline` | Landing page only, backend down (host-only frontend rule) |
+| `pnpm test:visual` | Visual regression inside the official Playwright Docker image |
+| `pnpm test:visual:update` | Regenerate visual baselines (commit the diff; review deliberately) |
 | `pnpm backend:up` | `docker compose up -d --wait` (requires Docker) |
 | `pnpm backend:down` | `docker compose down` |
 | `pnpm backend:logs` | Follow emulator logs |
+
+## Testing
+
+### Unit + component
+
+```bash
+pnpm test              # Vitest unit project
+pnpm test:component    # RTL + jsdom
+pnpm test:coverage     # Enforces ≥80% lines on the pure auth/lib surface
+```
+
+### Integration (Docker emulators)
+
+```bash
+pnpm backend:up
+pnpm test:integration
+```
+
+### E2E + accessibility (Playwright)
+
+Start the backend and a production Next server, then run Playwright on the host:
+
+```bash
+cp -n .env.example .env
+pnpm backend:up
+pnpm build && pnpm start
+# other terminal:
+pnpm exec playwright install chromium   # once per machine
+pnpm test:e2e
+```
+
+Offline landing (no emulators):
+
+```bash
+pnpm build && pnpm start
+pnpm test:e2e:offline
+```
+
+On failure, Playwright writes `playwright-report/` and `test-results/` (traces). CI uploads those as artifacts.
+
+### Visual regression
+
+Baselines are **generated and compared inside** `mcr.microsoft.com/playwright:<pinned>` so local and CI pixels match. Docker is required.
+
+```bash
+cp -n .env.example .env
+pnpm backend:up
+pnpm build && pnpm start
+# other terminal:
+pnpm test:visual            # compare
+pnpm test:visual:update     # rewrite e2e/*-snapshots/ — review in the PR
+```
+
+Update baselines only when the UI change is intentional. Do not regenerate to silence flakes.
 
 ### Optional `app` profile notes
 
