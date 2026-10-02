@@ -121,7 +121,7 @@ describe("session exchange (emulators)", () => {
             return "revoked";
           }
         },
-        { timeout: 5_000, intervals: [50, 100, 200, 400] },
+        { timeout: 5_000, interval: 100 },
       )
       .toBe("revoked");
   });
