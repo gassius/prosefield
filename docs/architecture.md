@@ -242,7 +242,7 @@ src/
     documents/ (actions.ts, schemas.ts, repository.ts, format-time.ts)
   lib/ (env.ts with Zod, firebase/admin.ts, client.ts, stripe/server.ts) all with "server-only" where applicable
 tests/ unit/, integration/, e2e/
-docker/ (emulators.Dockerfile)
+docker/ (emulators.Dockerfile, app.Dockerfile)
 docker-compose.yml, firebase.json, .firebaserc, firestore.rules, firestore.indexes.json,
 apphosting.yaml (P6), .env.example, docs/ (architecture.md, art-direction.md, write-up.md)
 ```
@@ -301,7 +301,7 @@ flowchart TB
 
 **`docker-compose.yml` services:**
 - `emulators` (default): image from `docker/emulators.Dockerfile` (`eclipse-temurin` JRE + Node + pinned `firebase-tools` inside the image only). Entrypoint is `docker/emulators-entrypoint.sh` (Auth, Firestore, UI for `demo-prosefield`). Named volume `emulator-data` mounts at `/data`; import/export uses `/data/export` so export-on-exit does not EBUSY the volume root. Ports 9099, 8080 and 4000 bind to `127.0.0.1`. Healthcheck + `stop_grace_period: 60s` for export-on-exit.
-- `app` (profile `app`): optional Next.js in Docker. Default workflow runs the frontend on the host with `pnpm dev` so Compose does not own `:3000`.
+- `app` (profile `app`): optional Next.js in Docker from `docker/app.Dockerfile` (pnpm install at image build, non-root UID 1000, `/api/health` healthcheck). Default workflow runs the frontend on the host with `pnpm dev` so Compose does not own `:3000`.
 - `stripe-cli` (profile `stripe`): the `stripe/stripe-cli` image running `listen --forward-to app:3000/api/stripe/webhook` (needs the `app` profile).
 
 **Host requirements:** nvm (recommended; `nvm use` at repo root), Node per `.nvmrc`, pnpm (Corepack), Docker + Compose for the backend. Nothing else on the host; no global `firebase-tools`.
