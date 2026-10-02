@@ -61,6 +61,11 @@ Compose maps `STRIPE_SECRET_KEY` from `.env` to the CLI's `STRIPE_API_KEY`. Put 
 |---|---|
 | `pnpm dev` | Next.js frontend on the host |
 | `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm build` | Static checks |
+| `pnpm test:integration` | Session/guard tests against running emulators (`pnpm backend:up` first) |
 | `pnpm backend:up` | `docker compose up -d --wait` (requires Docker) |
 | `pnpm backend:down` | `docker compose down` |
 | `pnpm backend:logs` | Follow emulator logs |
+
+### Optional `app` profile notes
+
+The Compose `app` service builds from [`docker/app.Dockerfile`](docker/app.Dockerfile): dependencies are installed at **image build** time (not on every start), the process runs as UID/GID `1000` (`node`), and a healthcheck probes `/api/health` so `docker compose --profile app up -d --wait` waits for the Next.js server. Rebuild after lockfile changes: `docker compose --profile app build app`.

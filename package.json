@@ -11,17 +11,24 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "vitest run --project unit",
+    "test:watch": "vitest --project unit",
+    "test:integration": "vitest run --project integration",
     "backend:up": "bash scripts/require-docker.sh up -d --wait",
     "backend:down": "bash scripts/require-docker.sh down",
     "backend:logs": "bash scripts/require-docker.sh logs -f emulators"
   },
   "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "firebase": "^12.19.0",
+    "firebase-admin": "^14.5.0",
+    "lucide-react": "^1.49.0",
     "next": "16.3.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
+    "tailwind-merge": "^3.7.0",
     "zod": "^4.1.11"
   },
   "devDependencies": {
