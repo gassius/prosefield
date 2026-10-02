@@ -85,4 +85,38 @@ describe("getPlan", () => {
     const plan = await getPlan();
     expect(plan.checkoutReassurance).toBe("€8/month · Secure checkout");
   });
+
+  it("falls back when isBillingConfigured throws (missing env)", async () => {
+    vi.stubEnv("PLAN_DISPLAY_PRICE", "8");
+    vi.stubEnv("PLAN_DISPLAY_CURRENCY", "EUR");
+    vi.stubEnv("PLAN_DISPLAY_INTERVAL", "month");
+    vi.resetModules();
+    vi.doMock("@/features/billing/configured", () => ({
+      isBillingConfigured: () => {
+        throw new Error("ZodError: missing env");
+      },
+    }));
+    const { getPlan } = await import("@/features/billing/plan");
+    const plan = await getPlan();
+    expect(plan.checkoutReassurance).toBe("€8/month · Secure checkout");
+    expect(retrievePrice).not.toHaveBeenCalled();
+  });
+
+  it("fetchPlanFromStripe rejects non-recurring prices", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
+    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    retrievePrice.mockResolvedValue({
+      unit_amount: null,
+      currency: "eur",
+      recurring: null,
+      product: "prod_deleted",
+    });
+    const { __fetchPlanFromStripeForTests } = await import(
+      "@/features/billing/plan"
+    );
+    await expect(__fetchPlanFromStripeForTests()).rejects.toThrow(/recurring/i);
+  });
 });

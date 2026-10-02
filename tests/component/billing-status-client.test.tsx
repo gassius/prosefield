@@ -62,4 +62,21 @@ describe("BillingStatusClient", () => {
     });
     expect(replace).toHaveBeenCalledWith("/documents");
   });
+
+  it("switches pending to failed when poll reports failed", async () => {
+    vi.useFakeTimers();
+    pollBillingStatus.mockResolvedValue({ status: "failed" });
+    const { BillingStatusClient } = await import(
+      "@/app/(account)/billing/status/billing-status-client"
+    );
+    render(<BillingStatusClient initialView="pending" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_100);
+    });
+    expect(
+      screen.getByRole("heading", { name: "Payment didn't go through" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+  });
 });

@@ -80,6 +80,37 @@ describe("session-sync coverage", () => {
     expect(
       await syncFromCheckoutSession({ uid: "uid_1", sessionId: "cs" }),
     ).toEqual({ synced: false, reason: "no_subscription" });
+
+    retrieveSession.mockResolvedValue({
+      client_reference_id: "uid_1",
+      status: "complete",
+      payment_status: "paid",
+      subscription: { id: "sub_obj" },
+    });
+    retrieveSubscription.mockResolvedValue({
+      id: "sub_obj",
+      status: "active",
+      cancel_at_period_end: false,
+      customer: "cus_1",
+      items: { data: [{ price: { id: "price_1" }, current_period_end: 1 }] },
+    });
+    expect(
+      await syncFromCheckoutSession({ uid: "uid_1", sessionId: "cs" }),
+    ).toEqual({ synced: true });
+  });
+
+  it("syncFromCheckoutSession returns not_configured for placeholders", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", PLACEHOLDER_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_PRICE_ID", PLACEHOLDER_STRIPE_PRICE_ID);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLACEHOLDER_STRIPE_WEBHOOK_SECRET);
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    const { syncFromCheckoutSession } = await import(
+      "@/features/billing/session-sync"
+    );
+    expect(
+      await syncFromCheckoutSession({ uid: "uid_1", sessionId: "cs" }),
+    ).toEqual({ synced: false, reason: "not_configured" });
   });
 
   it("resolveBillingStatusView handles not_configured, sync failures, and expired", async () => {

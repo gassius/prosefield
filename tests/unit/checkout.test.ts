@@ -70,6 +70,31 @@ describe("createCheckoutSession", () => {
     expect(CheckoutError).toBeTruthy();
   });
 
+  it("allows checkout when projection is past_due (resubscribe)", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
+    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
+    vi.stubEnv("APP_URL", "http://localhost:3000");
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    const projection = await import("@/features/billing/projection");
+    vi.mocked(projection.getSubscriptionProjection).mockResolvedValue({
+      status: "past_due",
+      stripeSubscriptionId: "sub_A",
+    } as never);
+    sessionsCreate.mockResolvedValue({
+      id: "cs_resub",
+      url: "https://checkout.stripe.com/c/pay/cs_resub",
+    });
+
+    const { createCheckoutSession } = await import(
+      "@/features/billing/checkout"
+    );
+    await expect(
+      createCheckoutSession({ uid: "u1", email: "a@b.co" }),
+    ).resolves.toMatchObject({ sessionId: "cs_resub" });
+  });
+
   it("creates a subscription Checkout Session with firebaseUid metadata", async () => {
     vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
@@ -104,5 +129,24 @@ describe("createCheckoutSession", () => {
         cancel_url: "http://localhost:3000/subscribe",
       }),
     );
+  });
+
+  it("throws stripe_error when Checkout Session has no url", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
+    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
+    vi.stubEnv("APP_URL", "http://localhost:3000");
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    const projection = await import("@/features/billing/projection");
+    vi.mocked(projection.getSubscriptionProjection).mockResolvedValue(null);
+    sessionsCreate.mockResolvedValue({ id: "cs_nourl", url: null });
+
+    const { createCheckoutSession } = await import(
+      "@/features/billing/checkout"
+    );
+    await expect(
+      createCheckoutSession({ uid: "u1", email: "a@b.co" }),
+    ).rejects.toMatchObject({ code: "stripe_error" });
   });
 });

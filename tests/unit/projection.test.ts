@@ -62,4 +62,21 @@ describe("projectionFromSubscription", () => {
     expect(projection.currentPeriodEnd).toBeNull();
     expect(projection.lastEventId).toBeNull();
   });
+
+  it("handles string price ids and missing customer", () => {
+    const withStringPrice = projectionFromSubscription(
+      {
+        id: "sub_str",
+        status: "active",
+        cancel_at_period_end: false,
+        customer: null,
+        items: {
+          data: [{ price: "price_as_string", current_period_end: 50 }],
+        },
+      } as unknown as Stripe.Subscription,
+      "evt",
+    );
+    expect(withStringPrice.stripeCustomerId).toBe("");
+    expect(withStringPrice.stripePriceId).toBe("price_as_string");
+  });
 });

@@ -37,11 +37,7 @@ export default defineConfig({
         "src/features/billing/**/*.{ts,tsx}",
       ],
       // Client Firebase bootstrap is browser-only; covered indirectly by E2E.
-      // Server actions and Stripe client bootstrap are thin wrappers.
-      exclude: [
-        "src/lib/firebase/client.ts",
-        "src/features/billing/actions.ts",
-      ],
+      exclude: ["src/lib/firebase/client.ts"],
       thresholds: {
         // Ratcheted to measured Component+coverage values minus a small margin.
         // Billing added to include; thresholds must not go down (ticket + AGENTS.md).
@@ -55,7 +51,7 @@ export default defineConfig({
         "src/lib/utils.ts": highBar,
         "src/features/auth/{session,guards,users}.ts": authSurfaceBar,
         "src/features/billing/{entitlement,plan-display,configured}.ts": highBar,
-        "src/features/billing/{projection,webhook,checkout,customers,session-sync,plan}.ts":
+        "src/features/billing/{projection,webhook,checkout,customers,session-sync,plan,actions}.ts":
           authSurfaceBar,
         "src/lib/firebase/**": {
           lines: 95,

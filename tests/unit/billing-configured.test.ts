@@ -57,4 +57,21 @@ describe("isBillingConfigured", () => {
       } as never),
     ).toBe(false);
   });
+
+  it("returns false when getEnv throws (build without .env)", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/env", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/env")>("@/lib/env");
+      return {
+        ...actual,
+        getEnv: () => {
+          throw new Error("ZodError");
+        },
+      };
+    });
+    const { isBillingConfigured } = await import(
+      "@/features/billing/configured"
+    );
+    expect(isBillingConfigured()).toBe(false);
+  });
 });

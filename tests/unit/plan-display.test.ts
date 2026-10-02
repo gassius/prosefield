@@ -48,4 +48,34 @@ describe("getPlanDisplay", () => {
       "SEK 10/month · Secure checkout",
     );
   });
+
+  it("formats fractional Stripe amounts and non-EUR currencies", async () => {
+    const { formatPlanFromStripe } = await import(
+      "@/features/billing/plan-display"
+    );
+    const fractional = formatPlanFromStripe({
+      name: "Prosefield",
+      unitAmount: 850,
+      currency: "eur",
+      interval: "month",
+    });
+    expect(fractional.priceLabel).toBe("€8.5/month");
+
+    const usd = formatPlanFromStripe({
+      name: "Prosefield",
+      unitAmount: 999,
+      currency: "usd",
+      interval: "month",
+    });
+    expect(usd.priceLabel).toBe("$9.99/month");
+
+    const jpy = formatPlanFromStripe({
+      name: "Prosefield",
+      unitAmount: 1000,
+      currency: "jpy",
+      interval: "month",
+    });
+    expect(jpy.priceLabel).toMatch(/\/month$/);
+    expect(jpy.priceLabel).not.toMatch(/^€/);
+  });
 });

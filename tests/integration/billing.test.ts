@@ -282,4 +282,77 @@ describe("billing (emulators)", () => {
     const dupBody = (await duplicate.json()) as { processed: boolean };
     expect(dupBody.processed).toBe(false);
   });
+
+  it("keeps active sub_B when a late canceled event for sub_A arrives", async () => {
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+    const { POST } = await import("@/app/api/stripe/webhook/route");
+    const stripe = new Stripe(TEST_SECRET);
+    const uid = `uid-${randomUUID()}`;
+
+    // Simulate past_due → resubscribe: projection already points at active sub_B.
+    await getAdminFirestore().collection("subscriptions").doc(uid).set({
+      status: "active",
+      stripeCustomerId: "cus_lockout",
+      stripeSubscriptionId: "sub_B",
+      stripePriceId: TEST_PRICE,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      updatedAt: new Date(),
+      lastEventId: "evt_sub_b",
+    });
+
+    subscriptionsRetrieve.mockResolvedValue({
+      id: "sub_A",
+      object: "subscription",
+      status: "canceled",
+      cancel_at_period_end: false,
+      customer: "cus_lockout",
+      metadata: { firebaseUid: uid },
+      items: {
+        object: "list",
+        data: [
+          {
+            id: "si_a",
+            object: "subscription_item",
+            current_period_end: 1_900_000_000,
+            current_period_start: 1_800_000_000,
+            price: { id: TEST_PRICE },
+          },
+        ],
+        has_more: false,
+        url: "",
+      },
+    });
+
+    const eventId = `evt_${randomUUID()}`;
+    const payload = JSON.stringify({
+      id: eventId,
+      object: "event",
+      type: "customer.subscription.deleted",
+      created: Math.floor(Date.now() / 1000),
+      data: { object: { object: "subscription", id: "sub_A" } },
+    });
+    const signature = stripe.webhooks.generateTestHeaderString({
+      payload,
+      secret: WEBHOOK_SECRET,
+    });
+
+    const accepted = await POST(
+      new Request("http://localhost:3000/api/stripe/webhook", {
+        method: "POST",
+        headers: { "stripe-signature": signature },
+        body: payload,
+      }),
+    );
+    expect(accepted.status).toBe(200);
+    const body = (await accepted.json()) as { processed: boolean };
+    expect(body.processed).toBe(true);
+
+    const subSnap = await getAdminFirestore()
+      .collection("subscriptions")
+      .doc(uid)
+      .get();
+    expect(subSnap.data()?.status).toBe("active");
+    expect(subSnap.data()?.stripeSubscriptionId).toBe("sub_B");
+  });
 });

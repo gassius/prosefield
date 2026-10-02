@@ -43,10 +43,15 @@ const getCachedStripePlan = unstable_cache(
 
 /**
  * Plan from `STRIPE_PRICE_ID` (cached ~1 h), with `PLAN_DISPLAY_*` fallback
- * when Stripe is not configured or unreachable (Architecture §5.2).
+ * when Stripe is not configured, env is incomplete, or unreachable (§5.2).
+ * Must not throw during `pnpm build` without `.env` (same as main).
  */
 export async function getPlan(): Promise<PlanDisplay> {
-  if (!isBillingConfigured()) {
+  try {
+    if (!isBillingConfigured()) {
+      return getPlanDisplay();
+    }
+  } catch {
     return getPlanDisplay();
   }
 

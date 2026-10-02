@@ -5,11 +5,18 @@ import { getEnv, localDevDefaults, type Env } from "@/lib/env";
 /**
  * True when Stripe is configured with real test credentials (not placeholders).
  * Local/CI defaults use `*_replaceme` so the app boots without keys.
+ * Returns false when env cannot be parsed (e.g. `pnpm build` without `.env`).
  */
-export function isBillingConfigured(env: Env = getEnv()): boolean {
-  const secret = env.STRIPE_SECRET_KEY;
-  const price = env.STRIPE_PRICE_ID;
-  const webhook = env.STRIPE_WEBHOOK_SECRET;
+export function isBillingConfigured(env?: Env): boolean {
+  let resolved: Env;
+  try {
+    resolved = env ?? getEnv();
+  } catch {
+    return false;
+  }
+  const secret = resolved.STRIPE_SECRET_KEY;
+  const price = resolved.STRIPE_PRICE_ID;
+  const webhook = resolved.STRIPE_WEBHOOK_SECRET;
 
   if (
     secret === localDevDefaults.STRIPE_SECRET_KEY ||

@@ -2,6 +2,7 @@ import "server-only";
 
 import { FieldValue, type Timestamp } from "firebase-admin/firestore";
 import type Stripe from "stripe";
+import { shouldReplaceSubscriptionProjection } from "@/features/billing/entitlement";
 import { getAdminFirestore } from "@/lib/firebase/admin";
 
 export type SubscriptionProjection = {
@@ -63,24 +64,37 @@ export function projectionFromSubscription(
 /**
  * Upsert `subscriptions/{uid}` from a retrieved Stripe Subscription snapshot.
  * Shared by the webhook and `/billing/status` session-sync fallback.
+ * Skips the write when a different, currently active subscription owns the doc.
  */
 export async function upsertSubscriptionProjection(input: {
   uid: string;
   subscription: Stripe.Subscription;
   lastEventId: string | null;
-}): Promise<void> {
+}): Promise<{ written: boolean }> {
   const db = getAdminFirestore();
   const ref = db.collection("subscriptions").doc(input.uid);
+  const existing = await ref.get();
+  const current = existing.exists ? existing.data() : null;
+  if (
+    !shouldReplaceSubscriptionProjection(current, {
+      id: input.subscription.id,
+      status: input.subscription.status,
+    })
+  ) {
+    return { written: false };
+  }
   const data = projectionFromSubscription(
     input.subscription,
     input.lastEventId,
   );
   await ref.set(data, { merge: true });
+  return { written: true };
 }
 
 /**
  * Transactional stripeEvents dedupe + projection upsert (Architecture §5.4).
- * Returns whether this event was newly processed.
+ * Returns whether this event was newly processed. Always records the event when
+ * new; may skip the projection write to protect an active different subscription.
  */
 export async function processEventWithDedupe(input: {
   eventId: string;
@@ -88,16 +102,23 @@ export async function processEventWithDedupe(input: {
   eventCreated: number;
   uid: string;
   subscription: Stripe.Subscription;
-}): Promise<{ processed: boolean }> {
+}): Promise<{ processed: boolean; projected: boolean }> {
   const db = getAdminFirestore();
   const eventRef = db.collection("stripeEvents").doc(input.eventId);
   const subRef = db.collection("subscriptions").doc(input.uid);
 
   return db.runTransaction(async (tx) => {
-    const existing = await tx.get(eventRef);
-    if (existing.exists) {
-      return { processed: false };
+    const existingEvent = await tx.get(eventRef);
+    if (existingEvent.exists) {
+      return { processed: false, projected: false };
     }
+
+    const existingSub = await tx.get(subRef);
+    const current = existingSub.exists ? existingSub.data() : null;
+    const shouldProject = shouldReplaceSubscriptionProjection(current, {
+      id: input.subscription.id,
+      status: input.subscription.status,
+    });
 
     tx.set(eventRef, {
       type: input.eventType,
@@ -105,12 +126,16 @@ export async function processEventWithDedupe(input: {
       processedAt: FieldValue.serverTimestamp(),
     });
 
+    if (!shouldProject) {
+      return { processed: true, projected: false };
+    }
+
     const projection = projectionFromSubscription(
       input.subscription,
       input.eventId,
     );
     tx.set(subRef, projection, { merge: true });
-    return { processed: true };
+    return { processed: true, projected: true };
   });
 }
 

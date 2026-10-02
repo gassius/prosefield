@@ -34,6 +34,21 @@ test("upgrade gate: inactive shows Art Direction 12.4; active unlocks documents"
   await expect(page.getByRole("textbox")).toHaveCount(0);
 
   const uid = await lookupUidByEmail(email);
+
+  // Non-active statuses must not unlock (mutation D2).
+  for (const status of ["past_due", "trialing", "canceled"] as const) {
+    await seedSubscriptionProjection(uid, status);
+    await page.goto("/documents");
+    await expect(
+      page.getByRole("heading", { name: "Subscribe to start writing" }),
+    ).toBeVisible();
+    await page.goto("/subscribe");
+    await expect(page).toHaveURL(/\/subscribe/);
+    await expect(
+      page.getByRole("heading", { name: "Subscribe to start writing" }),
+    ).toBeVisible();
+  }
+
   await seedSubscriptionProjection(uid, "active");
   await page.goto("/documents");
   await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
