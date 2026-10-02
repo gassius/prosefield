@@ -2,8 +2,10 @@ import AxeBuilder from "@axe-core/playwright";
 import { test, expect } from "@playwright/test";
 import {
   expectSignedIn,
+  lookupUidByEmail,
   registerViaUi,
   resetEmulators,
+  seedSubscriptionProjection,
   uniqueEmail,
 } from "./helpers";
 
@@ -64,6 +66,29 @@ test.describe("accessibility smoke", () => {
     await expect(
       page.getByText("Confirming your payment with Stripe…"),
     ).toBeVisible();
+    await expectNoSeriousOrCritical(page);
+  });
+
+  test("documents empty, editor, and delete dialog", async ({ page }) => {
+    await resetEmulators();
+    const email = uniqueEmail("a11y-docs");
+    await registerViaUi(page, email, "password-123");
+    await expectSignedIn(page, email);
+    const uid = await lookupUidByEmail(email);
+    await seedSubscriptionProjection(uid, "active");
+
+    await page.goto("/documents");
+    await expect(
+      page.getByRole("heading", { name: "Your first page is waiting." }),
+    ).toBeVisible();
+    await expectNoSeriousOrCritical(page);
+
+    await page.getByRole("button", { name: "New document" }).click();
+    await expect(page.getByLabel("Document title")).toBeVisible();
+    await expectNoSeriousOrCritical(page);
+
+    await page.getByRole("button", { name: "Delete document" }).first().click();
+    await expect(page.getByRole("heading", { name: /Delete/ })).toBeVisible();
     await expectNoSeriousOrCritical(page);
   });
 });

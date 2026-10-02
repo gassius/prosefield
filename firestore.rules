@@ -1,6 +1,40 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Document bounds (Architecture §8). Browser access stays denied
+    // (Architecture §5.6). Title 1–120 chars; content serialised JSON ≤ 512 KiB.
+    function titleWithinBounds(title) {
+      return title is string
+        && title.size() >= 1
+        && title.size() <= 120;
+    }
+
+    function contentWithinBounds(content) {
+      return content is string
+        && content.size() <= 524288;
+    }
+
+    function validDocumentWrite() {
+      return request.resource.data.keys().hasAll([
+          'ownerId',
+          'title',
+          'content',
+          'createdAt',
+          'updatedAt',
+        ])
+        && request.resource.data.ownerId is string
+        && titleWithinBounds(request.resource.data.title)
+        && contentWithinBounds(request.resource.data.content);
+    }
+
+    match /documents/{documentId} {
+      allow read: if false;
+      // Default deny for clients. Bounds helpers are composed so rules tests
+      // can assert oversize title/content still fail; && false keeps deny.
+      allow create, update: if validDocumentWrite() && false;
+      allow delete: if false;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

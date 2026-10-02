@@ -35,6 +35,7 @@ export default defineConfig({
         "src/lib/**/*.{ts,tsx}",
         "src/features/auth/**/*.{ts,tsx}",
         "src/features/billing/**/*.{ts,tsx}",
+        "src/features/documents/**/*.{ts,tsx}",
       ],
       // Client Firebase bootstrap is browser-only; covered indirectly by E2E.
       exclude: ["src/lib/firebase/client.ts"],
@@ -53,6 +54,9 @@ export default defineConfig({
         "src/features/billing/{entitlement,plan-display,configured}.ts": highBar,
         "src/features/billing/{projection,webhook,checkout,customers,session-sync,plan,actions}.ts":
           authSurfaceBar,
+        "src/features/documents/{schemas,format-time,save-state,ownership}.ts":
+          highBar,
+        "src/features/documents/{repository,actions}.ts": authSurfaceBar,
         "src/lib/firebase/**": {
           lines: 95,
           functions: 95,

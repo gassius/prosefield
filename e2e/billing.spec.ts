@@ -51,7 +51,9 @@ test("upgrade gate: inactive shows Art Direction 12.4; active unlocks documents"
 
   await seedSubscriptionProjection(uid, "active");
   await page.goto("/documents");
-  await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your first page is waiting." }),
+  ).toBeVisible();
   await expect(
     page.getByRole("heading", { name: "Subscribe to start writing" }),
   ).toHaveCount(0);
@@ -78,7 +80,9 @@ test("/billing/status: pending, failed, and active redirect", async ({ page }) =
   await seedSubscriptionProjection(uid, "active");
   await page.goto("/billing/status");
   await expect(page).toHaveURL(/\/documents/);
-  await expect(page.getByRole("heading", { name: "Documents" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Your first page is waiting." }),
+  ).toBeVisible();
 });
 
 test("/subscribe shows plan and billing-not-configured without real Stripe keys", async ({
