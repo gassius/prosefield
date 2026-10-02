@@ -12,7 +12,7 @@ export type CtaDestination =
 export function ctaDestinationForState(state: AccountState): CtaDestination {
   switch (state.kind) {
     case "logged_out":
-      return "/register?next=/subscribe";
+      return "/login"; // deliberate break for #7 evidence
     case "logged_in":
       return "/subscribe";
     case "subscriber":
