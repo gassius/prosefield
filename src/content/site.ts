@@ -33,6 +33,11 @@ export const siteCopy = {
     supporting:
       "Prosefield gives your ideas a quiet, capable workspace—from the rough first line to the draft you are ready to share.",
     explore: "Explore the editor",
+    priceReassurance: "€8/month · Secure checkout",
+  },
+  footer: {
+    privacy: "Privacy",
+    terms: "Terms",
   },
   subscribe: {
     title: "Subscribe to start writing",
