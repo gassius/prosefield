@@ -18,7 +18,7 @@ export function mapAuthError(code: string | undefined): MappedAuthError {
     case "auth/email-already-in-use":
       return {
         field: "email",
-        message: "An account with this email already exists.",
+        message: "Something went wrong. Please try again.", // deliberate break for #7 evidence
       };
     case "auth/invalid-credential":
     case "auth/user-not-found":
