@@ -7,9 +7,11 @@ services:
         FIREBASE_TOOLS_VERSION: "15.32.1"
     volumes:
       - .:/workspace
-      # Named volume: emulator Auth/Firestore data survives compose stop/down
-      # (use `docker compose down -v` only when you intend to wipe it).
-      - emulator-data:/workspace/.emulator-data
+      # Named volume at a *parent* path; entrypoint exports to /data/export.
+      # Mounting the volume directly on the export dir makes firebase-tools
+      # rmSync hit EBUSY and wipe data on every stop (see PR review M1).
+      # Wipe intentionally with `docker compose down -v`.
+      - emulator-data:/data
     ports:
       - "127.0.0.1:4000:4000"
       - "127.0.0.1:8080:8080"

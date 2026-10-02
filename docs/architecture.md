@@ -31,7 +31,7 @@ Prosefield is a single full-stack **Next.js 16 (App Router, strict TypeScript)**
 
 Next.js is both the frontend and the backend-for-frontend. Server code checks Firebase session cookies, does all Firestore access through Firebase Admin, creates Stripe Checkout Sessions, verifies Stripe webhooks, and decides access.
 
-**Primary target: local first.** Host `pnpm dev` for the Next.js frontend; `docker compose up -d --wait` for Firebase Auth and Firestore emulators (project `demo-prosefield`, so no real Firebase project or login is needed) and the Emulator UI. Optional Compose profiles run the app and Stripe CLI webhook forwarder in Docker. The evaluator needs Node per `.nvmrc`, pnpm, Docker, and their own Stripe **test** keys — no host JDK.
+**Primary target: local first.** Host `pnpm dev` for the Next.js frontend; `docker compose up -d --wait` for Firebase Auth and Firestore emulators (project `demo-prosefield`, so no real Firebase project or login is needed) and the Emulator UI. Optional Compose profiles run the app and Stripe CLI webhook forwarder in Docker. The evaluator needs Node per `.nvmrc`, pnpm, Docker, and their own Stripe **test** keys — nothing else on the host.
 
 **Optional final phase: Firebase for everything.** Firebase App Hosting serves the whole Next.js app (SSR, Route Handlers, the webhook) together with Firebase Auth and Cloud Firestore in one GCP project. There's no Vercel or second host. This is added value only and never blocks the acceptance path.
 
@@ -300,11 +300,11 @@ flowchart TB
 ```
 
 **`docker-compose.yml` services:**
-- `emulators` (default): image from `docker/emulators.Dockerfile` (`eclipse-temurin` JRE + Node + pinned `firebase-tools` inside the image only). Entrypoint is `docker/emulators-entrypoint.sh` (Auth, Firestore, UI for `demo-prosefield`, import/export via the `emulator-data` named volume). Ports 9099, 8080 and 4000 bind to `127.0.0.1`. Healthcheck + `stop_grace_period: 60s` for export-on-exit.
+- `emulators` (default): image from `docker/emulators.Dockerfile` (`eclipse-temurin` JRE + Node + pinned `firebase-tools` inside the image only). Entrypoint is `docker/emulators-entrypoint.sh` (Auth, Firestore, UI for `demo-prosefield`). Named volume `emulator-data` mounts at `/data`; import/export uses `/data/export` so export-on-exit does not EBUSY the volume root. Ports 9099, 8080 and 4000 bind to `127.0.0.1`. Healthcheck + `stop_grace_period: 60s` for export-on-exit.
 - `app` (profile `app`): optional Next.js in Docker. Default workflow runs the frontend on the host with `pnpm dev` so Compose does not own `:3000`.
 - `stripe-cli` (profile `stripe`): the `stripe/stripe-cli` image running `listen --forward-to app:3000/api/stripe/webhook` (needs the `app` profile).
 
-**Host requirements:** nvm (recommended; `nvm use` at repo root), Node per `.nvmrc`, pnpm (Corepack), Docker + Compose for the backend. No host JDK and no global `firebase-tools`.
+**Host requirements:** nvm (recommended; `nvm use` at repo root), Node per `.nvmrc`, pnpm (Corepack), Docker + Compose for the backend. Nothing else on the host; no global `firebase-tools`.
 
 **README quick start (target under 10 minutes, measured once on a clean machine and recorded):**
 1. Prerequisites above. A Stripe test account is free.
@@ -364,7 +364,7 @@ The total for P0–P5 is about 9 h, inside the 6–10 h estimate, leaving about 
 ## 15. Operational notes
 - Structured logs with request and event IDs. Never log secrets, tokens, cookies, passwords or document bodies.
 - Keep `stripeEvents` for debugging.
-- Emulator data persists in the Compose named volume `emulator-data` (also mirrored under git-ignored `.emulator-data/` in the container). Wipe with `docker compose down -v`.
+- Emulator data persists in the Compose named volume `emulator-data` at `/data/export` inside the container. Wipe with `docker compose down -v`.
 - P6: budget alert, min instances 0, rollback through App Hosting rollout history.
 
 ## 16. Key decisions and trade-offs
@@ -372,7 +372,7 @@ The total for P0–P5 is about 9 h, inside the 6–10 h estimate, leaving about 
 | Decision | Benefit | Trade-off |
 |---|---|---|
 | One Next.js app | Small system, shared types, one origin | Backend deploys with the frontend |
-| Docker-only local Firebase (`demo-` project) | The evaluator needs no Firebase account and no host JDK; can't touch production | Docker is a prerequisite for the backend; first image pull time |
+| Docker-only local Firebase (`demo-` project) | The evaluator needs no Firebase account and nothing beyond Node/pnpm/Docker on the host; can't touch production | Docker is a prerequisite for the backend; first image pull time |
 | Firebase for everything (optional) | One platform, one bill, one console; no Vercel | Blaze plan; no PR previews |
 | Session cookie (`__session`) | Server-validated sessions as required; App Hosting compatible | Token exchange + CSRF handling |
 | Server-only Firestore | Authorisation in one tested layer; deny-all rules | No real-time or offline client features |

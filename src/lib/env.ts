@@ -9,6 +9,27 @@ const booleanFlag = z
 
 const nonEmpty = z.string().trim().min(1);
 
+/** Local demo placeholders (same shape as `.env.example`) for bare `pnpm dev`. */
+export const localDevDefaults = {
+  NEXT_PUBLIC_FIREBASE_API_KEY: "demo-api-key",
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: "demo-prosefield.firebaseapp.com",
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: "demo-prosefield",
+  NEXT_PUBLIC_FIREBASE_APP_ID: "1:000000000000:web:0000000000000000000000",
+  NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST: "localhost:9099",
+  APP_URL: "http://localhost:3000",
+  FIREBASE_PROJECT_ID: "demo-prosefield",
+  STRIPE_SECRET_KEY: "sk_test_replaceme",
+  STRIPE_WEBHOOK_SECRET: "whsec_replaceme",
+  STRIPE_PRICE_ID: "price_replaceme",
+  FEATURE_CUSTOMER_PORTAL: "false",
+  PLAN_DISPLAY_NAME: "Prosefield",
+  PLAN_DISPLAY_PRICE: "9",
+  PLAN_DISPLAY_CURRENCY: "EUR",
+  PLAN_DISPLAY_INTERVAL: "month",
+  FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
+  FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+} as const;
+
 export const envSchema = z.object({
   // Public (browser)
   NEXT_PUBLIC_FIREBASE_API_KEY: nonEmpty,
@@ -20,7 +41,7 @@ export const envSchema = z.object({
 
   // Server
   APP_URL: z.string().trim().url(),
-  // TODO(P6): relax demo-prosefield literal when deploying to a real Firebase project.
+  // TODO(P6): relax demo-prosefield literals when deploying to a real Firebase project.
   FIREBASE_PROJECT_ID: z.literal("demo-prosefield"),
   STRIPE_SECRET_KEY: z
     .string()
@@ -52,6 +73,29 @@ export const envSchema = z.object({
 
 export type Env = z.infer<typeof envSchema>;
 
+function isBlank(value: string | undefined): boolean {
+  return value === undefined || value.trim() === "";
+}
+
+/**
+ * In non-production, fill missing keys from localDevDefaults so a fresh clone
+ * can `pnpm dev` without copying `.env` first. Production still requires real env.
+ */
+export function mergeEnvSource(
+  source: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): Record<string, string | undefined> {
+  const merged: Record<string, string | undefined> = { ...source };
+  if (process.env.NODE_ENV === "production") {
+    return merged;
+  }
+  for (const [key, value] of Object.entries(localDevDefaults)) {
+    if (isBlank(merged[key])) {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
 export function parseEnv(
   source: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ): Env {
@@ -62,7 +106,7 @@ let cached: Env | undefined;
 
 export function getEnv(): Env {
   if (!cached) {
-    cached = parseEnv();
+    cached = parseEnv(mergeEnvSource(process.env));
   }
   return cached;
 }

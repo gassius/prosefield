@@ -34,8 +34,11 @@ yarn-error.log*
 .env*
 !.env.example
 
-# firebase emulators
+# firebase emulators (legacy host path; Docker uses named volume /data/export)
 .emulator-data/
+
+# firebase-tools export temp dirs (created under cwd during export-on-exit)
+firebase-export-*
 
 # vercel
 .vercel

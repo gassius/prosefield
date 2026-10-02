@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { envSchema, parseEnv } from "@/lib/env";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { envSchema, mergeEnvSource, parseEnv } from "@/lib/env";
 
 const validEnv = {
   NEXT_PUBLIC_FIREBASE_API_KEY: "demo-api-key",
@@ -99,5 +99,25 @@ describe("env schema", () => {
     expect(env.FIREBASE_AUTH_EMULATOR_HOST).toBeUndefined();
     expect(env.FIRESTORE_EMULATOR_HOST).toBeUndefined();
     expect(env.NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST).toBeUndefined();
+  });
+
+  describe("mergeEnvSource local defaults", () => {
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("fills blanks outside production so bare pnpm dev can start", () => {
+      vi.stubEnv("NODE_ENV", "development");
+      const merged = mergeEnvSource({});
+      expect(merged.APP_URL).toBe("http://localhost:3000");
+      expect(merged.STRIPE_SECRET_KEY).toBe("sk_test_replaceme");
+      expect(parseEnv(merged).FIREBASE_PROJECT_ID).toBe("demo-prosefield");
+    });
+
+    it("does not apply defaults in production", () => {
+      vi.stubEnv("NODE_ENV", "production");
+      const merged = mergeEnvSource({});
+      expect(merged.APP_URL).toBeUndefined();
+    });
   });
 });

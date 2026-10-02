@@ -5,16 +5,16 @@ Local-first writing workspace. Specs live in [`docs/architecture.md`](docs/archi
 ## Prerequisites
 
 - **nvm** (recommended) — run `nvm use` at the repo root so the shell matches [`.nvmrc`](.nvmrc)
-- **Node** — exact version from `.nvmrc` (currently 24.21.0)
+- **Node** — exact version from [`.nvmrc`](.nvmrc) (`nvm use`)
 - **pnpm** — via Corepack (`corepack enable`)
 - **Docker + Compose** — only required to run the backend (Auth, Firestore, Emulator UI)
 
-No host JDK and no global `firebase-tools`. Emulators run only inside Docker.
+Nothing else is needed on the host. Emulators run only inside Docker (no global `firebase-tools`).
 
 ## Quick start
 
 1. `nvm use`
-2. `cp .env.example .env`, then paste a Stripe **test** key (`sk_test_…` only). A Stripe test account is free.
+2. Optional: `cp .env.example .env` and paste a Stripe **test** key (`sk_test_…` only) when you need real Stripe CLI / billing work. A Stripe test account is free. `pnpm dev` also starts with built-in local defaults if `.env` is missing.
 3. Frontend (no backend required):
 
    ```bash
@@ -24,9 +24,10 @@ No host JDK and no global `firebase-tools`. Emulators run only inside Docker.
 
    Open http://localhost:3000. Pages render with the backend down; features that need Auth/Firestore degrade until the backend is up.
 
-4. Backend (Docker only):
+4. Backend (Docker only) — copy `.env.example` to `.env` first (Compose reads Stripe placeholders even when the `stripe` profile is off):
 
    ```bash
+   cp -n .env.example .env
    docker compose up -d --wait
    ```
 
@@ -36,7 +37,7 @@ No host JDK and no global `firebase-tools`. Emulators run only inside Docker.
 
 ### Emulator data
 
-Auth/Firestore emulator state lives in the Docker named volume `emulator-data` (mounted at `/workspace/.emulator-data` in the container). It survives `docker compose stop` and `docker compose down`. Wipe only with `docker compose down -v`. On stop/down the entrypoint uses `--export-on-exit`; the service has `stop_grace_period: 60s` so export can finish.
+Auth/Firestore emulator state lives in the Docker named volume `emulator-data`, mounted at **`/data`** in the container. The entrypoint imports/exports **`/data/export`** (a subdirectory of the volume) so export-on-exit can replace that path without hitting EBUSY on the volume mount point. Data survives `docker compose stop` and `docker compose down`. Wipe only with `docker compose down -v`. The service has `stop_grace_period: 60s` so export can finish.
 
 ### Optional Compose profiles
 
