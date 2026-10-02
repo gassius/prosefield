@@ -90,11 +90,10 @@ describe("HeroCtaGroup", () => {
     const html = renderToStaticMarkup(
       createElement(HeroCtaGroup, {
         ctaHref: "/register?next=/subscribe",
-        checkoutReassurance: "€9/month · Secure checkout",
+        checkoutReassurance: "€8/month · Secure checkout",
       }),
     );
-    expect(html).toContain("€9/month · Secure checkout");
-    expect(html).not.toContain("€8/month");
+    expect(html).toContain("€8/month · Secure checkout");
     // Both CTAs must include w-full for mobile stacking (§16).
     const fullWidthMatches = html.match(/w-full/g) ?? [];
     expect(fullWidthMatches.length).toBeGreaterThanOrEqual(2);

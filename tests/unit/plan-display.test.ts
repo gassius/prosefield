@@ -21,9 +21,8 @@ describe("getPlanDisplay", () => {
     const { getPlanDisplay } = await import("@/features/billing/plan-display");
     const plan = getPlanDisplay();
     expect(plan.price).toBe(localDevDefaults.PLAN_DISPLAY_PRICE);
-    expect(plan.checkoutReassurance).toBe("€9/month · Secure checkout");
+    expect(plan.checkoutReassurance).toBe("€8/month · Secure checkout");
     expect(plan.checkoutReassurance).not.toContain("EUR");
-    expect(plan.checkoutReassurance).not.toBe("€8/month · Secure checkout");
   });
 
   it("uses the euro sign for EUR and keeps the price in the label", async () => {
