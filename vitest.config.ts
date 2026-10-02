@@ -31,11 +31,16 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "text-summary", "json-summary"],
       reportsDirectory: "./coverage",
-      include: ["src/lib/**/*.{ts,tsx}", "src/features/auth/**/*.{ts,tsx}"],
+      include: [
+        "src/lib/**/*.{ts,tsx}",
+        "src/features/auth/**/*.{ts,tsx}",
+        "src/features/billing/**/*.{ts,tsx}",
+      ],
       // Client Firebase bootstrap is browser-only; covered indirectly by E2E.
       exclude: ["src/lib/firebase/client.ts"],
       thresholds: {
         // Ratcheted to measured Component+coverage values minus a small margin.
+        // Billing added to include; thresholds must not go down (ticket + AGENTS.md).
         lines: 95,
         functions: 95,
         branches: 88,
@@ -45,11 +50,20 @@ export default defineConfig({
         "src/lib/env.ts": highBar,
         "src/lib/utils.ts": highBar,
         "src/features/auth/{session,guards,users}.ts": authSurfaceBar,
+        "src/features/billing/{entitlement,plan-display,configured}.ts": highBar,
+        "src/features/billing/{projection,webhook,checkout,customers,session-sync,plan,actions}.ts":
+          authSurfaceBar,
         "src/lib/firebase/**": {
           lines: 95,
           functions: 95,
           branches: 90,
           statements: 95,
+        },
+        "src/lib/stripe/**": {
+          lines: 80,
+          functions: 80,
+          branches: 70,
+          statements: 80,
         },
       },
     },

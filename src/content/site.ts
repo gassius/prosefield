@@ -40,11 +40,25 @@ export const siteCopy = {
   },
   subscribe: {
     title: "Subscribe to start writing",
-    body: "Billing arrives in the next phase. Your account is ready.",
+    body: "One simple plan for a calm, private writing workspace.",
+    checkoutCta: "Continue to secure checkout",
+    checkoutBusy: "Starting checkout…",
+    checkoutError: "Could not start checkout. Please try again.",
   },
   documents: {
     upgradeTitle: "Subscribe to start writing",
-    upgradeBody: "An active subscription unlocks your document workspace.",
+    upgradeBody:
+      "Your own private document library with headings, lists, quotes, and emphasis.",
+    upgradeCta: "Continue to secure checkout",
+  },
+  billingStatus: {
+    title: "Confirming payment",
+    pending: "Confirming your payment with Stripe…",
+    delayed:
+      "We’re still waiting for Stripe to confirm your payment. Refresh this page or try again shortly.",
+    failedTitle: "Payment didn't go through",
+    failedBody: "No charge unlocked access. You can try checkout again.",
+    tryAgain: "Try again",
   },
 } as const;
 

@@ -3,7 +3,7 @@ import { HeroEditorPreview } from "@/components/marketing/hero-editor-preview";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { siteCopy } from "@/content/site";
-import { getPlanDisplay } from "@/features/billing/plan-display";
+import { getPlan } from "@/features/billing/plan";
 import {
   ctaDestinationForState,
   getAccountState,
@@ -12,7 +12,7 @@ import {
 export default async function HomePage() {
   const account = await getAccountState();
   const ctaHref = ctaDestinationForState(account);
-  const plan = getPlanDisplay();
+  const plan = await getPlan();
 
   return (
     <>

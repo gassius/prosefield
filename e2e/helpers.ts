@@ -85,3 +85,61 @@ export async function expectNoSessionCookie(page: Page): Promise<void> {
   const cookies = await page.context().cookies();
   expect(cookies.find((cookie) => cookie.name === SESSION_COOKIE_NAME)).toBeUndefined();
 }
+
+export async function lookupUidByEmail(
+  email: string,
+  password = "password-123",
+): Promise<string> {
+  const response = await fetch(
+    `http://${AUTH_EMULATOR_HOST}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-api-key`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+        returnSecureToken: true,
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `signIn for uid failed: ${response.status} ${await response.text()}`,
+    );
+  }
+  const body = (await response.json()) as { localId?: string };
+  if (!body.localId) {
+    throw new Error(`No Auth user for ${email}`);
+  }
+  return body.localId;
+}
+
+/** Test-only shortcut: write the entitlement projection directly (Architecture §13). */
+export async function seedSubscriptionProjection(
+  uid: string,
+  status: string,
+): Promise<void> {
+  const url = `http://${FIRESTORE_EMULATOR_HOST}/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/subscriptions/${uid}`;
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: {
+      "content-type": "application/json",
+      Authorization: "Bearer owner",
+    },
+    body: JSON.stringify({
+      fields: {
+        status: { stringValue: status },
+        stripeCustomerId: { stringValue: "cus_e2e" },
+        stripeSubscriptionId: { stringValue: "sub_e2e" },
+        stripePriceId: { stringValue: "price_e2e" },
+        cancelAtPeriodEnd: { booleanValue: false },
+        lastEventId: { stringValue: "evt_e2e_seed" },
+      },
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `seedSubscriptionProjection failed: ${response.status} ${await response.text()}`,
+    );
+  }
+}

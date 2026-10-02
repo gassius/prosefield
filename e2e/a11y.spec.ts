@@ -48,4 +48,22 @@ test.describe("accessibility smoke", () => {
     await page.goto("/");
     await expectNoSeriousOrCritical(page);
   });
+
+  test("subscribe and billing status", async ({ page }) => {
+    await resetEmulators();
+    const email = uniqueEmail("a11y-billing");
+    await registerViaUi(page, email, "password-123");
+    await expectSignedIn(page, email);
+    await page.goto("/subscribe");
+    await expect(
+      page.getByRole("heading", { name: "Subscribe to start writing" }),
+    ).toBeVisible();
+    await expectNoSeriousOrCritical(page);
+
+    await page.goto("/billing/status");
+    await expect(
+      page.getByText("Confirming your payment with Stripe…"),
+    ).toBeVisible();
+    await expectNoSeriousOrCritical(page);
+  });
 });

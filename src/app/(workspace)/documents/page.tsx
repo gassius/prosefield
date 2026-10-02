@@ -7,6 +7,7 @@ import {
   getAccountState,
   requireSessionOrRedirect,
 } from "@/features/auth/guards";
+import { getPlan } from "@/features/billing/plan";
 import { cn } from "@/lib/utils";
 
 export default async function DocumentsPage() {
@@ -15,22 +16,28 @@ export default async function DocumentsPage() {
   const ctaHref = ctaDestinationForState(account);
 
   if (account.kind !== "subscriber") {
+    const plan = await getPlan();
     return (
       <>
         <SiteHeader accountState={account} ctaHref={ctaHref} />
         <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-6 py-16">
-          <h1 className="font-display text-3xl font-medium tracking-tight">
-            {siteCopy.documents.upgradeTitle}
-          </h1>
-          <p className="text-muted-foreground mt-3 text-base leading-relaxed">
-            {siteCopy.documents.upgradeBody}
-          </p>
-          <Link
-            href="/subscribe"
-            className={cn(buttonVariants({ variant: "default" }), "mt-8 w-fit")}
-          >
-            Continue to subscribe
-          </Link>
+          <div className="rounded-xl border border-border bg-background p-8">
+            <h1 className="font-display text-2xl font-medium tracking-tight sm:text-3xl">
+              {siteCopy.documents.upgradeTitle}
+            </h1>
+            <p className="text-muted-foreground mt-3 text-base leading-relaxed">
+              {siteCopy.documents.upgradeBody}
+            </p>
+            <p className="mt-4 text-base font-medium text-foreground">
+              {plan.priceLabel}
+            </p>
+            <Link
+              href="/subscribe"
+              className={cn(buttonVariants({ variant: "default" }), "mt-8 inline-flex")}
+            >
+              {siteCopy.documents.upgradeCta}
+            </Link>
+          </div>
         </div>
       </>
     );

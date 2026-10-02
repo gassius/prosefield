@@ -47,7 +47,29 @@ Auth/Firestore emulator state lives in the Docker named volume `emulator-data`, 
 | `app` | `docker compose --profile app up` | Also run Next.js in Docker on `:3000` |
 | `stripe` | `docker compose --profile stripe up` | Stripe CLI webhook forwarder (needs `app`) |
 
-Stripe webhook secret:
+### Manual Stripe test payment (4242)
+
+CI never needs real Stripe credentials or network. For a local end-to-end payment with Carlos's **test-mode** keys:
+
+1. Put your `sk_test_…` in `.env` as `STRIPE_SECRET_KEY` (never commit `.env`).
+2. Seed a Price: `pnpm stripe:seed` — paste the printed `STRIPE_PRICE_ID` into `.env`.
+3. Print a webhook secret with the Stripe CLI in Docker, then paste it as `STRIPE_WEBHOOK_SECRET`:
+
+   ```bash
+   docker compose run --rm stripe-cli listen --print-secret
+   ```
+
+4. Start the app on the host (`pnpm dev`) and emulators (`pnpm backend:up`). Forward webhooks (needs the `app` profile, or point `--forward-to` at `host.docker.internal:3000` if the CLI reaches the host):
+
+   ```bash
+   docker compose --profile app --profile stripe up
+   ```
+
+5. Register, open `/subscribe`, continue to Checkout, pay with `4242 4242 4242 4242` (any future expiry, any CVC). You should land on `/billing/status`, then `/documents` once the verified webhook (or session-sync fallback) projects `status: active`.
+
+Without Stripe keys the app still boots: plan display falls back to `PLAN_DISPLAY_*` (€8/month), and `/subscribe` shows a clear **Billing is not configured** message instead of crashing.
+
+Stripe webhook secret (CLI):
 
 ```bash
 docker compose run --rm stripe-cli listen --print-secret
@@ -68,6 +90,7 @@ Compose maps `STRIPE_SECRET_KEY` from `.env` to the CLI's `STRIPE_API_KEY`. Put 
 | `pnpm test:e2e:offline` | Landing page only, backend down (host-only frontend rule) |
 | `pnpm test:visual` | Visual regression inside the official Playwright Docker image |
 | `pnpm test:visual:update` | Regenerate visual baselines (commit the diff; review deliberately) |
+| `pnpm stripe:seed` | Create test Product + monthly Price; print `STRIPE_PRICE_ID` |
 | `pnpm backend:up` | `docker compose up -d --wait` (requires Docker) |
 | `pnpm backend:down` | `docker compose down` |
 | `pnpm backend:logs` | Follow emulator logs |
