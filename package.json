@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "emulators": "firebase emulators:start --project demo-prosefield --only auth,firestore,ui --import ./.emulator-data --export-on-exit"
+    "backend:up": "bash scripts/require-docker.sh up -d --wait",
+    "backend:down": "bash scripts/require-docker.sh down",
+    "backend:logs": "bash scripts/require-docker.sh logs -f emulators"
   },
   "dependencies": {
     "next": "16.3.7",
@@ -29,7 +31,6 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.7",
-    "firebase-tools": "15.32.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.4"

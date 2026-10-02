@@ -262,3 +262,106 @@ jobs:
           fi
           echo "All commits in ${BASE_SHA}..${HEAD_SHA} have valid trailers or an allowed exemption."
 
+  no-host-java:
+    name: No host Java / native emulators
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Guard against host Java and native emulator scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          # Patterns intentionally live only in this excluded workflow file and docker/.
+          JAVA_RE = re.compile(r"(?i)(^|[^a-z0-9])java([^a-z0-9]|$)")
+          EMU_RE = re.compile(r"(?i)firebase\b[^\n]*\bemulators:(start|exec)\b")
+          WORKFLOW = Path(".github/workflows/ci.yml")
+          failed = False
+
+          def is_under_docker_dir(path: str) -> bool:
+              # Real docker/ only — not docker-foo/
+              return path == "docker" or path.startswith("docker/")
+
+          def is_binary(data: bytes) -> bool:
+              return b"\x00" in data[:8192]
+
+          pkg = json.loads(Path("package.json").read_text(encoding="utf-8"))
+          for section in ("dependencies", "devDependencies"):
+              deps = pkg.get(section) or {}
+              if "firebase-tools" in deps:
+                  print(
+                      f"::error file=package.json::firebase-tools must not appear in {section} "
+                      "(image-only; see docker/emulators.Dockerfile)"
+                  )
+                  failed = True
+
+          scripts = pkg.get("scripts") or {}
+          for name, cmd in scripts.items():
+              text = f"{name}={cmd}"
+              if JAVA_RE.search(cmd) or EMU_RE.search(cmd):
+                  print(f"::error file=package.json::Forbidden pattern in script: {text}")
+                  failed = True
+
+          listed = subprocess.run(
+              ["git", "ls-files", "-z"],
+              check=True,
+              stdout=subprocess.PIPE,
+          ).stdout.split(b"\x00")
+
+          for raw in listed:
+              if not raw:
+                  continue
+              path = raw.decode("utf-8", errors="surrogateescape")
+              if is_under_docker_dir(path):
+                  continue
+              if path == str(WORKFLOW) or path == WORKFLOW.as_posix():
+                  continue
+              if path == "pnpm-lock.yaml":
+                  continue
+
+              try:
+                  data = Path(path).read_bytes()
+              except OSError as exc:
+                  print(f"::error file={path}::Failed to read file: {exc}")
+                  failed = True
+                  continue
+
+              if is_binary(data):
+                  continue
+
+              try:
+                  text = data.decode("utf-8")
+              except UnicodeDecodeError:
+                  # Non-UTF8 text still scanned via latin-1 so we never skip quietly
+                  text = data.decode("latin-1")
+
+              for lineno, line in enumerate(text.splitlines(), start=1):
+                  if JAVA_RE.search(line):
+                      print(
+                          f"::error file={path},line={lineno}::Forbidden host Java reference"
+                      )
+                      print(f"{path}:{lineno}:{line}")
+                      failed = True
+                  if EMU_RE.search(line):
+                      print(
+                          f"::error file={path},line={lineno}::Forbidden host firebase emulators:(start|exec)"
+                      )
+                      print(f"{path}:{lineno}:{line}")
+                      failed = True
+
+          if failed:
+              print("::error::Host Java / native emulator references found outside docker/.")
+              sys.exit(1)
+          print("ok: no host Java, no host firebase-tools, no native emulator CLI outside docker/")
+          PY
+

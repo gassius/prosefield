@@ -31,7 +31,7 @@ Prosefield is a single full-stack **Next.js 16 (App Router, strict TypeScript)**
 
 Next.js is both the frontend and the backend-for-frontend. Server code checks Firebase session cookies, does all Firestore access through Firebase Admin, creates Stripe Checkout Sessions, verifies Stripe webhooks, and decides access.
 
-**Primary target: local first.** `docker compose up` starts the Firebase Auth and Firestore emulators (project `demo-prosefield`, so no real Firebase project or login is needed), the Emulator UI, the Next.js app, and the Stripe CLI webhook forwarder. The evaluator needs only Docker and their own Stripe **test** keys.
+**Primary target: local first.** Host `pnpm dev` for the Next.js frontend; `docker compose up -d --wait` for Firebase Auth and Firestore emulators (project `demo-prosefield`, so no real Firebase project or login is needed) and the Emulator UI. Optional Compose profiles run the app and Stripe CLI webhook forwarder in Docker. The evaluator needs Node per `.nvmrc`, pnpm, Docker, and their own Stripe **test** keys — nothing else on the host.
 
 **Optional final phase: Firebase for everything.** Firebase App Hosting serves the whole Next.js app (SSR, Route Handlers, the webhook) together with Firebase Auth and Cloud Firestore in one GCP project. There's no Vercel or second host. This is added value only and never blocks the acceptance path.
 
@@ -81,19 +81,18 @@ AI features; Python or LangChain services; real-time collaboration; autosave and
 | Tests and CI | None | Add Vitest, emulator integration, Playwright + axe, and GitHub Actions |
 | Firebase | None | Add `firebase.json`, rules, indexes, and Docker emulators |
 | `.env.example` | Absent and ignored | Add it and unignore it explicitly |
-| Cloud Agent env | Saved by Carlos (Node 24.21.0, pnpm, `pnpm install --frozen-lockfile`, dev on :3000) | Project agents reuse it. Phase P0 adds Docker/emulator steps if the VM supports them, or a Java fallback |
+| Cloud Agent env | Saved by Carlos (Node 24.21.0, pnpm, `pnpm install --frozen-lockfile`, dev on :3000) | Project agents reuse it. Backend emulators run only via Docker Compose |
 
 ## 4. System context
 
 ```mermaid
 flowchart LR
-    Visitor["Visitor / subscriber"] --> App["Prosefield (Next.js)"]
+    Visitor["Visitor / subscriber"] --> App["Prosefield (Next.js on host)"]
     App --> Auth["Firebase Auth (emulator locally)"]
     App --> DB["Cloud Firestore (emulator locally)"]
     App --> Stripe["Stripe Checkout + Billing (test mode)"]
     Stripe -->|"signed webhook"| App
-    subgraph Local["docker compose (primary target)"]
-      App
+    subgraph Local["docker compose (backend only)"]
       Auth
       DB
       CLI["stripe-cli listen"]
@@ -292,27 +291,27 @@ Composite index: `documents(ownerId ASC, updatedAt DESC)`, committed in `firesto
 
 ```mermaid
 flowchart TB
-    B["Browser :3000"] --> N["app: Next.js dev :3000"]
+    B["Browser :3000"] --> N["Host: pnpm dev :3000"]
     B --> AE["emulators: Auth :9099"]
     N --> AE
     N --> FE["emulators: Firestore :8080"]
     Dev["Developer"] --> UI["Emulator UI :4000"]
-    SC["stripe-cli: listen --forward-to app:3000/api/stripe/webhook"] --> N
+    SC["stripe-cli profile: forward webhook"] --> N
 ```
 
 **`docker-compose.yml` services:**
-- `emulators`: a small image with Java 21, Node and `firebase-tools` (version-pinned), running `firebase emulators:start --project demo-prosefield --only auth,firestore,ui --import ./.emulator-data --export-on-exit`. Ports 9099, 8080 and 4000 are bound to `127.0.0.1`. It has a healthcheck.
-- `app`: Node 24 + pnpm (Corepack), runs `pnpm install --frozen-lockfile && pnpm dev`, with the source bind-mounted. `depends_on` waits for emulators to be healthy.
-- `stripe-cli` (profile `stripe`): the `stripe/stripe-cli` image running `listen --api-key $STRIPE_SECRET_KEY --forward-to app:3000/api/stripe/webhook`.
+- `emulators` (default): image from `docker/emulators.Dockerfile` (`eclipse-temurin` JRE + Node + pinned `firebase-tools` inside the image only). Entrypoint is `docker/emulators-entrypoint.sh` (Auth, Firestore, UI for `demo-prosefield`). Named volume `emulator-data` mounts at `/data`; import/export uses `/data/export` so export-on-exit does not EBUSY the volume root. Ports 9099, 8080 and 4000 bind to `127.0.0.1`. Healthcheck + `stop_grace_period: 60s` for export-on-exit.
+- `app` (profile `app`): optional Next.js in Docker. Default workflow runs the frontend on the host with `pnpm dev` so Compose does not own `:3000`.
+- `stripe-cli` (profile `stripe`): the `stripe/stripe-cli` image running `listen --forward-to app:3000/api/stripe/webhook` (needs the `app` profile).
+
+**Host requirements:** nvm (recommended; `nvm use` at repo root), Node per `.nvmrc`, pnpm (Corepack), Docker + Compose for the backend. Nothing else on the host; no global `firebase-tools`.
 
 **README quick start (target under 10 minutes, measured once on a clean machine and recorded):**
-1. Prerequisite: Docker. A Stripe test account is free.
+1. Prerequisites above. A Stripe test account is free.
 2. `cp .env.example .env`, then paste `STRIPE_SECRET_KEY` (sk_test_).
-3. `docker compose run --rm app pnpm stripe:seed` sets `STRIPE_PRICE_ID`.
-4. `docker compose run --rm stripe-cli listen --print-secret` gives `STRIPE_WEBHOOK_SECRET`.
-5. `docker compose --profile stripe up`, then open http://localhost:3000.
-
-**Native path (secondary):** Node 24 + pnpm, `pnpm emulators` (needs Java 21) and `pnpm dev`, plus the Stripe CLI. `pnpm doctor` checks versions and prints fixes.
+3. `pnpm install && pnpm dev` — frontend on http://localhost:3000 (works with backend down).
+4. `docker compose up -d --wait` — Emulator UI on :4000.
+5. Optional: `docker compose run --rm stripe-cli listen --print-secret` for `STRIPE_WEBHOOK_SECRET`, then `--profile stripe` (with `--profile app` if the CLI must reach the containerised app).
 
 ## 11. Deployment: Firebase for everything (optional phase P6)
 
@@ -330,7 +329,7 @@ Carlos's answer 1: deploy only at the end and only if it's easy. One platform fo
 
 Versions get pinned through `pnpm-lock.yaml` at install time.
 - **Runtime:** `firebase`, `firebase-admin`, `server-only`, `stripe`, `zod`, `@tiptap/react`, `@tiptap/pm`, `@tiptap/starter-kit`, `@tiptap/extension-placeholder`, `lucide-react`, `sonner`, and shadcn utilities (`class-variance-authority`, `clsx`, `tailwind-merge`, plus only the primitives the selected components need). Fonts come through `next/font/google` (Fraunces variable with opsz, and DM Sans).
-- **Development:** `firebase-tools`, `@firebase/rules-unit-testing`, `vitest`, `@vitest/coverage-v8`, `@playwright/test`, `@axe-core/playwright`, `tsx` for scripts.
+- **Development:** `@firebase/rules-unit-testing`, `vitest`, `@vitest/coverage-v8`, `@playwright/test`, `@axe-core/playwright`, `tsx` for scripts. (`firebase-tools` lives only inside `docker/emulators.Dockerfile`, not on the host.)
 - **CI only:** `gitleaks` (action), `actionlint`.
 - **Not used:** Stripe.js, SaaS starters, animation or carousel packages, Vercel packages.
 
@@ -340,7 +339,7 @@ Versions get pinned through `pnpm-lock.yaml` at install time.
 |---|---|---|
 | Static | `pnpm lint`, `pnpm typecheck`, `pnpm build`, actionlint, strict YAML, `docker compose config -q`, gitleaks | CI on every PR |
 | Unit (Vitest) | Status-to-entitlement mapping, projection from a Subscription snapshot, uid resolution order, webhook signature (via `generateTestHeaderString`), Zod schemas, `next` allow-list, time formatting (en-GB), `getPlan` fallback | CI |
-| Integration (emulators, `firebase emulators:exec`) | Session exchange and rejection cases; guard chain (non-subscriber denied for every mutation; subscriber full CRUD; user A can't reach B's doc, 404); duplicate event ignored; rules deny client access | CI (setup-java 21) |
+| Integration (Docker emulators) | Session exchange and rejection cases; guard chain (non-subscriber denied for every mutation; subscriber full CRUD; user A can't reach B's doc, 404); duplicate event ignored; rules deny client access | CI (Compose emulators service) |
 | Acceptance (Playwright + axe) | Landing at 375, 768, 1024 and 1440 px with no horizontal overflow; one h1; the CTA destination per state; register, login, logout; upgrade gate; seeded-subscriber CRUD + save states + Ctrl+S + delete dialog + persistence across logout and login; axe has no serious or critical violations | CI (cached browsers); local optional |
 | Manual | Full Stripe flow with 4242 4242 4242 4242 via the stripe-cli service; delayed-webhook path (stop stripe-cli, pay, check the session-sync fallback); cancel via the Portal if flagged | README + demo |
 
@@ -365,7 +364,7 @@ The total for P0–P5 is about 9 h, inside the 6–10 h estimate, leaving about 
 ## 15. Operational notes
 - Structured logs with request and event IDs. Never log secrets, tokens, cookies, passwords or document bodies.
 - Keep `stripeEvents` for debugging.
-- Emulator data persists in `.emulator-data/` (git-ignored). `pnpm emulators:reset` clears it.
+- Emulator data persists in the Compose named volume `emulator-data` at `/data/export` inside the container. Wipe with `docker compose down -v`.
 - P6: budget alert, min instances 0, rollback through App Hosting rollout history.
 
 ## 16. Key decisions and trade-offs
@@ -373,7 +372,7 @@ The total for P0–P5 is about 9 h, inside the 6–10 h estimate, leaving about 
 | Decision | Benefit | Trade-off |
 |---|---|---|
 | One Next.js app | Small system, shared types, one origin | Backend deploys with the frontend |
-| Docker-first local Firebase (`demo-` project) | The evaluator needs no Firebase account or Java; can't touch production | Docker is a prerequisite; first image pull time |
+| Docker-only local Firebase (`demo-` project) | The evaluator needs no Firebase account and nothing beyond Node/pnpm/Docker on the host; can't touch production | Docker is a prerequisite for the backend; first image pull time |
 | Firebase for everything (optional) | One platform, one bill, one console; no Vercel | Blaze plan; no PR previews |
 | Session cookie (`__session`) | Server-validated sessions as required; App Hosting compatible | Token exchange + CSRF handling |
 | Server-only Firestore | Authorisation in one tested layer; deny-all rules | No real-time or offline client features |

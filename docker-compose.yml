@@ -7,12 +7,18 @@ services:
         FIREBASE_TOOLS_VERSION: "15.32.1"
     volumes:
       - .:/workspace
-      - emulator-data:/workspace/.emulator-data
+      # Named volume at a *parent* path; entrypoint exports to /data/export.
+      # Mounting the volume directly on the export dir makes firebase-tools
+      # rmSync hit EBUSY and wipe data on every stop (see PR review M1).
+      # Wipe intentionally with `docker compose down -v`.
+      - emulator-data:/data
     ports:
       - "127.0.0.1:4000:4000"
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:9099:9099"
       - "127.0.0.1:9150:9150"
+    # export-on-exit needs time after SIGTERM before the container is killed
+    stop_grace_period: 60s
     healthcheck:
       test:
         [
@@ -24,7 +30,10 @@ services:
       retries: 30
       start_period: 40s
 
+  # Optional full-stack path. Default `docker compose up` is backend-only so
+  # host `pnpm dev` can own :3000 without a port clash.
   app:
+    profiles: ["app"]
     image: node:24-bookworm
     working_dir: /app
     volumes:
@@ -60,8 +69,8 @@ services:
       - listen
       - --forward-to
       - app:3000/api/stripe/webhook
-    depends_on:
-      - app
+    # Webhook forwarding needs the `app` profile (or host networking).
+    # No depends_on so `docker compose run --rm stripe-cli listen --print-secret` works alone.
 
 volumes:
   app_node_modules:
