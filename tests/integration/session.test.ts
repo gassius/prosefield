@@ -109,9 +109,21 @@ describe("session exchange (emulators)", () => {
     await expect(requireActiveSubscription(localId)).resolves.toBeUndefined();
 
     await revokeUserSessions(localId);
-    await expect(
-      verifySessionCookieValue(sessionCookie, true),
-    ).rejects.toThrow();
+    // Auth emulator can lag before tokensValidAfterTime is visible to
+    // verifySessionCookie(checkRevoked=true); poll briefly instead of one-shot.
+    await expect
+      .poll(
+        async () => {
+          try {
+            await verifySessionCookieValue(sessionCookie, true);
+            return "valid";
+          } catch {
+            return "revoked";
+          }
+        },
+        { timeout: 5_000, intervals: [50, 100, 200, 400] },
+      )
+      .toBe("revoked");
   });
 
   it("rejects CSRF and Origin failures on POST /api/session", async () => {
