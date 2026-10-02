@@ -19,6 +19,9 @@ export const siteCopy = {
     navPricing: "Pricing",
     navFaq: "FAQ",
     manageBilling: "Manage billing",
+    primaryNav: "Primary",
+    mobileNav: "Mobile",
+    signedInFallback: "Signed in",
   },
   auth: {
     registerTitle: "Create your account",
@@ -44,6 +47,7 @@ export const siteCopy = {
     cancelAnytime: "Cancel anytime",
   },
   assurance: {
+    regionLabel: "Assurances",
     items: [
       {
         id: "private",
@@ -58,7 +62,7 @@ export const siteCopy = {
       {
         id: "plan",
         label: "One simple plan",
-        icon: "euro",
+        icon: "plan",
       },
     ],
   },
@@ -138,6 +142,7 @@ export const siteCopy = {
     newDocument: "New document",
     saved: "Saved",
     save: "Save",
+    toolbarHeading: "H2",
     sampleTitle: "Clarity changes the work.",
     sampleBody:
       "When the workspace is calm, the next sentence becomes easier to see. Keep the structure simple, the tools close, and the idea moving.",
@@ -165,12 +170,13 @@ export const siteCopy = {
   footer: {
     privacy: "Privacy",
     terms: "Terms",
+    navLabel: "Footer",
     privacyHeading: "Privacy",
     privacyBody:
       "Prosefield stores your account and documents in Firebase. Access is enforced on the server; there is no browser Firestore access.",
     termsHeading: "Terms",
     termsBody:
-      "Prosefield is a take-home demonstration product. Subscriptions use Stripe test mode unless you configure your own keys.",
+      "Prosefield is a take-home demonstration product. Subscriptions use Stripe test mode only.",
   },
   subscribe: {
     title: "Subscribe to start writing",
@@ -222,33 +228,54 @@ export type FaqItem = {
 };
 
 /**
- * Art Direction 4.5 / Architecture 5.4: Cancel-anytime copy only when the
- * Customer Portal flag is on. Read here so copy and capability stay aligned.
+ * Art Direction 4.5 / Architecture §5.4: Cancel-anytime claims require both
+ * FEATURE_CUSTOMER_PORTAL=true and a shipped Customer Portal route.
+ * Flip `isCustomerPortalRouteReady` when POST /api/billing/portal exists.
  */
-export function isCustomerPortalEnabled(
-  source: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
-): boolean {
-  return source.FEATURE_CUSTOMER_PORTAL === "true";
+export function isCustomerPortalRouteReady(): boolean {
+  return false;
 }
 
-/** Appends “Cancel anytime” to a plan reassurance line when the portal flag is on. */
+export type PortalGateOptions = {
+  /** Test override. Production uses `isCustomerPortalRouteReady()`. */
+  portalRouteReady?: boolean;
+};
+
+export function isCustomerPortalEnabled(
+  source: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+  options?: PortalGateOptions,
+): boolean {
+  const routeReady =
+    options?.portalRouteReady ?? isCustomerPortalRouteReady();
+  return routeReady && source.FEATURE_CUSTOMER_PORTAL === "true";
+}
+
+/** Appends “Cancel anytime” only when portal claims are allowed. */
 export function checkoutReassuranceLine(
   base: string,
   source: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+  options?: PortalGateOptions,
 ): string {
-  if (!isCustomerPortalEnabled(source)) {
+  if (!isCustomerPortalEnabled(source, options)) {
     return base;
   }
   return `${base} · ${siteCopy.home.cancelAnytime}`;
 }
 
-/** FAQ list including the cancel question only when the portal flag is on. */
+/** FAQ list including the cancel question only when portal claims are allowed. */
 export function getFaqItems(
   source: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+  options?: PortalGateOptions,
 ): FaqItem[] {
   const items: FaqItem[] = [...siteCopy.faq.items];
-  if (isCustomerPortalEnabled(source)) {
+  if (isCustomerPortalEnabled(source, options)) {
     items.push(siteCopy.faq.cancelItem);
   }
   return items;
 }
+
+/** Pricing card display: keep the plan label, add a space before the slash. */
+export function formatPricingCardPrice(priceLabel: string): string {
+  return priceLabel.replace("/", " /");
+}
+

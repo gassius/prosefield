@@ -42,7 +42,7 @@ export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
 
         <nav
           className="text-muted-foreground hidden items-center gap-6 text-sm sm:flex"
-          aria-label="Primary"
+          aria-label={siteCopy.header.primaryNav}
         >
           {navLinks.map((link) => (
             <Link
@@ -59,7 +59,7 @@ export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
           {loggedIn ? (
             <>
               <span className="text-muted-foreground max-w-[12rem] truncate text-sm">
-                {accountState.email || "Signed in"}
+                {accountState.email || siteCopy.header.signedInFallback}
               </span>
               <SignOutButton />
             </>
@@ -99,7 +99,10 @@ export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
             <SheetHeader>
               <SheetTitle>{siteCopy.header.menuTitle}</SheetTitle>
             </SheetHeader>
-            <nav className="flex flex-col gap-3" aria-label="Mobile">
+            <nav
+              className="flex flex-col gap-3"
+              aria-label={siteCopy.header.mobileNav}
+            >
               {navLinks.map((link) => (
                 <Link
                   key={link.href}
@@ -113,7 +116,7 @@ export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
               {loggedIn ? (
                 <>
                   <p className="text-muted-foreground truncate text-sm">
-                    {accountState.email || "Signed in"}
+                    {accountState.email || siteCopy.header.signedInFallback}
                   </p>
                   <SignOutButton />
                 </>

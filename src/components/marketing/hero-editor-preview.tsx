@@ -97,7 +97,7 @@ export function HeroEditorPreview({ className }: HeroEditorPreviewProps) {
                 strokeWidth={1.75}
               />
               <span className="text-muted-foreground shrink-0 px-0.5 text-xs font-semibold tracking-tight">
-                H2
+                {siteCopy.preview.toolbarHeading}
               </span>
               <span className="bg-accent text-accent-foreground inline-flex size-6 shrink-0 items-center justify-center rounded-md">
                 <Bold className="size-3.5" strokeWidth={2.25} />

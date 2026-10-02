@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { HeroCtaGroup } from "@/components/marketing/hero-cta-group";
+import { siteCopy } from "@/content/site";
 
 describe("HeroCtaGroup plan display wiring (n1)", () => {
   beforeEach(() => {
@@ -27,7 +28,7 @@ describe("HeroCtaGroup plan display wiring (n1)", () => {
     );
 
     expect(screen.getByText("€9/month · Secure checkout")).toBeInTheDocument();
-    expect(screen.queryByText(/€8\/month/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/€\s*8/)).not.toBeInTheDocument();
   });
 });
 
@@ -71,11 +72,12 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-describe("HomePage renders plan.checkoutReassurance from env", () => {
+describe("HomePage plan price and portal FAQ wiring", () => {
   beforeEach(() => {
     vi.stubEnv("PLAN_DISPLAY_PRICE", "9");
     vi.stubEnv("PLAN_DISPLAY_CURRENCY", "EUR");
     vi.stubEnv("PLAN_DISPLAY_INTERVAL", "month");
+    vi.stubEnv("FEATURE_CUSTOMER_PORTAL", "false");
   });
 
   afterEach(() => {
@@ -84,14 +86,31 @@ describe("HomePage renders plan.checkoutReassurance from env", () => {
     vi.resetModules();
   });
 
-  it("fails if page.tsx reassigns or hard-codes checkoutReassurance", async () => {
+  it("renders getPlan() price on the pricing card (fails if €8 is hard-coded)", async () => {
     const HomePage = (await import("@/app/page")).default;
     const ui = await HomePage();
     render(ui);
 
+    expect(screen.getByTestId("pricing-card-price")).toHaveTextContent(
+      "€9 /month",
+    );
+    // Spaced and unspaced €8 must not appear when plan is €9.
+    expect(screen.queryByText(/€\s*8/)).not.toBeInTheDocument();
+
     const lines = screen.getAllByText("€9/month · Secure checkout");
-    // Hero, pricing card, and final CTA all share the plan line.
     expect(lines.length).toBeGreaterThanOrEqual(3);
-    expect(screen.queryByText(/€8\/month/)).not.toBeInTheDocument();
+  });
+
+  it("omits cancel FAQ when the portal route is not ready even if the flag is on", async () => {
+    vi.stubEnv("FEATURE_CUSTOMER_PORTAL", "true");
+    vi.resetModules();
+    const HomePage = (await import("@/app/page")).default;
+    const ui = await HomePage();
+    render(ui);
+
+    expect(
+      screen.queryByRole("button", { name: siteCopy.faq.cancelItem.question }),
+    ).toBeNull();
+    expect(screen.queryByText(siteCopy.home.cancelAnytime)).toBeNull();
   });
 });

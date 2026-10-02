@@ -1,38 +1,65 @@
 import { describe, expect, it } from "vitest";
 import {
   checkoutReassuranceLine,
+  formatPricingCardPrice,
   getFaqItems,
   isCustomerPortalEnabled,
+  isCustomerPortalRouteReady,
   siteCopy,
 } from "@/content/site";
 
-describe("FEATURE_CUSTOMER_PORTAL copy gates", () => {
-  it("treats missing/false as portal off", () => {
-    expect(isCustomerPortalEnabled({})).toBe(false);
-    expect(isCustomerPortalEnabled({ FEATURE_CUSTOMER_PORTAL: "false" })).toBe(
-      false,
-    );
+describe("FEATURE_CUSTOMER_PORTAL + portal route gate", () => {
+  it("keeps the portal route unready until /api/billing/portal ships", () => {
+    expect(isCustomerPortalRouteReady()).toBe(false);
   });
 
-  it("enables cancel-anytime reassurance when the flag is true", () => {
-    const base = "€8/month · Secure checkout";
-    expect(checkoutReassuranceLine(base, {})).toBe(base);
+  it("never enables cancel claims when the portal route is not ready", () => {
     expect(
-      checkoutReassuranceLine(base, { FEATURE_CUSTOMER_PORTAL: "true" }),
-    ).toBe(`${base} · ${siteCopy.home.cancelAnytime}`);
+      isCustomerPortalEnabled({ FEATURE_CUSTOMER_PORTAL: "true" }),
+    ).toBe(false);
+    expect(
+      checkoutReassuranceLine("€8/month · Secure checkout", {
+        FEATURE_CUSTOMER_PORTAL: "true",
+      }),
+    ).toBe("€8/month · Secure checkout");
+    expect(
+      getFaqItems({ FEATURE_CUSTOMER_PORTAL: "true" }).map((item) => item.id),
+    ).not.toContain("cancel");
   });
 
-  it("adds the cancel FAQ only when the portal flag is true", () => {
-    const off = getFaqItems({ FEATURE_CUSTOMER_PORTAL: "false" });
-    expect(off.map((item) => item.id)).toEqual([
-      "private",
-      "subscribe",
-      "mobile",
-    ]);
-    expect(off.some((item) => item.question.includes("cancel"))).toBe(false);
+  it("enables cancel claims only when flag is on AND portal route is ready", () => {
+    const base = "€8/month · Secure checkout";
+    expect(
+      isCustomerPortalEnabled(
+        { FEATURE_CUSTOMER_PORTAL: "true" },
+        { portalRouteReady: true },
+      ),
+    ).toBe(true);
+    expect(
+      checkoutReassuranceLine(
+        base,
+        { FEATURE_CUSTOMER_PORTAL: "true" },
+        { portalRouteReady: true },
+      ),
+    ).toBe(`${base} · ${siteCopy.home.cancelAnytime}`);
 
-    const on = getFaqItems({ FEATURE_CUSTOMER_PORTAL: "true" });
+    const on = getFaqItems(
+      { FEATURE_CUSTOMER_PORTAL: "true" },
+      { portalRouteReady: true },
+    );
     expect(on.map((item) => item.id)).toContain("cancel");
     expect(on.at(-1)).toMatchObject(siteCopy.faq.cancelItem);
+
+    expect(
+      isCustomerPortalEnabled(
+        { FEATURE_CUSTOMER_PORTAL: "false" },
+        { portalRouteReady: true },
+      ),
+    ).toBe(false);
+  });
+
+  it("formats the pricing card price from the plan label", () => {
+    expect(formatPricingCardPrice("€9/month")).toBe("€9 /month");
+    expect(formatPricingCardPrice("€8/month")).toBe("€8 /month");
   });
 });

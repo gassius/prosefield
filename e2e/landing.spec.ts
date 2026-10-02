@@ -23,6 +23,10 @@ test.describe("landing marketing surface", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/");
 
+      await expect(page.getByRole("banner")).toBeVisible();
+      await expect(page.getByRole("main")).toBeVisible();
+      await expect(page.getByRole("contentinfo")).toBeVisible();
+
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       await expect(
         page.getByRole("heading", { name: "A writing flow with less friction." }),
@@ -64,4 +68,74 @@ test.describe("landing marketing surface", () => {
       await expectNoHorizontalOverflow(page);
     });
   }
+
+  test("skip link targets main; icon and apple-touch links return 200", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    const skip = page.getByRole("link", { name: "Skip to content" });
+    await expect(skip).toHaveAttribute("href", "#main-content");
+    await expect(page.locator("main#main-content")).toHaveCount(1);
+
+    const iconHref = await page
+      .locator('link[rel="icon"][href*="icon"]')
+      .first()
+      .getAttribute("href");
+    expect(iconHref).toBeTruthy();
+    const iconRes = await page.request.get(
+      new URL(iconHref!, page.url()).toString(),
+    );
+    expect(iconRes.status()).toBe(200);
+
+    const appleHref = await page
+      .locator('link[rel="apple-touch-icon"]')
+      .first()
+      .getAttribute("href");
+    expect(appleHref).toBeTruthy();
+    const appleRes = await page.request.get(
+      new URL(appleHref!, page.url()).toString(),
+    );
+    expect(appleRes.status()).toBe(200);
+  });
+
+  test("FAQ accordion honours prefers-reduced-motion", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1024, height: 900 });
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Are my documents private?" }).click();
+    const content = page.locator(
+      '[data-testid="faq-accordion-content"][data-state="open"]',
+    );
+    await expect(content).toBeVisible();
+
+    const motion = await content.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        animationName: style.animationName,
+        animationDuration: style.animationDuration,
+      };
+    });
+    // Prefer none; also accept ≤10ms duration under the global reduced-motion rule.
+    const durationMs = Number.parseFloat(motion.animationDuration) * 1000;
+    expect(
+      motion.animationName === "none" ||
+        motion.animationName === "" ||
+        durationMs <= 10,
+    ).toBe(true);
+
+    const chevron = page
+      .getByRole("button", { name: "Are my documents private?" })
+      .locator('[data-testid="faq-chevron"]');
+    const chevronTransition = await chevron.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        duration: style.transitionDuration,
+        property: style.transitionProperty,
+      };
+    });
+    const chevronMs = Number.parseFloat(chevronTransition.duration) * 1000;
+    expect(chevronMs <= 10 || chevronTransition.property === "none").toBe(true);
+  });
 });

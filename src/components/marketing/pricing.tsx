@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Check } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
-import { siteCopy } from "@/content/site";
+import { formatPricingCardPrice, siteCopy } from "@/content/site";
 import type { PlanDisplay } from "@/features/billing/plan-display";
 import { cn } from "@/lib/utils";
 
@@ -33,8 +33,11 @@ export function Pricing({ plan, ctaHref, checkoutReassurance }: PricingProps) {
           <p className="bg-accent text-accent-foreground inline-flex rounded-md px-2.5 py-1 text-xs font-medium tracking-[0.02em]">
             {siteCopy.pricing.badge}
           </p>
-          <p className="font-display text-foreground mt-4 text-4xl font-medium tracking-tight">
-            {plan.priceLabel.replace("/", " /")}
+          <p
+            data-testid="pricing-card-price"
+            className="font-display text-foreground mt-4 text-4xl font-medium tracking-tight"
+          >
+            {formatPricingCardPrice(plan.priceLabel)}
           </p>
           <ul className="mt-6 space-y-3">
             {siteCopy.pricing.benefits.map((benefit) => (

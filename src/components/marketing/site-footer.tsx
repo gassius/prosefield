@@ -14,7 +14,7 @@ export function SiteFooter() {
         </div>
         <nav
           className="text-muted-foreground flex flex-wrap items-center gap-x-5 gap-y-2 text-sm"
-          aria-label="Footer"
+          aria-label={siteCopy.footer.navLabel}
         >
           <Link href="/#privacy" className="hover:text-foreground transition-colors">
             {siteCopy.footer.privacy}

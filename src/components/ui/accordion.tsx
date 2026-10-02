@@ -28,14 +28,15 @@ export function AccordionTrigger({
     <AccordionPrimitive.Header className="flex">
       <AccordionPrimitive.Trigger
         className={cn(
-          "font-display flex flex-1 items-center justify-between gap-4 py-4 text-left text-lg font-medium tracking-tight transition-colors hover:text-brand-deep focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none [&[data-state=open]>svg]:rotate-180",
+          "font-display flex flex-1 items-center justify-between gap-4 py-4 text-left text-lg font-medium tracking-tight transition-colors hover:text-brand-deep focus-visible:ring-ring focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none [&[data-state=open]>svg]:rotate-180 motion-reduce:[&[data-state=open]>svg]:rotate-0",
           className,
         )}
         {...props}
       >
         {children}
         <ChevronDown
-          className="text-muted-foreground size-5 shrink-0 transition-transform duration-200 ease-[var(--ease-standard)]"
+          data-testid="faq-chevron"
+          className="text-muted-foreground size-5 shrink-0 transition-transform duration-200 ease-[var(--ease-standard)] motion-reduce:transition-none"
           aria-hidden
         />
       </AccordionPrimitive.Trigger>
@@ -50,7 +51,8 @@ export function AccordionContent({
 }: React.ComponentProps<typeof AccordionPrimitive.Content>) {
   return (
     <AccordionPrimitive.Content
-      className="data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down overflow-hidden text-sm"
+      data-testid="faq-accordion-content"
+      className="data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down overflow-hidden text-sm motion-reduce:animate-none motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none"
       {...props}
     >
       <div className={cn("text-muted-foreground pb-4 leading-relaxed", className)}>

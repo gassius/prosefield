@@ -1,4 +1,5 @@
 import { CheckoutButton } from "@/components/billing/checkout-button";
+import { PageMain } from "@/components/layout/page-main";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { siteCopy } from "@/content/site";
 import {
@@ -31,32 +32,34 @@ export default async function SubscribePage({
   return (
     <>
       <SiteHeader accountState={account} ctaHref={ctaHref} />
-      <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-6 py-16">
-        <h1 className="font-display text-3xl font-medium tracking-tight">
-          {siteCopy.subscribe.title}
-        </h1>
-        <p className="text-muted-foreground mt-3 text-base leading-relaxed">
-          {siteCopy.subscribe.body}
-        </p>
-        <p className="mt-4 text-base font-medium text-foreground">
-          {plan.priceLabel}
-        </p>
-        {showNotConfigured ? (
-          <p
-            className="bg-warning-soft text-foreground mt-6 rounded-lg px-4 py-3 text-sm leading-relaxed"
-            role="status"
-          >
-            {BILLING_NOT_CONFIGURED_MESSAGE}
+      <PageMain className="justify-center">
+        <div className="mx-auto flex w-full max-w-lg flex-col px-6 py-16">
+          <h1 className="font-display text-3xl font-medium tracking-tight">
+            {siteCopy.subscribe.title}
+          </h1>
+          <p className="text-muted-foreground mt-3 text-base leading-relaxed">
+            {siteCopy.subscribe.body}
           </p>
-        ) : (
-          <div className="mt-8">
-            <CheckoutButton label={siteCopy.subscribe.checkoutCta} />
-          </div>
-        )}
-        <p className="text-muted-foreground mt-4 text-sm">
-          {plan.checkoutReassurance}
-        </p>
-      </div>
+          <p className="mt-4 text-base font-medium text-foreground">
+            {plan.priceLabel}
+          </p>
+          {showNotConfigured ? (
+            <p
+              className="bg-warning-soft text-foreground mt-6 rounded-lg px-4 py-3 text-sm leading-relaxed"
+              role="status"
+            >
+              {BILLING_NOT_CONFIGURED_MESSAGE}
+            </p>
+          ) : (
+            <div className="mt-8">
+              <CheckoutButton label={siteCopy.subscribe.checkoutCta} />
+            </div>
+          )}
+          <p className="text-muted-foreground mt-4 text-sm">
+            {plan.checkoutReassurance}
+          </p>
+        </div>
+      </PageMain>
     </>
   );
 }

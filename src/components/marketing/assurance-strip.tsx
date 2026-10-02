@@ -1,22 +1,42 @@
-import { BadgeEuro, Lock, Shield } from "lucide-react";
+import { BadgeEuro, DollarSign, Lock, PoundSterling, Shield } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { siteCopy } from "@/content/site";
 
 const icons = {
   shield: Shield,
   lock: Lock,
-  euro: BadgeEuro,
 } as const;
 
+/** Plan currency icon (Architecture §5.2): Euro/BadgeEuro for EUR, never DollarSign for EUR. */
+export function planCurrencyIcon(currency: string): LucideIcon {
+  switch (currency.toUpperCase()) {
+    case "EUR":
+      return BadgeEuro;
+    case "GBP":
+      return PoundSterling;
+    case "USD":
+      return DollarSign;
+    default:
+      return BadgeEuro;
+  }
+}
+
+type AssuranceStripProps = {
+  currency: string;
+};
+
 /** Three verifiable trust statements (Art Direction §9.3). */
-export function AssuranceStrip() {
+export function AssuranceStrip({ currency }: AssuranceStripProps) {
+  const PlanIcon = planCurrencyIcon(currency);
+
   return (
     <section
-      aria-label="Assurances"
+      aria-label={siteCopy.assurance.regionLabel}
       className="border-border border-y bg-background"
     >
       <ul className="mx-auto grid max-w-6xl gap-6 px-6 py-10 sm:grid-cols-3 sm:gap-8 sm:py-12">
         {siteCopy.assurance.items.map((item) => {
-          const Icon = icons[item.icon];
+          const Icon = item.icon === "plan" ? PlanIcon : icons[item.icon];
           return (
             <li
               key={item.id}

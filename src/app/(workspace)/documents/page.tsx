@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { PageMain } from "@/components/layout/page-main";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { DocumentsWorkspace } from "@/components/documents/documents-workspace";
 import { buttonVariants } from "@/components/ui/button";
@@ -22,28 +23,30 @@ export default async function DocumentsPage() {
     return (
       <>
         <SiteHeader accountState={account} ctaHref={ctaHref} />
-        <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-6 py-16">
-          <div className="rounded-xl border border-border bg-background p-8">
-            <h1 className="font-display text-2xl font-medium tracking-tight sm:text-3xl">
-              {siteCopy.documents.upgradeTitle}
-            </h1>
-            <p className="text-muted-foreground mt-3 text-base leading-relaxed">
-              {siteCopy.documents.upgradeBody}
-            </p>
-            <p className="mt-4 text-base font-medium text-foreground">
-              {plan.priceLabel}
-            </p>
-            <Link
-              href="/subscribe"
-              className={cn(
-                buttonVariants({ variant: "default" }),
-                "mt-8 inline-flex",
-              )}
-            >
-              {siteCopy.documents.upgradeCta}
-            </Link>
+        <PageMain className="justify-center">
+          <div className="mx-auto flex w-full max-w-lg flex-col px-6 py-16">
+            <div className="rounded-xl border border-border bg-background p-8">
+              <h1 className="font-display text-2xl font-medium tracking-tight sm:text-3xl">
+                {siteCopy.documents.upgradeTitle}
+              </h1>
+              <p className="text-muted-foreground mt-3 text-base leading-relaxed">
+                {siteCopy.documents.upgradeBody}
+              </p>
+              <p className="mt-4 text-base font-medium text-foreground">
+                {plan.priceLabel}
+              </p>
+              <Link
+                href="/subscribe"
+                className={cn(
+                  buttonVariants({ variant: "default" }),
+                  "mt-8 inline-flex",
+                )}
+              >
+                {siteCopy.documents.upgradeCta}
+              </Link>
+            </div>
           </div>
-        </div>
+        </PageMain>
       </>
     );
   }
@@ -58,7 +61,9 @@ export default async function DocumentsPage() {
   return (
     <>
       <SiteHeader accountState={account} ctaHref={ctaHref} />
-      <DocumentsWorkspace documents={entries} />
+      <PageMain>
+        <DocumentsWorkspace documents={entries} />
+      </PageMain>
     </>
   );
 }

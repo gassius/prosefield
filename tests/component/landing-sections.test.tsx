@@ -15,7 +15,9 @@ vi.mock("next/link", () => ({
   }) => createElement("a", { href, ...props }, children),
 }));
 
-import { AssuranceStrip } from "@/components/marketing/assurance-strip";
+import {
+  AssuranceStrip,
+} from "@/components/marketing/assurance-strip";
 import { Benefits } from "@/components/marketing/benefits";
 import { Faq } from "@/components/marketing/faq";
 import { FinalCta } from "@/components/marketing/final-cta";
@@ -23,13 +25,35 @@ import { Pricing } from "@/components/marketing/pricing";
 import { getFaqItems, siteCopy } from "@/content/site";
 
 describe("AssuranceStrip", () => {
-  it("renders three assurances including a euro plan icon", () => {
-    const { container } = render(createElement(AssuranceStrip));
+  it("renders three assurances and uses BadgeEuro for EUR", () => {
+    const { container } = render(
+      createElement(AssuranceStrip, { currency: "EUR" }),
+    );
     for (const item of siteCopy.assurance.items) {
       expect(screen.getByText(item.label)).toBeInTheDocument();
     }
+    expect(screen.getByRole("region", { name: siteCopy.assurance.regionLabel })).toBeInTheDocument();
     expect(container.querySelector(".lucide-badge-euro")).not.toBeNull();
     expect(container.querySelector(".lucide-dollar-sign")).toBeNull();
+  });
+
+  it("follows plan currency for the plan icon (Architecture §5.2)", () => {
+    const { container: eur } = render(
+      createElement(AssuranceStrip, { currency: "EUR" }),
+    );
+    expect(eur.querySelector(".lucide-badge-euro")).not.toBeNull();
+    expect(eur.querySelector(".lucide-dollar-sign")).toBeNull();
+
+    const { container: usd } = render(
+      createElement(AssuranceStrip, { currency: "USD" }),
+    );
+    expect(usd.querySelector(".lucide-dollar-sign")).not.toBeNull();
+    expect(usd.querySelector(".lucide-badge-euro")).toBeNull();
+
+    const { container: gbp } = render(
+      createElement(AssuranceStrip, { currency: "GBP" }),
+    );
+    expect(gbp.querySelector(".lucide-pound-sterling")).not.toBeNull();
   });
 });
 
@@ -49,26 +73,29 @@ describe("Benefits", () => {
 });
 
 describe("Pricing", () => {
-  it("shows getPlan price label, implemented benefits, and CTA", () => {
+  it("shows a non-default getPlan price so a hard-coded €8 fails", () => {
     render(
       createElement(Pricing, {
         plan: {
           name: "Prosefield",
-          price: "8",
+          price: "9",
           currency: "EUR",
           interval: "month",
-          priceLabel: "€8/month",
-          checkoutReassurance: "€8/month · Secure checkout",
+          priceLabel: "€9/month",
+          checkoutReassurance: "€9/month · Secure checkout",
         },
         ctaHref: "/register?next=/subscribe",
-        checkoutReassurance: "€8/month · Secure checkout",
+        checkoutReassurance: "€9/month · Secure checkout",
       }),
     );
 
     expect(
       screen.getByRole("heading", { name: siteCopy.pricing.headline }),
     ).toBeInTheDocument();
-    expect(screen.getByText("€8 /month")).toBeInTheDocument();
+    expect(screen.getByTestId("pricing-card-price")).toHaveTextContent(
+      "€9 /month",
+    );
+    expect(screen.queryByText(/€\s*8/)).not.toBeInTheDocument();
     for (const benefit of siteCopy.pricing.benefits) {
       expect(screen.getByText(benefit)).toBeInTheDocument();
     }
@@ -79,7 +106,7 @@ describe("Pricing", () => {
 });
 
 describe("Faq", () => {
-  it("exposes accordion questions from site copy", async () => {
+  it("exposes accordion questions from site copy without cancel when gated off", async () => {
     const user = userEvent.setup();
     const items = getFaqItems({ FEATURE_CUSTOMER_PORTAL: "false" });
     render(createElement(Faq, { items }));
@@ -93,6 +120,17 @@ describe("Faq", () => {
     expect(
       screen.queryByRole("button", { name: siteCopy.faq.cancelItem.question }),
     ).toBeNull();
+  });
+
+  it("shows the cancel FAQ when portal claims are allowed", () => {
+    const items = getFaqItems(
+      { FEATURE_CUSTOMER_PORTAL: "true" },
+      { portalRouteReady: true },
+    );
+    render(createElement(Faq, { items }));
+    expect(
+      screen.getByRole("button", { name: siteCopy.faq.cancelItem.question }),
+    ).toBeInTheDocument();
   });
 });
 
