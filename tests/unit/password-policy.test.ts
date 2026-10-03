@@ -26,4 +26,25 @@ describe("register password policy (server-side)", () => {
     const ok = assertRegisterPassword("abcdefgh");
     expect(ok).toEqual({ ok: true, password: "abcdefgh" });
   });
+
+  it("falls back to siteCopy hint when zod omits issue messages", () => {
+    const original = registerPasswordSchema.safeParse;
+    // Force the || siteCopy.auth.passwordHint branch.
+    (registerPasswordSchema as { safeParse: typeof original }).safeParse = () =>
+      ({
+        success: false,
+        error: { issues: [{}] },
+      }) as ReturnType<typeof original>;
+    try {
+      const result = assertRegisterPassword("x");
+      expect(result).toEqual({
+        ok: false,
+        message: siteCopy.auth.passwordHint,
+      });
+    } finally {
+      (registerPasswordSchema as { safeParse: typeof original }).safeParse =
+        original;
+    }
+  });
 });
+

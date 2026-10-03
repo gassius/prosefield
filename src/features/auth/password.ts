@@ -20,8 +20,7 @@ export function assertRegisterPassword(password: string): RegisterPasswordResult
   if (!parsed.success) {
     return {
       ok: false,
-      message:
-        parsed.error.issues[0]?.message ?? siteCopy.auth.passwordHint,
+      message: parsed.error.issues[0]?.message || siteCopy.auth.passwordHint,
     };
   }
   return { ok: true, password: parsed.data };

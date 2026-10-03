@@ -16,9 +16,6 @@ export function cssDurationToMs(value: string): number | null {
       return null;
     }
     const raw = Number(match[1]);
-    if (!Number.isFinite(raw) || Number.isNaN(raw)) {
-      return null;
-    }
     const ms = match[2] === "s" ? raw * 1000 : raw;
     if (ms > maxMs) {
       maxMs = ms;

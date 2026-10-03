@@ -292,5 +292,16 @@ describe("documents repository", () => {
     const emptySnap = await getDocumentById("d9");
     expect(emptySnap?.title).toBe("Untitled document");
     expect(emptySnap?.contentAllowed).toBe(false);
+
+    const { __unsafeSetDocumentContentForTests } = await import(
+      "@/features/documents/repository"
+    );
+    update.mockResolvedValue(undefined);
+    await __unsafeSetDocumentContentForTests({
+      documentId: "d1",
+      contentJson: '{"type":"doc","content":[]}',
+    });
+    expect(update).toHaveBeenCalled();
   });
 });
+

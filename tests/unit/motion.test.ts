@@ -6,6 +6,7 @@ describe("motion duration helpers", () => {
     expect(cssDurationToMs("0.2s")).toBe(200);
     expect(cssDurationToMs("200ms")).toBe(200);
     expect(cssDurationToMs("0s")).toBe(0);
+    expect(cssDurationToMs("50ms, 0.3s")).toBe(300);
   });
 
   it("rejects NaN and unparseable durations", () => {
@@ -13,6 +14,7 @@ describe("motion duration helpers", () => {
     expect(cssDurationToMs("abc")).toBeNull();
     expect(cssDurationToMs("")).toBeNull();
     expect(cssDurationToMs("-1s")).toBeNull();
+    expect(cssDurationToMs("1s, nope")).toBeNull();
   });
 
   it("does not treat NaN transition durations as reduced motion", () => {
@@ -44,5 +46,14 @@ describe("motion duration helpers", () => {
         transitionDuration: "0.01ms",
       }),
     ).toBe(true);
+    expect(
+      isReducedMotionStyle({
+        animationName: "",
+        animationDuration: "0s",
+        transitionProperty: "transform",
+        transitionDuration: "5ms",
+      }),
+    ).toBe(true);
   });
 });
+

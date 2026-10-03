@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatDeleteDocumentTitle,
   formatPricingCardPrice,
   splitPricingCardPrice,
+  siteCopy,
 } from "@/content/site";
 
 describe("pricing / FAQ typography helpers", () => {
@@ -15,5 +17,16 @@ describe("pricing / FAQ typography helpers", () => {
       amount: "€9",
       interval: " /month",
     });
+    expect(splitPricingCardPrice("Free")).toEqual({
+      amount: "Free",
+      interval: "",
+    });
+  });
+
+  it("formats delete document titles from siteCopy", () => {
+    expect(formatDeleteDocumentTitle("Notes")).toBe(
+      `${siteCopy.documents.deleteTitlePrefix} “Notes”?`,
+    );
   });
 });
+
