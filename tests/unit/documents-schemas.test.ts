@@ -283,8 +283,7 @@ describe("document allow-list and bounds", () => {
     ).toThrow(/scheme/);
     // Case / whitespace / embedded-newline variants — kills a raw
     // `href.startsWith("javascript:")` blacklist mutation (M20).
-    // Assemble the newline variant at runtime so the no-host-Java CI guard
-    // does not flag a literal `java` token in source.
+    // Newline variant is joined at runtime (CI forbids a bare host-JVM token).
     const hrefWithEmbeddedNewline = ["ja", "va", "\nscript:alert(1)"].join("");
     for (const href of [
       " JaVaScRiPt:alert(1)",
