@@ -477,5 +477,35 @@ describe("documents repository", () => {
       }),
     ).toBeNull();
     expect(refUpdate).not.toHaveBeenCalled();
+
+    // exists + undefined data inside the transaction → owner mismatch via ?? {}.
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => undefined,
+    });
+    expect(
+      await renameDocument({
+        documentId: "d1",
+        ownerId: "u1",
+        title: "Nope",
+      }),
+    ).toBeNull();
+
+    // Post-commit snap exists but data() is undefined → empty fallback record.
+    txGet.mockResolvedValueOnce(ownedSnap());
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => undefined,
+    });
+    const renamedEmptyAfter = await renameDocument({
+      documentId: "d1",
+      ownerId: "u1",
+      title: "After empty",
+    });
+    expect(renamedEmptyAfter?.id).toBe("d1");
+    expect(renamedEmptyAfter?.title).toBe("Untitled document");
+    expect(refUpdate).not.toHaveBeenCalled();
   });
 });
