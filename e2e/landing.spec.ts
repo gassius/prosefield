@@ -56,6 +56,12 @@ test.describe("landing marketing surface", () => {
 
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       await expect(
+        page.getByRole("link", { name: "Why Prosefield" }),
+      ).toHaveAttribute("href", "#benefits");
+      await expect(
+        page.getByRole("contentinfo").getByText("A focused home for your writing"),
+      ).toBeVisible();
+      await expect(
         page.getByRole("heading", { name: "A writing flow with less friction." }),
       ).toBeVisible();
       await expect(
