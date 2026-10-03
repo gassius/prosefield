@@ -16,10 +16,10 @@ function stripeApiOverride():
   if (!host) {
     return undefined;
   }
-  const portRaw = process.env.STRIPE_API_PORT?.trim();
-  const port = portRaw ? Number(portRaw) : 12111;
-  const protocol =
-    process.env.STRIPE_API_PROTOCOL?.trim() === "https" ? "https" : "http";
+  // Defaults keep CI visual mock simple when only HOST is set.
+  const port = Number(process.env.STRIPE_API_PORT || "12111");
+  const protocol: "http" | "https" =
+    process.env.STRIPE_API_PROTOCOL === "https" ? "https" : "http";
   return { host, port, protocol };
 }
 

@@ -19,5 +19,5 @@ describe("document page wiring", () => {
   });
 
   // documentId validation → E2E `invalid documentId path returns 404`
-  // (finding 14); source-regex case removed.
+  // (finding 14) + repository unit `rejects Firestore-illegal document ids`.
 });

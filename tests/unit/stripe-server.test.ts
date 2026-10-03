@@ -51,4 +51,49 @@ describe("getStripe", () => {
     expect(Number(api.port)).toBe(12111);
     expect(api.protocol).toBe("http");
   });
+
+  it("defaults port 12111 and http when only STRIPE_API_HOST is set", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
+    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
+    vi.stubEnv("STRIPE_API_HOST", "127.0.0.1");
+    vi.stubEnv("STRIPE_API_PORT", undefined);
+    vi.stubEnv("STRIPE_API_PROTOCOL", undefined);
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    const { getStripe, __resetStripeClientForTests } = await import(
+      "@/lib/stripe/server"
+    );
+    __resetStripeClientForTests();
+    const api = (
+      getStripe() as unknown as {
+        _api: { host: string; port: string | number; protocol: string };
+      }
+    )._api;
+    expect(api.host).toBe("127.0.0.1");
+    expect(Number(api.port)).toBe(12111);
+    expect(api.protocol).toBe("http");
+  });
+
+  it("honours STRIPE_API_PROTOCOL=https for the override", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
+    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
+    vi.stubEnv("STRIPE_API_HOST", "127.0.0.1");
+    vi.stubEnv("STRIPE_API_PORT", "8443");
+    vi.stubEnv("STRIPE_API_PROTOCOL", "https");
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    const { getStripe, __resetStripeClientForTests } = await import(
+      "@/lib/stripe/server"
+    );
+    __resetStripeClientForTests();
+    const api = (
+      getStripe() as unknown as {
+        _api: { host: string; port: string | number; protocol: string };
+      }
+    )._api;
+    expect(Number(api.port)).toBe(8443);
+    expect(api.protocol).toBe("https");
+  });
 });

@@ -266,6 +266,13 @@ export const tiptapJsonSchema: z.ZodType<TiptapJson> = z.custom<TiptapJson>(
   { message: "Content contains disallowed nodes or marks" },
 );
 
+/** Map validator failures into Zod issue text (exported for branch coverage). */
+export function documentContentErrorMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "Content contains disallowed nodes or marks";
+}
+
 export const documentContentSchema = z
   .unknown()
   .transform((value, ctx) => {
@@ -274,10 +281,7 @@ export const documentContentSchema = z
     } catch (error) {
       ctx.addIssue({
         code: "custom",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Content contains disallowed nodes or marks",
+        message: documentContentErrorMessage(error),
       });
       return z.NEVER;
     }
