@@ -7,15 +7,15 @@ Local-first writing workspace. Specs live in [`docs/architecture.md`](docs/archi
 - **nvm** (recommended) — run `nvm use` at the repo root so the shell matches [`.nvmrc`](.nvmrc)
 - **Node** — exact version from [`.nvmrc`](.nvmrc) (`nvm use`)
 - **pnpm** — via Corepack (`corepack enable`)
-- **Docker + Compose** — only required to run the backend (Auth, Firestore, Emulator UI)
+- **Docker + Compose** — required for the backend (Auth, Firestore, Emulator UI). Java and `firebase-tools` stay inside the Compose image — **do not install Java or the Firebase CLI on the host**.
 
-Nothing else is needed on the host. Emulators run only inside Docker (no global `firebase-tools`).
+Nothing else is needed on the host. Emulators run only inside Docker (no global `firebase-tools`, no host JRE).
 
 ## Quick start
 
-1. `nvm use`
+1. `nvm use` (reads [`.nvmrc`](.nvmrc))
 2. Optional: `cp .env.example .env` and paste a Stripe **test** key (`sk_test_…` or `rk_test_…`) when you need real Stripe CLI / billing work. A Stripe test account is free. `pnpm dev` also starts with built-in local defaults if `.env` is missing.
-3. Frontend (no backend required):
+3. Frontend on the host (no backend required):
 
    ```bash
    pnpm install
@@ -24,7 +24,7 @@ Nothing else is needed on the host. Emulators run only inside Docker (no global 
 
    Open http://localhost:3000. Pages render with the backend down; features that need Auth/Firestore degrade until the backend is up.
 
-4. Backend (Docker only) — copy `.env.example` to `.env` first (Compose reads Stripe placeholders even when the `stripe` profile is off):
+4. Backend via Docker Compose only — copy `.env.example` to `.env` first (Compose reads Stripe placeholders even when the `stripe` profile is off):
 
    ```bash
    cp -n .env.example .env
@@ -34,6 +34,21 @@ Nothing else is needed on the host. Emulators run only inside Docker (no global 
    Emulator UI http://127.0.0.1:4000 · Auth `:9099` · Firestore `:8080`.
 
    Or use the wrappers (fail fast if Docker isn't running): `pnpm backend:up` / `pnpm backend:down` / `pnpm backend:logs`.
+
+## Architecture overview
+
+Prosefield is one **Next.js 16** App Router app (React 19, TypeScript strict):
+
+| Concern | Choice |
+|---|---|
+| Identity | Firebase Auth (email/password) + server session cookie (`__session`) |
+| Data | Cloud Firestore via Firebase Admin only; browser clients are deny-all |
+| Local backend | Firebase Auth + Firestore emulators in Docker (`demo-prosefield`) |
+| Payments | Stripe Checkout (test mode) + verified webhooks; session-sync fallback on `/billing/status` |
+| Editor | Tiptap (JSON persistence, **manual** save) |
+| UI | Tailwind CSS 4 + minimal shadcn/ui, tokens from Art Direction v1.1 |
+
+**Surfaces:** a public marketing/pricing page, and an authenticated document workspace that only **active** subscribers can use. Server Actions and Route Handlers enforce sessions, entitlement, and all document CRUD. Details and trade-offs: [`docs/architecture.md`](docs/architecture.md).
 
 ### Emulator data
 
@@ -71,6 +86,19 @@ docker compose run --rm stripe-cli listen --print-secret
 ```
 
 (`pnpm stripe:seed` / `pnpm stripe:setup` use `tsx --env-file-if-exists=.env`, so exporting `STRIPE_SECRET_KEY=…` without a `.env` file still works.)
+
+Playwright acceptance tests mock payment by seeding the Firestore entitlement projection in the emulator (Architecture §13) — a test-only shortcut with no production equivalent.
+
+## Known limitations
+
+- **Docker is required** for Auth/Firestore. There is no host-Java or global `firebase-tools` fallback.
+- **Manual save only** — no autosave, no multi-device conflict resolution, no version history.
+- **No real-time collaboration** and no offline client Firestore access (server-only data path).
+- **One plan / one price** — no coupons, taxes, trials, or tiered pricing. Plan display falls back to `PLAN_DISPLAY_*` when Stripe is not configured.
+- **Stripe live keys are rejected** — only `sk_test_` / `rk_test_` keys are accepted.
+- **Customer Portal** is feature-flagged (`FEATURE_CUSTOMER_PORTAL`); "Cancel anytime" copy stays honest with the flag.
+- **No production deploy in the default path** — optional Firebase App Hosting is phase P6 and never blocks local acceptance.
+- **Non-goals** (out of scope): AI features, uploads/export, admin UI, email verification, dark mode, public API. See Architecture §2.3.
 
 ## Scripts
 
