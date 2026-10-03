@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 
 const replace = vi.fn();
 const refresh = vi.fn();
@@ -13,13 +13,68 @@ vi.mock("next/navigation", () => ({
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { siteCopy } from "@/content/site";
 
+const CSRF_VALUE = "test-csrf-secret-token";
+const RESPONSE_BODY_SECRET = "forbidden-body-secret";
+const THROW_MESSAGE_SECRET = "network-down-secret";
+
+/** Deep-walk logged args so object payloads can't hide secrets behind String(). */
+function collectLoggedStrings(value: unknown, out: string[] = []): string[] {
+  if (value === null || value === undefined) {
+    return out;
+  }
+  if (typeof value === "string") {
+    out.push(value);
+    return out;
+  }
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
+    out.push(String(value));
+    return out;
+  }
+  if (typeof value === "symbol") {
+    out.push(value.toString());
+    return out;
+  }
+  if (typeof value === "function") {
+    out.push(value.name || "anonymous");
+    return out;
+  }
+  if (value instanceof Error) {
+    out.push(value.name, value.message, value.stack ?? "");
+    return out;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectLoggedStrings(item, out);
+    }
+    return out;
+  }
+  if (typeof value === "object") {
+    out.push(JSON.stringify(value));
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      out.push(key);
+      collectLoggedStrings(nested, out);
+    }
+  }
+  return out;
+}
+
+function assertNoSecretsInLogs(consoleError: MockInstance<typeof console.error>) {
+  const leaked = [RESPONSE_BODY_SECRET, THROW_MESSAGE_SECRET, CSRF_VALUE];
+  for (const args of consoleError.mock.calls) {
+    const strings = collectLoggedStrings(args);
+    for (const secret of leaked) {
+      expect(strings.join("\u0000")).not.toContain(secret);
+    }
+  }
+}
+
 describe("SignOutButton failure handling", () => {
-  let consoleError: ReturnType<typeof vi.spyOn>;
+  let consoleError: MockInstance<typeof console.error>;
 
   beforeEach(() => {
     replace.mockReset();
     refresh.mockReset();
-    document.cookie = "csrf_token=test-csrf";
+    document.cookie = `csrf_token=${CSRF_VALUE}`;
     consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
@@ -32,20 +87,25 @@ describe("SignOutButton failure handling", () => {
     const user = userEvent.setup();
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(JSON.stringify({ error: "forbidden" }), { status: 403 })),
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: RESPONSE_BODY_SECRET }), { status: 403 }),
+      ),
     );
 
     render(createElement(SignOutButton));
     await user.click(screen.getByRole("button", { name: siteCopy.header.signOut }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(siteCopy.auth.networkError);
+    expect(alert).toHaveTextContent(siteCopy.auth.signOutError);
     expect(replace).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
-    expect(consoleError).toHaveBeenCalled();
-    const logged = consoleError.mock.calls.flat().map(String).join(" ");
-    expect(logged).toContain("[sign-out]");
-    expect(logged).not.toContain("forbidden");
+    expect(consoleError).toHaveBeenCalledWith("[sign-out]", {
+      event: "sign_out_failed",
+      reason: "http",
+      status: 403,
+    });
+    assertNoSecretsInLogs(consoleError);
   });
 
   it("shows an alert and does not navigate when fetch throws", async () => {
@@ -53,7 +113,7 @@ describe("SignOutButton failure handling", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
-        throw new Error("network down");
+        throw new Error(THROW_MESSAGE_SECRET);
       }),
     );
 
@@ -61,14 +121,17 @@ describe("SignOutButton failure handling", () => {
     await user.click(screen.getByRole("button", { name: siteCopy.header.signOut }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(siteCopy.auth.networkError);
+    expect(alert).toHaveTextContent(siteCopy.auth.signOutError);
+    expect(alert).not.toHaveTextContent(THROW_MESSAGE_SECRET);
     expect(replace).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
     await waitFor(() => {
-      expect(consoleError).toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledWith("[sign-out]", {
+        event: "sign_out_failed",
+        reason: "network",
+      });
     });
-    // User-facing copy stays calm; raw exception text must not appear in the UI.
-    expect(alert).not.toHaveTextContent("network down");
+    assertNoSecretsInLogs(consoleError);
   });
 
   it("shows an alert and does not navigate when the CSRF cookie is missing", async () => {
@@ -81,9 +144,44 @@ describe("SignOutButton failure handling", () => {
     await user.click(screen.getByRole("button", { name: siteCopy.header.signOut }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(siteCopy.auth.networkError);
+    expect(alert).toHaveTextContent(siteCopy.auth.signOutError);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalledWith("[sign-out]", {
+      event: "sign_out_failed",
+      reason: "csrf",
+    });
+    assertNoSecretsInLogs(consoleError);
+  });
+
+  it("re-enables after failure and clears the alert on a successful retry", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: RESPONSE_BODY_SECRET }), { status: 500 }),
+      )
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(createElement(SignOutButton));
+    const button = screen.getByRole("button", { name: siteCopy.header.signOut });
+
+    await user.click(button);
+    expect(await screen.findByRole("alert")).toHaveTextContent(siteCopy.auth.signOutError);
+    expect(replace).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(button).toBeEnabled();
+    });
+
+    await user.click(button);
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith("/");
+      expect(refresh).toHaveBeenCalled();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    assertNoSecretsInLogs(consoleError);
   });
 });
