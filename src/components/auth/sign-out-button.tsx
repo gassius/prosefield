@@ -1,5 +1,6 @@
 "use client";
 
+import { AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -72,8 +73,12 @@ export function SignOutButton({ className }: SignOutButtonProps) {
         {siteCopy.header.signOut}
       </Button>
       {error ? (
-        <span role="alert" className="text-destructive text-xs">
-          {error}
+        <span
+          role="alert"
+          className="bg-destructive-soft text-destructive inline-flex max-w-[16rem] items-start gap-1.5 rounded-md px-2 py-1 text-xs"
+        >
+          <AlertCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <span>{error}</span>
         </span>
       ) : null}
     </span>

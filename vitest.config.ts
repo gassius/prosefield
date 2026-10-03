@@ -39,6 +39,7 @@ export default defineConfig({
         "src/content/**/*.{ts,tsx}",
         "src/components/layout/**/*.{ts,tsx}",
         "src/components/marketing/**/*.{ts,tsx}",
+        "src/components/auth/sign-out-button.tsx",
         "src/components/ui/accordion.tsx",
         "src/components/ui/sheet.tsx",
       ],
