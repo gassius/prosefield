@@ -55,7 +55,11 @@ export default defineConfig({
         "src/features/auth/{account-state,auth-time,constants,csrf,map-auth-error,next}.ts":
           highBar,
         "src/lib/env.ts": highBar,
+        "src/lib/env-defaults.ts": highBar,
+        "src/lib/motion.ts": highBar,
+        "src/lib/startup-env.ts": highBar,
         "src/lib/utils.ts": highBar,
+        "src/features/auth/password.ts": highBar,
         "src/features/auth/{session,guards,users}.ts": authSurfaceBar,
         "src/features/billing/{entitlement,plan-display,configured}.ts": highBar,
         "src/features/billing/{projection,webhook,checkout,customers,session-sync,subscriptions,plan,actions}.ts":

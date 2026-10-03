@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import prosefield from "./eslint-rules/no-hardcoded-ui-strings.mjs";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -13,6 +14,22 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  {
+    files: ["src/components/**/*.{jsx,tsx}", "src/app/**/*.{jsx,tsx}"],
+    plugins: {
+      prosefield,
+    },
+    rules: {
+      // UI copy must come from siteCopy (src/content/site.ts).
+      "prosefield/no-hardcoded-ui-strings": [
+        "error",
+        {
+          // Tiny punctuation / symbols used as layout fragments.
+          allowedStrings: ["·", "/", "—", "…", "€", "$", "£"],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

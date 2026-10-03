@@ -18,6 +18,7 @@ import {
   PASSWORD_MIN_LENGTH,
 } from "@/features/auth/constants";
 import { mapAuthError } from "@/features/auth/map-auth-error";
+import { assertRegisterPassword } from "@/features/auth/password";
 import { getClientAuth } from "@/lib/firebase/client";
 
 type Mode = "login" | "register";
@@ -78,6 +79,16 @@ export function AuthForm({ mode, nextPath }: AuthFormProps) {
     setSummaryError(null);
     setEmailError(null);
     setPasswordError(null);
+
+    if (mode === "register") {
+      const passwordCheck = assertRegisterPassword(password);
+      if (!passwordCheck.ok) {
+        setPasswordError(passwordCheck.message);
+        passwordRef.current?.focus();
+        return;
+      }
+    }
+
     setPending(true);
 
     try {
@@ -212,7 +223,7 @@ export function AuthForm({ mode, nextPath }: AuthFormProps) {
       </div>
 
       <Button type="submit" size="lg" disabled={pending} className="w-full">
-        {pending ? "Please wait…" : submitLabel}
+        {pending ? siteCopy.auth.pleaseWait : submitLabel}
       </Button>
     </form>
   );

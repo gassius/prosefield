@@ -130,11 +130,30 @@ describe("AuthForm", () => {
 
     render(createElement(AuthForm, { mode: "register", nextPath: "/subscribe" }));
     await user.type(screen.getByLabelText(siteCopy.auth.emailLabel), "weak@example.com");
-    await user.type(screen.getByLabelText(siteCopy.auth.passwordLabel), "123");
+    // 8+ chars so client policy passes; Firebase weak-password still maps to the hint.
+    await user.type(screen.getByLabelText(siteCopy.auth.passwordLabel), "12345678");
     await user.click(
       screen.getByRole("button", { name: siteCopy.auth.registerSubmit }),
     );
 
     expect(await screen.findByText(siteCopy.auth.passwordHint)).toBeInTheDocument();
   });
+
+  it("rejects a 7-character password before calling Firebase", async () => {
+    const user = userEvent.setup();
+    render(createElement(AuthForm, { mode: "register", nextPath: "/subscribe" }));
+
+    const passwordInput = screen.getByLabelText(siteCopy.auth.passwordLabel);
+    expect(passwordInput).toHaveAttribute("minLength", "8");
+
+    await user.type(screen.getByLabelText(siteCopy.auth.emailLabel), "short@example.com");
+    await user.type(passwordInput, "abcdefg");
+    await user.click(
+      screen.getByRole("button", { name: siteCopy.auth.registerSubmit }),
+    );
+
+    expect(await screen.findByText(siteCopy.auth.passwordHint)).toBeInTheDocument();
+    expect(createUser).not.toHaveBeenCalled();
+  });
 });
+

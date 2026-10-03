@@ -100,8 +100,12 @@ describe("Pricing", () => {
     expect(
       screen.getByRole("heading", { name: siteCopy.pricing.headline }),
     ).toBeInTheDocument();
-    expect(screen.getByTestId("pricing-card-price")).toHaveTextContent(
-      "€9 /month",
+    const price = screen.getByTestId("pricing-card-price");
+    expect(price).toHaveTextContent("€9 /month");
+    // Mock-aligned split: large amount + smaller interval.
+    expect(price.querySelector(".font-display")?.textContent).toBe("€9");
+    expect(price.querySelector(".text-muted-foreground")?.textContent).toBe(
+      " /month",
     );
     expect(screen.queryByText(/€\s*8/)).not.toBeInTheDocument();
     for (const benefit of siteCopy.pricing.benefits) {
@@ -123,6 +127,9 @@ describe("Faq", () => {
       screen.getByRole("heading", { name: siteCopy.faq.headline }),
     ).toBeInTheDocument();
     const first = screen.getByRole("button", { name: items[0].question });
+    // Mock: FAQ questions use medium sans, not the display serif.
+    expect(first.className).toMatch(/font-sans/);
+    expect(first.className).not.toMatch(/font-display/);
     await user.click(first);
     expect(screen.getByText(items[0].answer)).toBeInTheDocument();
     expect(

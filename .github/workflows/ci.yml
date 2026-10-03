@@ -51,6 +51,10 @@ jobs:
         run: cp .env.example .env
 
       - name: Build
+        # .env.example leaves ALLOW_EMULATORS commented (fail-closed default).
+        # Local/CI builds against demo emulator hosts must opt in explicitly.
+        env:
+          ALLOW_EMULATORS: "1"
         run: pnpm build
 
   integration:
@@ -164,6 +168,8 @@ jobs:
         run: cp .env.example .env
 
       - name: Build
+        env:
+          ALLOW_EMULATORS: "1"
         run: pnpm build
 
       - name: Start Next.js (backend down)
@@ -246,6 +252,8 @@ jobs:
       - name: Start emulators
         run: docker compose up -d --wait
       - name: Build
+        env:
+          ALLOW_EMULATORS: "1"
         run: pnpm build
 
       - name: Start Next.js

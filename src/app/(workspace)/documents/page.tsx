@@ -26,7 +26,7 @@ export default async function DocumentsPage() {
         <PageMain className="justify-center">
           <div className="mx-auto flex w-full max-w-lg flex-col px-6 py-16">
             <div className="rounded-xl border border-border bg-background p-8">
-              <h1 className="font-display text-2xl font-medium tracking-tight sm:text-3xl">
+              <h1 className="font-display text-xl font-medium tracking-tight sm:text-2xl">
                 {siteCopy.documents.upgradeTitle}
               </h1>
               <p className="text-muted-foreground mt-3 text-base leading-relaxed">

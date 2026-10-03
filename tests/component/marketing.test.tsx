@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -121,6 +121,51 @@ describe("SiteHeader", () => {
     expect(
       within(mobileNav).getByRole("link", { name: siteCopy.header.cta }),
     ).toHaveAttribute("href", "/register?next=/subscribe");
+  });
+
+  it("closes the Sheet when the viewport widens past the mobile breakpoint", async () => {
+    const user = userEvent.setup();
+    let listener: ((event: MediaQueryListEvent) => void) | undefined;
+    const media: MediaQueryList = {
+      matches: false,
+      media: "(min-width: 640px)",
+      addEventListener: ((
+        _type: string,
+        cb: EventListenerOrEventListenerObject,
+      ) => {
+        listener =
+          typeof cb === "function"
+            ? (cb as (event: MediaQueryListEvent) => void)
+            : (event) => cb.handleEvent(event);
+      }) as MediaQueryList["addEventListener"],
+      removeEventListener: vi.fn() as MediaQueryList["removeEventListener"],
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(() => true),
+      onchange: null,
+    };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => media),
+    );
+
+    render(
+      createElement(SiteHeader, {
+        accountState: { kind: "logged_out" },
+        ctaHref: "/register?next=/subscribe",
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: siteCopy.header.menu }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+
+    Object.defineProperty(media, "matches", { value: true, configurable: true });
+    await act(async () => {
+      listener?.({ matches: true } as MediaQueryListEvent);
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    vi.unstubAllGlobals();
   });
 
   it("closes the Sheet when a mobile nav link is clicked", async () => {

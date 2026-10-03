@@ -19,6 +19,7 @@ export function SheetOverlay({
       data-testid="sheet-overlay"
       className={cn(
         "fixed inset-0 z-50 bg-foreground/40 transition-opacity duration-200 ease-[var(--ease-standard)] motion-reduce:transition-none motion-reduce:animate-none",
+        "data-[state=open]:opacity-100 data-[state=closed]:opacity-0",
         className,
       )}
       {...props}
@@ -41,8 +42,15 @@ export function SheetContent({
         data-testid="sheet-content"
         className={cn(
           "bg-background fixed z-50 flex h-full w-[min(100%,20rem)] flex-col gap-4 border-border p-6 shadow-lg transition-transform duration-200 ease-[var(--ease-standard)] motion-reduce:transition-none motion-reduce:animate-none",
-          side === "right" && "inset-y-0 right-0 border-l",
-          side === "left" && "inset-y-0 left-0 border-r",
+          side === "right" &&
+            "inset-y-0 right-0 border-l data-[state=closed]:translate-x-full data-[state=open]:translate-x-0 motion-reduce:data-[state=closed]:translate-x-0",
+          side === "left" &&
+            "inset-y-0 left-0 border-r data-[state=closed]:-translate-x-full data-[state=open]:translate-x-0 motion-reduce:data-[state=closed]:translate-x-0",
+          // Open entrance when motion is allowed (Radix mounts open content once).
+          side === "right" &&
+            "motion-safe:animate-sheet-in-right motion-reduce:animate-none",
+          side === "left" &&
+            "motion-safe:animate-sheet-in-left motion-reduce:animate-none",
           className,
         )}
         {...props}

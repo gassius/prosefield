@@ -38,9 +38,15 @@ export const siteCopy = {
     networkError: "Something went wrong. Please try again.",
     signOutError: "We couldn't sign you out. Please try again.",
     passwordHint: "Use at least 8 characters.",
+    pleaseWait: "Please wait…",
   },
   a11y: {
     skipToContent: "Skip to content",
+  },
+  notFound: {
+    title: "Page not found",
+    body: "That page isn’t here. Head home to keep writing.",
+    homeCta: "Back to home",
   },
   home: {
     eyebrow: "A focused home for your writing",
@@ -217,6 +223,10 @@ export const siteCopy = {
     titleLabel: "Document title",
     backToList: "All documents",
     editorLandmark: "Document editor",
+    selectOrCreate: "Select a document or create a new one.",
+    contentBlocked:
+      "This document contains unsupported formatting and cannot be saved until it is reset. Your stored copy is unchanged.",
+    resetBlankPage: "Reset to a blank page",
   },
   billingStatus: {
     title: "Confirming payment",
@@ -224,7 +234,7 @@ export const siteCopy = {
     delayed:
       "We’re still waiting for Stripe to confirm your payment. Refresh this page or try again shortly.",
     failedTitle: "Payment didn't go through",
-    failedBody: "No charge unlocked access. You can try checkout again.",
+    failedBody: "Your payment wasn't completed. You can try checkout again.",
     tryAgain: "Try again",
   },
 } as const;
@@ -287,5 +297,26 @@ export function getFaqItems(
 /** Pricing card display: keep the plan label, add a space before the slash. */
 export function formatPricingCardPrice(priceLabel: string): string {
   return priceLabel.replace("/", " /");
+}
+
+/** Split `€8/month` into amount + interval for mock-aligned typography. */
+export function splitPricingCardPrice(priceLabel: string): {
+  amount: string;
+  interval: string;
+} {
+  const formatted = formatPricingCardPrice(priceLabel);
+  const slash = formatted.indexOf(" /");
+  if (slash === -1) {
+    return { amount: formatted, interval: "" };
+  }
+  return {
+    amount: formatted.slice(0, slash),
+    interval: formatted.slice(slash),
+  };
+}
+
+/** Delete confirmation title: Delete “{title}”? */
+export function formatDeleteDocumentTitle(title: string): string {
+  return `${siteCopy.documents.deleteTitlePrefix} “${title}”?`;
 }
 

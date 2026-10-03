@@ -20,6 +20,7 @@ async function expectNoHorizontalOverflow(page: import("@playwright/test").Page)
 async function expectReducedMotion(
   locator: import("@playwright/test").Locator,
 ) {
+  const { isReducedMotionStyle } = await import("../src/lib/motion");
   const motion = await locator.evaluate((el) => {
     const style = getComputedStyle(el);
     return {
@@ -29,19 +30,7 @@ async function expectReducedMotion(
       transitionProperty: style.transitionProperty,
     };
   });
-  const animMs = Number.parseFloat(motion.animationDuration) * 1000;
-  const transitionMs = Number.parseFloat(motion.transitionDuration) * 1000;
-  expect(
-    motion.animationName === "none" ||
-      motion.animationName === "" ||
-      Number.isNaN(animMs) ||
-      animMs <= 10,
-  ).toBe(true);
-  expect(
-    motion.transitionProperty === "none" ||
-      Number.isNaN(transitionMs) ||
-      transitionMs <= 10,
-  ).toBe(true);
+  expect(isReducedMotionStyle(motion)).toBe(true);
 }
 
 test.describe("landing marketing surface", () => {

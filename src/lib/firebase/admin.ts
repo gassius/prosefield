@@ -26,8 +26,12 @@ function createAdminApp(): App {
     );
   }
 
-  // Emulator mode: no credentials. Production/App Hosting: ADC / service account.
+  // Emulator mode: explicit projectId, no ADC. Disable GCP metadata probes so
+  // google-auth-library does not emit MetadataLookupWarning / slow the first request.
   if (usingEmulators) {
+    if (!process.env.METADATA_SERVER_DETECTION) {
+      process.env.METADATA_SERVER_DETECTION = "none";
+    }
     return initializeApp({ projectId: env.FIREBASE_PROJECT_ID });
   }
 

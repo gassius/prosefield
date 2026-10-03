@@ -6,9 +6,15 @@ const set = vi.fn();
 const update = vi.fn();
 const del = vi.fn();
 const docsQueryGet = vi.fn();
+const runTransaction = vi.fn(
+  async (fn: (tx: { get: typeof get; update: typeof update }) => Promise<unknown>) =>
+    fn({ get, update }),
+);
 
 vi.mock("@/lib/firebase/admin", () => ({
   getAdminFirestore: () => ({
+    runTransaction: (fn: (tx: { get: typeof get; update: typeof update }) => Promise<unknown>) =>
+      runTransaction(fn),
     collection: () => ({
       doc: () => ({
         get,
@@ -33,6 +39,7 @@ describe("documents repository", () => {
     update.mockReset();
     del.mockReset();
     docsQueryGet.mockReset();
+    runTransaction.mockClear();
   });
 
   it("parses string, map, invalid JSON, and non-object content", async () => {
@@ -175,7 +182,6 @@ describe("documents repository", () => {
     expect(created.id).toBe("newdocid00000000001");
     expect(created.contentAllowed).toBe(true);
 
-    get.mockResolvedValueOnce({ exists: true, data: () => ({ ownerId: "u1" }) });
     get.mockResolvedValueOnce({
       exists: true,
       id: "d1",
@@ -188,24 +194,27 @@ describe("documents repository", () => {
       }),
     });
     update.mockResolvedValue(undefined);
-    await updateDocumentContent({
+    const afterUpdate = await updateDocumentContent({
       documentId: "d1",
       content: EMPTY_DOCUMENT_CONTENT,
     });
+    expect(afterUpdate?.contentAllowed).toBe(true);
+    expect(runTransaction).toHaveBeenCalled();
+    expect(update).toHaveBeenCalled();
 
-    get.mockResolvedValueOnce({ exists: true, data: () => ({ ownerId: "u1" }) });
     get.mockResolvedValueOnce({
       exists: true,
       id: "d1",
       data: () => ({
         ownerId: "u1",
-        title: "Renamed",
+        title: "T",
         content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
     });
-    await renameDocument({ documentId: "d1", title: "Renamed" });
+    const afterRename = await renameDocument({ documentId: "d1", title: "Renamed" });
+    expect(afterRename?.title).toBe("Renamed");
 
     get.mockResolvedValueOnce({ exists: false });
     expect(await updateDocumentContent({ documentId: "x", content: EMPTY_DOCUMENT_CONTENT })).toBeNull();
@@ -238,35 +247,25 @@ describe("documents repository", () => {
       id: "d1",
       data: () => ({ ownerId: "u1" }),
     });
-    get.mockResolvedValueOnce({
-      exists: true,
-      id: "d1",
-      data: () => undefined,
-    });
     update.mockResolvedValue(undefined);
-    const updatedEmpty = await updateDocumentContent({
+    const updatedSparse = await updateDocumentContent({
       documentId: "d1",
       content: EMPTY_DOCUMENT_CONTENT,
     });
-    // Empty snapshot falls back to {} → contentAllowed false (no stored content).
-    expect(updatedEmpty?.contentAllowed).toBe(false);
-    expect(updatedEmpty?.title).toBe("Untitled document");
+    // Transaction merges new content onto the existing sparse snapshot.
+    expect(updatedSparse?.contentAllowed).toBe(true);
+    expect(updatedSparse?.title).toBe("Untitled document");
 
     get.mockResolvedValueOnce({
       exists: true,
       id: "d1",
       data: () => ({ ownerId: "u1" }),
     });
-    get.mockResolvedValueOnce({
-      exists: true,
-      id: "d1",
-      data: () => undefined,
-    });
-    const renamedEmpty = await renameDocument({
+    const renamedSparse = await renameDocument({
       documentId: "d1",
       title: "After",
     });
-    expect(renamedEmpty?.title).toBe("Untitled document");
+    expect(renamedSparse?.title).toBe("After");
 
     get.mockResolvedValueOnce({
       exists: true,

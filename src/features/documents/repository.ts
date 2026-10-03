@@ -147,34 +147,48 @@ export async function updateDocumentContent(input: {
   documentId: string;
   content: TiptapJson;
 }): Promise<DocumentRecord | null> {
-  const ref = getAdminFirestore().collection("documents").doc(input.documentId);
-  const snap = await ref.get();
-  if (!snap.exists) {
-    return null;
-  }
-  await ref.update({
-    content: serialiseContent(input.content),
-    updatedAt: FieldValue.serverTimestamp(),
+  const db = getAdminFirestore();
+  const ref = db.collection("documents").doc(input.documentId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      return null;
+    }
+    tx.update(ref, {
+      content: serialiseContent(input.content),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    const existing = snap.data() ?? {};
+    return toRecord(ref.id, {
+      ...existing,
+      content: serialiseContent(input.content),
+      updatedAt: new Date(),
+    });
   });
-  const updated = await ref.get();
-  return toRecord(ref.id, updated.data() ?? {});
 }
 
 export async function renameDocument(input: {
   documentId: string;
   title: string;
 }): Promise<DocumentRecord | null> {
-  const ref = getAdminFirestore().collection("documents").doc(input.documentId);
-  const snap = await ref.get();
-  if (!snap.exists) {
-    return null;
-  }
-  await ref.update({
-    title: input.title,
-    updatedAt: FieldValue.serverTimestamp(),
+  const db = getAdminFirestore();
+  const ref = db.collection("documents").doc(input.documentId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      return null;
+    }
+    tx.update(ref, {
+      title: input.title,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    const existing = snap.data() ?? {};
+    return toRecord(ref.id, {
+      ...existing,
+      title: input.title,
+      updatedAt: new Date(),
+    });
   });
-  const updated = await ref.get();
-  return toRecord(ref.id, updated.data() ?? {});
 }
 
 export async function deleteDocument(documentId: string): Promise<boolean> {

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Check } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
-import { formatPricingCardPrice, siteCopy } from "@/content/site";
+import { siteCopy, splitPricingCardPrice } from "@/content/site";
 import type { PlanDisplay } from "@/features/billing/plan-display";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,8 @@ type PricingProps = {
 
 /** Single-plan pricing from getPlan() (Art Direction §9.5). */
 export function Pricing({ plan, ctaHref, checkoutReassurance }: PricingProps) {
+  const { amount, interval } = splitPricingCardPrice(plan.priceLabel);
+
   return (
     <section id="pricing" className="scroll-mt-8 bg-secondary/60">
       <div className="mx-auto grid max-w-6xl gap-10 px-6 py-16 sm:py-20 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-center lg:gap-14 lg:py-24">
@@ -35,9 +37,16 @@ export function Pricing({ plan, ctaHref, checkoutReassurance }: PricingProps) {
           </p>
           <p
             data-testid="pricing-card-price"
-            className="font-display text-foreground mt-4 text-4xl font-medium tracking-tight"
+            className="text-foreground mt-4 font-medium tracking-tight"
           >
-            {formatPricingCardPrice(plan.priceLabel)}
+            <span className="font-display text-5xl leading-none sm:text-6xl">
+              {amount}
+            </span>
+            {interval ? (
+              <span className="text-muted-foreground ml-1 text-lg font-normal sm:text-xl">
+                {interval}
+              </span>
+            ) : null}
           </p>
           <ul className="mt-6 space-y-3">
             {siteCopy.pricing.benefits.map((benefit) => (

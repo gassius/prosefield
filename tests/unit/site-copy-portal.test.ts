@@ -63,3 +63,4 @@ describe("FEATURE_CUSTOMER_PORTAL + portal route gate", () => {
     expect(formatPricingCardPrice("€8/month")).toBe("€8 /month");
   });
 });
+
