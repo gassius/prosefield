@@ -277,4 +277,212 @@ describe("DocumentEditor (real component)", () => {
       expect(screen.getByRole("alert")).toHaveTextContent("Title is required");
     });
   });
+
+  it("save flow with headings sends plain JSON Server Actions accept (bug 869fbe1dm)", async () => {
+    const user = userEvent.setup();
+    const { DocumentEditor } = await import(
+      "@/components/editor/document-editor"
+    );
+    const { documentContentSchema } = await import(
+      "@/features/documents/schemas"
+    );
+
+    render(
+      <DocumentEditor
+        documentId="doc1abcABC1234567890"
+        initialTitle="Draft"
+        initialContent={EMPTY_DOCUMENT_CONTENT}
+        contentAllowed
+        onEditorReady={(editor) => {
+          latestEditor = editor;
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(latestEditor).toBeTruthy();
+    });
+
+    latestEditor!.commands.setContent({
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "Section" }],
+        },
+        {
+          type: "heading",
+          attrs: { level: 3 },
+          content: [{ type: "text", text: "Subsection" }],
+        },
+      ],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
+    });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(saveDocumentAction).toHaveBeenCalled();
+    });
+
+    const payload = saveDocumentAction.mock.calls.at(-1)?.[0] as {
+      content: {
+        content?: Array<{ type?: string; attrs?: { level?: number } }>;
+      };
+    };
+    const headingNodes = (payload.content.content ?? []).filter(
+      (node) => node.type === "heading",
+    );
+    expect(headingNodes).toHaveLength(2);
+    for (const node of headingNodes) {
+      expect(Object.getPrototypeOf(node.attrs ?? null)).toBe(Object.prototype);
+    }
+    expect(headingNodes.map((node) => node.attrs?.level)).toEqual([2, 3]);
+    expect(documentContentSchema.safeParse(payload.content).success).toBe(true);
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent("Saved");
+    });
+  });
+
+  it("every node/mark the live editor can produce passes the document schema", async () => {
+    const { createProsefieldStarterKit } = await import(
+      "@/features/documents/editor-extensions"
+    );
+    const { documentContentSchema } = await import(
+      "@/features/documents/schemas"
+    );
+    const { Editor } = await import("@tiptap/core");
+
+    const cases: Array<{ name: string; apply: (editor: Editor) => void }> = [
+      {
+        name: "paragraph + hardBreak",
+        apply: (editor) => {
+          editor.commands.setContent({
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  { type: "text", text: "a" },
+                  { type: "hardBreak" },
+                  { type: "text", text: "b" },
+                ],
+              },
+            ],
+          });
+        },
+      },
+      {
+        name: "bold + italic",
+        apply: (editor) => {
+          editor.commands.setContent({
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  { type: "text", text: "b", marks: [{ type: "bold" }] },
+                  { type: "text", text: "i", marks: [{ type: "italic" }] },
+                ],
+              },
+            ],
+          });
+        },
+      },
+      {
+        name: "heading level 2",
+        apply: (editor) => {
+          editor.commands.setContent({
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "H2" }],
+              },
+            ],
+          });
+          editor.commands.toggleHeading({ level: 2 });
+        },
+      },
+      {
+        name: "heading level 3",
+        apply: (editor) => {
+          editor.commands.setContent({
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "H3" }],
+              },
+            ],
+          });
+          editor.commands.toggleHeading({ level: 3 });
+        },
+      },
+      {
+        name: "bulletList",
+        apply: (editor) => {
+          editor.commands.setContent({
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "item" }],
+              },
+            ],
+          });
+          editor.commands.toggleBulletList();
+        },
+      },
+      {
+        name: "orderedList",
+        apply: (editor) => {
+          editor.commands.setContent({
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "item" }],
+              },
+            ],
+          });
+          editor.commands.toggleOrderedList();
+        },
+      },
+      {
+        name: "blockquote",
+        apply: (editor) => {
+          editor.commands.setContent({
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [{ type: "text", text: "quote" }],
+              },
+            ],
+          });
+          editor.commands.toggleBlockquote();
+        },
+      },
+    ];
+
+    const editor = new Editor({
+      extensions: [createProsefieldStarterKit()],
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+
+    try {
+      for (const entry of cases) {
+        entry.apply(editor);
+        const raw = editor.getJSON();
+        const plain = JSON.parse(JSON.stringify(raw));
+        const parsed = documentContentSchema.safeParse(plain);
+        expect(parsed.success, `${entry.name} must pass schema`).toBe(true);
+      }
+    } finally {
+      editor.destroy();
+    }
+  });
 });

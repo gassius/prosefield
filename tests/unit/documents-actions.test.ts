@@ -216,6 +216,76 @@ describe("document actions (mocked guards)", () => {
     ).resolves.toMatchObject({ ok: false, code: "invalid" });
   });
 
+  it.each([
+    {
+      label: "h2",
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "heading",
+            attrs: { level: 2 },
+            content: [{ type: "text", text: "Section" }],
+          },
+        ],
+      },
+    },
+    {
+      label: "h3",
+      content: {
+        type: "doc",
+        content: [
+          {
+            type: "heading",
+            attrs: { level: 3 },
+            content: [{ type: "text", text: "Subsection" }],
+          },
+        ],
+      },
+    },
+  ])(
+    "saveDocumentAction accepts a document with $label (bug 869fbe1dm)",
+    async ({ content }) => {
+      const { saveDocumentAction } = await import(
+        "@/features/documents/actions"
+      );
+      getDocumentById.mockResolvedValue({
+        id: DOC_ID,
+        ownerId: "u1",
+        title: "T",
+        content: EMPTY_DOCUMENT_CONTENT,
+        contentAllowed: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      updateDocumentContent.mockResolvedValue({
+        id: DOC_ID,
+        ownerId: "u1",
+        title: "T",
+        content,
+        contentAllowed: true,
+        createdAt: new Date(),
+        updatedAt: new Date("2026-10-02T12:00:00Z"),
+      });
+
+      await expect(
+        saveDocumentAction({ documentId: DOC_ID, content }),
+      ).resolves.toMatchObject({ ok: true, data: { id: DOC_ID } });
+      expect(updateDocumentContent).toHaveBeenCalledWith({
+        documentId: DOC_ID,
+        content: expect.objectContaining({
+          type: "doc",
+          content: [
+            expect.objectContaining({
+              type: "heading",
+              attrs: content.content[0].attrs,
+            }),
+          ],
+        }),
+      });
+    },
+  );
+
   it("maps unexpected errors through the generic error branch", async () => {
     const { createDocumentAction } = await import(
       "@/features/documents/actions"

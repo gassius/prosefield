@@ -9,8 +9,145 @@ import {
   EMPTY_DOCUMENT_CONTENT,
   serialisedContentSize,
 } from "@/features/documents/schemas";
+import * as documentSchemas from "@/features/documents/schemas";
 
 describe("document allow-list and bounds", () => {
+  it("accepts documents with h2 and with h3 (bug 869fbe1dm)", () => {
+    const withH2 = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "Section" }],
+        },
+      ],
+    };
+    const withH3 = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 3 },
+          content: [{ type: "text", text: "Subsection" }],
+        },
+      ],
+    };
+    expect(documentContentSchema.parse(withH2)).toMatchObject({
+      content: [{ type: "heading", attrs: { level: 2 } }],
+    });
+    expect(documentContentSchema.parse(withH3)).toMatchObject({
+      content: [{ type: "heading", attrs: { level: 3 } }],
+    });
+    expect(assertAllowedTiptapJson(withH2).content?.[0]).toMatchObject({
+      type: "heading",
+      attrs: { level: 2 },
+    });
+    expect(assertAllowedTiptapJson(withH3).content?.[0]).toMatchObject({
+      type: "heading",
+      attrs: { level: 3 },
+    });
+  });
+
+  it("rejects unsupported heading levels and unknown nodes (keep bounds strict)", () => {
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "doc",
+        content: [{ type: "heading", attrs: { level: 1 }, content: [] }],
+      }),
+    ).toThrow(/heading level/);
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "doc",
+        content: [{ type: "heading", attrs: { level: 4 }, content: [] }],
+      }),
+    ).toThrow(/heading level/);
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "doc",
+        content: [{ type: "heading", attrs: { level: 2.5 }, content: [] }],
+      }),
+    ).toThrow(/heading level/);
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "doc",
+        content: [{ type: "horizontalRule" }],
+      }),
+    ).toThrow(/not allowed/);
+  });
+
+  it("accepts TipTap orderedList attrs (start + type null) the editor emits", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "orderedList",
+          attrs: { start: 1, type: null },
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "one" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    expect(documentContentSchema.parse(doc)).toMatchObject({
+      content: [{ type: "orderedList", attrs: { start: 1 } }],
+    });
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "orderedList",
+        attrs: { start: 0 },
+        content: [],
+      }),
+    ).toThrow(/start/);
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "orderedList",
+        attrs: { start: 1, type: "decimal" },
+        content: [],
+      }),
+    ).toThrow(/type/);
+  });
+
+  it("plainTiptapJson clones null-prototype attrs for Server Actions", () => {
+    const nullProtoAttrs = Object.assign(Object.create(null), { level: 2 });
+    const raw = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: nullProtoAttrs,
+          content: [{ type: "text", text: "H2" }],
+        },
+      ],
+    };
+    expect(Object.getPrototypeOf(raw.content[0].attrs)).toBeNull();
+    expect(documentSchemas).toHaveProperty("plainTiptapJson");
+    const plainTiptapJson = (
+      documentSchemas as typeof documentSchemas & {
+        plainTiptapJson: (value: unknown) => {
+          content?: Array<{ type?: string; attrs?: { level?: number } }>;
+        };
+      }
+    ).plainTiptapJson;
+    const plain = plainTiptapJson(raw);
+    expect(Object.getPrototypeOf(plain.content?.[0]?.attrs ?? {})).toBe(
+      Object.prototype,
+    );
+    expect(plain.content?.[0]).toMatchObject({
+      type: "heading",
+      attrs: { level: 2 },
+    });
+    expect(documentContentSchema.safeParse(plain).success).toBe(true);
+  });
+
   it("rejects link, underline, codeBlock, and heading level 1", () => {
     expect(() =>
       assertAllowedTiptapJson({

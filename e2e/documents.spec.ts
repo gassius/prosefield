@@ -134,3 +134,36 @@ test("Ctrl/Cmd+S saves from unsaved state", async ({ page }) => {
   await page.keyboard.press("Control+s");
   await expect(page.getByRole("status")).toHaveText("Saved");
 });
+
+test("h2 and h3 headings save and persist after reload (bug 869fbe1dm)", async ({
+  page,
+}) => {
+  await registerActiveSubscriber(page);
+  await page.getByRole("button", { name: "New document" }).click();
+  await expect(page).toHaveURL(/\/documents\/[^/]+/);
+
+  const editor = page.locator("[contenteditable='true']").first();
+  await editor.click();
+
+  await page.getByRole("button", { name: "Heading 2" }).click();
+  await page.keyboard.type("Section title");
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Heading 3" }).click();
+  await page.keyboard.type("Subsection title");
+
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status")).toHaveText("Saved");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+
+  const url = page.url();
+  await page.reload();
+  await expect(page.getByLabel("Document title")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Section title" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 3, name: "Subsection title" }),
+  ).toBeVisible();
+  await expect(page).toHaveURL(url);
+});
