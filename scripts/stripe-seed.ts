@@ -2,7 +2,7 @@
  * Creates a test Product + monthly Price in the evaluator's Stripe test account
  * and prints STRIPE_PRICE_ID (Architecture §5.2).
  *
- * Usage: pnpm stripe:seed  (loads `.env` via `tsx --env-file=.env`)
+ * Usage: pnpm stripe:seed  (loads `.env` via `tsx --env-file-if-exists=.env`)
  * Never commits keys. Rejects live keys.
  */
 import { seedTestPrice } from "../src/lib/stripe/seed-test-price";

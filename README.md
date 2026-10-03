@@ -52,7 +52,7 @@ Auth/Firestore emulator state lives in the Docker named volume `emulator-data`, 
 CI never needs real Stripe credentials or network. For a local end-to-end payment with Carlos's **test-mode** keys:
 
 1. Put your `sk_test_…` or `rk_test_…` in `.env` as `STRIPE_SECRET_KEY` (never commit `.env`).
-2. Run `pnpm stripe:setup` — seeds a Price, writes `STRIPE_PRICE_ID` into `.env`, runs `docker compose run --rm stripe-cli listen --print-secret`, and writes `STRIPE_WEBHOOK_SECRET` into `.env` (updates in place; never prints secret values). Requires Docker.
+2. Run `pnpm stripe:setup` — seeds a Price, writes `STRIPE_PRICE_ID` into `.env`, runs `docker compose run --rm stripe-cli listen --print-secret`, and writes `STRIPE_WEBHOOK_SECRET` into `.env` (updates in place; never prints secret values). Requires Docker. Per [Stripe CLI docs](https://docs.stripe.com/cli/listen), the webhook signing secret does **not** change between `listen --print-secret` and a later `listen --forward-to` with the same API key, so this value matches the long-running `stripe` profile listener.
 3. Start the app on the host (`pnpm dev`) and emulators (`pnpm backend:up`).
 4. Forward webhooks with the Stripe CLI (needs the `app` profile, or point `--forward-to` at `host.docker.internal:3000` if the CLI reaches the host):
 
@@ -69,6 +69,8 @@ Compose maps `STRIPE_SECRET_KEY` from `.env` to the CLI's `STRIPE_API_KEY`. For 
 ```bash
 docker compose run --rm stripe-cli listen --print-secret
 ```
+
+(`pnpm stripe:seed` / `pnpm stripe:setup` use `tsx --env-file-if-exists=.env`, so exporting `STRIPE_SECRET_KEY=…` without a `.env` file still works.)
 
 ## Scripts
 

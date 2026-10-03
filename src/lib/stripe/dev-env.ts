@@ -19,8 +19,29 @@ function stripWrappingQuotes(value: string): string {
   return value;
 }
 
-/** Read a single KEY from dotenv-style file contents (first match wins). */
+/** Detect EOL style used in the file (CRLF vs LF). Empty → LF. */
+export function detectEnvEol(content: string): "\n" | "\r\n" {
+  return content.includes("\r\n") ? "\r\n" : "\n";
+}
+
+/**
+ * True when `line` is an assignment for exactly `key` (not a comment, not a
+ * longer key that shares a prefix).
+ */
+function isExactKeyAssign(line: string, key: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith("#")) {
+    return false;
+  }
+  const keyAssign = new RegExp(
+    `^\\s*(?:export\\s+)?${escapeRegExp(key)}\\s*=`,
+  );
+  return keyAssign.test(line);
+}
+
+/** Read a single KEY from dotenv-style file contents (last match wins, like Node). */
 export function getEnvKey(content: string, key: string): string | undefined {
+  let found: string | undefined;
   for (const line of content.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) {
@@ -30,52 +51,66 @@ export function getEnvKey(content: string, key: string): string | undefined {
     if (!match || match[1] !== key) {
       continue;
     }
-    return stripWrappingQuotes(match[2]).trim();
+    found = stripWrappingQuotes(match[2]).trim();
   }
-  return undefined;
+  return found;
 }
 
 /**
  * Insert or replace KEY=value in dotenv-style contents.
  * Preserves comments, blank lines, ordering, and unrelated keys.
- * Does not append a trailing newline if the original had none (except when
- * appending a new key to non-empty content, which always ends with `\n`).
+ * Preserves CRLF vs LF. Skips commented `# KEY=` lines.
+ * Does not match longer keys that share a prefix (e.g. `KEY_OLD=`).
+ * When duplicates exist, leaves exactly one assignment (last position) —
+ * matching Node/dotenv last-wins semantics.
  */
 export function upsertEnvKey(
   content: string,
   key: string,
   value: string,
 ): string {
-  const hadTrailingNewline = content.endsWith("\n");
+  const eol = detectEnvEol(content);
+  const hadTrailingNewline =
+    content.endsWith("\n") || content.endsWith("\r\n");
   const lines = content.length === 0 ? [] : content.split(/\r?\n/);
-  // split keeps a final empty string when content ends with \n — drop it for editing
   if (hadTrailingNewline && lines.length > 0 && lines[lines.length - 1] === "") {
     lines.pop();
   }
 
-  const keyAssign = new RegExp(`^\\s*(?:export\\s+)?${escapeRegExp(key)}\\s*=`);
-  let replaced = false;
-  const next = lines.map((line) => {
-    if (!replaced && keyAssign.test(line)) {
-      replaced = true;
-      return `${key}=${value}`;
+  const matchIndexes: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (isExactKeyAssign(lines[i]!, key)) {
+      matchIndexes.push(i);
     }
-    return line;
-  });
-
-  if (!replaced) {
-    next.push(`${key}=${value}`);
   }
 
-  const body = next.join("\n");
+  let next: string[];
+  if (matchIndexes.length === 0) {
+    next = [...lines, `${key}=${value}`];
+  } else {
+    const keepAt = matchIndexes[matchIndexes.length - 1]!;
+    const drop = new Set(matchIndexes.slice(0, -1));
+    next = [];
+    for (let i = 0; i < lines.length; i++) {
+      if (drop.has(i)) {
+        continue;
+      }
+      if (i === keepAt) {
+        next.push(`${key}=${value}`);
+      } else {
+        next.push(lines[i]!);
+      }
+    }
+  }
+
+  const body = next.join(eol);
   if (content.length === 0) {
-    return `${body}\n`;
+    return `${body}${eol}`;
   }
-  if (!replaced) {
-    // Newly appended key always terminates the file with a newline.
-    return `${body}\n`;
+  if (matchIndexes.length === 0) {
+    return `${body}${eol}`;
   }
-  return hadTrailingNewline ? `${body}\n` : body;
+  return hadTrailingNewline ? `${body}${eol}` : body;
 }
 
 export function isStripeLiveSecretKey(key: string): boolean {

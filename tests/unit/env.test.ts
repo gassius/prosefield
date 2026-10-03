@@ -80,6 +80,21 @@ describe("env schema", () => {
     expect(result.success).toBe(false);
   });
 
+  it("rejects malformed keys that would pass an unanchored regex (F8e)", () => {
+    expect(
+      envSchema.safeParse({
+        ...validEnv,
+        STRIPE_SECRET_KEY: "xsk_test_abc",
+      }).success,
+    ).toBe(false);
+    expect(
+      envSchema.safeParse({
+        ...validEnv,
+        STRIPE_SECRET_KEY: "sk_test_abc!",
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects a sk_test_ prefix with no key material", () => {
     const result = envSchema.safeParse({
       ...validEnv,

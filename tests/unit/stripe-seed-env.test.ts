@@ -12,21 +12,21 @@ import {
 } from "../fixtures/stripe";
 
 describe("pnpm stripe:seed .env loading", () => {
-  it("stripe:seed script loads .env via tsx --env-file=.env", () => {
+  it("stripe:seed script loads .env via tsx --env-file-if-exists=.env", () => {
     const pkgPath = path.resolve(process.cwd(), "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
       scripts: Record<string, string>;
     };
-    expect(pkg.scripts["stripe:seed"]).toContain("--env-file=.env");
+    expect(pkg.scripts["stripe:seed"]).toContain("--env-file-if-exists=.env");
     expect(pkg.scripts["stripe:seed"]).toContain("scripts/stripe-seed.ts");
   });
 
-  it("stripe:setup script loads .env via tsx --env-file=.env", () => {
+  it("stripe:setup script loads .env via tsx --env-file-if-exists=.env", () => {
     const pkgPath = path.resolve(process.cwd(), "package.json");
     const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
       scripts: Record<string, string>;
     };
-    expect(pkg.scripts["stripe:setup"]).toContain("--env-file=.env");
+    expect(pkg.scripts["stripe:setup"]).toContain("--env-file-if-exists=.env");
     expect(pkg.scripts["stripe:setup"]).toContain("scripts/stripe-setup.ts");
   });
 });
