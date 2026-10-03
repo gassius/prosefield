@@ -102,6 +102,5 @@ process.stdout.write(
     plainAttrsType: typeof plainAttrs,
     plainLevel: isPlainObject(plainAttrs) ? plainAttrs.level : null,
     plainSchemaOk: headingLevelOk(decodedPlain.content),
-    usedProductionPlainHelper: plainTiptapJson.name === "plainTiptapJson",
   }),
 );

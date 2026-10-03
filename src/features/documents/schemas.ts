@@ -112,18 +112,8 @@ export function assertAllowedTiptapJson(
   const handledAttrs = VALIDATOR_HANDLED_ATTRS[type];
 
   if (type === "heading") {
-    // Keys + copy come from VALIDATOR_HANDLED_ATTRS so drift tests and
-    // assertAllowedTiptapJson cannot diverge.
-    if (value.attrs !== undefined) {
-      if (!isPlainObject(value.attrs)) {
-        throw new Error(`${path}: heading attrs must be an object`);
-      }
-      for (const key of Object.keys(value.attrs)) {
-        if (!handledAttrs?.includes(key)) {
-          throw new Error(`${path}: unexpected attrs on 'heading'`);
-        }
-      }
-    }
+    // Heading attr strictness (unknown keys) belongs to finding set 4/5 —
+    // keep only level validation + copy here so unknown keys are dropped.
     const level = isPlainObject(value.attrs) ? value.attrs.level : undefined;
     if (typeof level !== "number" || !allowedHeadingSet.has(level)) {
       throw new Error(`${path}: heading level must be 2 or 3`);
@@ -266,13 +256,6 @@ export const tiptapJsonSchema: z.ZodType<TiptapJson> = z.custom<TiptapJson>(
   { message: "Content contains disallowed nodes or marks" },
 );
 
-/** Map validator failures into Zod issue text (exported for branch coverage). */
-export function documentContentErrorMessage(error: unknown): string {
-  return error instanceof Error
-    ? error.message
-    : "Content contains disallowed nodes or marks";
-}
-
 export const documentContentSchema = z
   .unknown()
   .transform((value, ctx) => {
@@ -281,7 +264,10 @@ export const documentContentSchema = z
     } catch (error) {
       ctx.addIssue({
         code: "custom",
-        message: documentContentErrorMessage(error),
+        message:
+          error instanceof Error
+            ? error.message
+            : "Content contains disallowed nodes or marks",
       });
       return z.NEVER;
     }

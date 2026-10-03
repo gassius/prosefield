@@ -208,10 +208,10 @@ test("numbered list saves and persists after reload", async ({ page }) => {
 
 test("invalid documentId path returns 404", async ({ page }) => {
   await registerActiveSubscriber(page);
-  // Encoded slash → Next gives documentId "a/b". documentIdSchema rejects it
-  // (→ notFound/404). Without that check, Firestore Admin rejects the path
-  // (→ 500). See unit: getDocumentById("a/b") throws. (Do not use %2E%2E —
-  // browsers normalize ".." out of the URL before the route runs.)
+  // Next 16.3.7 passes params.documentId as undecoded "a%2Fb" (Admin accepts
+  // that id). documentIdSchema → notFound/404. Without the check this E2E
+  // still 404s on a miss — bite is tests/unit/document-page.test.ts.
+  // (Do not use %2E%2E — browsers normalize ".." out of the URL.)
   const response = await page.goto("/documents/a%2Fb");
   expect(response?.status()).toBe(404);
 });

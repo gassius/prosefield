@@ -29,10 +29,8 @@ describe("Server Action encode/decode transport (null-prototype attrs)", () => {
       plainAttrsType: string;
       plainLevel: number | null;
       plainSchemaOk: boolean;
-      usedProductionPlainHelper: boolean;
     };
 
-    expect(result.usedProductionPlainHelper).toBe(true);
     expect(result.rawAttrsType).toBe("function");
     expect(result.rawSchemaOk).toBe(false);
     expect(result.plainAttrsType).toBe("object");

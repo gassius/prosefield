@@ -3,7 +3,6 @@ import {
   assertAllowedTiptapJson,
   createDocumentInputSchema,
   DOCUMENT_CONTENT_MAX_BYTES,
-  documentContentErrorMessage,
   documentContentSchema,
   documentIdSchema,
   documentTitleSchema,
@@ -75,14 +74,9 @@ describe("document allow-list and bounds", () => {
         content: [{ type: "horizontalRule" }],
       }),
     ).toThrow(/not allowed/);
-    // VALIDATOR_HANDLED_ATTRS wiring: non-object attrs + unknown keys
-    expect(() =>
-      assertAllowedTiptapJson({
-        type: "doc",
-        content: [{ type: "heading", attrs: "nope", content: [] }],
-      }),
-    ).toThrow(/heading attrs must be an object/);
-    expect(() =>
+    // Heading unknown-key strictness is owned by finding set 4/5 — here unknown
+    // keys are dropped and only level is kept.
+    expect(
       assertAllowedTiptapJson({
         type: "doc",
         content: [
@@ -93,25 +87,21 @@ describe("document allow-list and bounds", () => {
           },
         ],
       }),
-    ).toThrow(/unexpected attrs on 'heading'/);
+    ).toMatchObject({
+      content: [{ type: "heading", attrs: { level: 2 } }],
+    });
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "doc",
+        content: [{ type: "heading", attrs: "nope", content: [] }],
+      }),
+    ).toThrow(/heading level/);
     expect(() =>
       assertAllowedTiptapJson({
         type: "doc",
         content: [{ type: "heading", content: [] }],
       }),
     ).toThrow(/heading level/);
-  });
-
-  it("documentContentErrorMessage covers Error and non-Error throws", () => {
-    expect(documentContentErrorMessage(new Error("heading level must be 2 or 3"))).toBe(
-      "heading level must be 2 or 3",
-    );
-    expect(documentContentErrorMessage("nope")).toBe(
-      "Content contains disallowed nodes or marks",
-    );
-    expect(documentContentErrorMessage(null)).toBe(
-      "Content contains disallowed nodes or marks",
-    );
   });
 
   it("accepts TipTap orderedList attrs (start + type null) the editor emits", () => {

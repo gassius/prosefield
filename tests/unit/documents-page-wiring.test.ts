@@ -18,6 +18,5 @@ describe("document page wiring", () => {
     expect(source).not.toMatch(/contentAllowed=\{\s*false\s*\}/);
   });
 
-  // documentId validation → E2E `invalid documentId path returns 404`
-  // (finding 14) + repository unit `rejects Firestore-illegal document ids`.
+  // documentId validation bite → tests/unit/document-page.test.ts (finding 14).
 });

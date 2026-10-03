@@ -308,13 +308,4 @@ describe("documents repository", () => {
     expect(emptySnap?.contentAllowed).toBe(false);
   });
 
-  it("rejects Firestore-illegal document ids (page must validate first)", async () => {
-    const { getDocumentById } = await import(
-      "@/features/documents/repository"
-    );
-    // Bite for finding 14: without documentIdSchema → notFound(), looking up
-    // "a/b" throws (Admin path rules) instead of a clean 404.
-    await expect(getDocumentById("a/b")).rejects.toThrow(/documentPath|a\/b/);
-    await expect(getDocumentById("..")).rejects.toThrow(/documentPath|\.\./);
-  });
 });
