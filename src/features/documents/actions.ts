@@ -136,7 +136,7 @@ export async function saveDocumentAction(
 
 export async function renameDocumentAction(
   input: unknown,
-): Promise<DocumentActionResult<{ id: string; title: string }>> {
+): Promise<DocumentActionResult<{ id: string; title: string; updatedAt: string }>> {
   try {
     const session = await guardSessionAndSubscription();
     const { documentId } = documentIdOnlySchema.parse(input);
@@ -152,7 +152,14 @@ export async function renameDocumentAction(
       throw new DocumentAccessError("Document not found", "not_found");
     }
     revalidateDocumentPaths(updated.id);
-    return { ok: true, data: { id: updated.id, title: updated.title } };
+    return {
+      ok: true,
+      data: {
+        id: updated.id,
+        title: updated.title,
+        updatedAt: updated.updatedAt.toISOString(),
+      },
+    };
   } catch (error) {
     return mapError(error);
   }

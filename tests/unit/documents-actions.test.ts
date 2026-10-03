@@ -109,11 +109,18 @@ describe("document actions (mocked guards)", () => {
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
       createdAt: new Date(),
-      updatedAt: new Date(),
+      updatedAt: new Date("2026-10-02T12:00:00Z"),
     });
     await expect(
       renameDocumentAction({ documentId: DOC_ID, title: "Renamed" }),
-    ).resolves.toEqual({ ok: true, data: { id: DOC_ID, title: "Renamed" } });
+    ).resolves.toEqual({
+      ok: true,
+      data: {
+        id: DOC_ID,
+        title: "Renamed",
+        updatedAt: "2026-10-02T12:00:00.000Z",
+      },
+    });
     expect(renameDocument).toHaveBeenCalledWith({
       documentId: DOC_ID,
       ownerId: "u1",
