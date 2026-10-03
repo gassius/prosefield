@@ -154,4 +154,33 @@ test.describe("landing marketing surface", () => {
     await expect(overlay).toBeVisible();
     await expectReducedMotion(overlay);
   });
+
+  test("Sheet slides in when motion is allowed at 375px", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await page.setViewportSize({ width: 375, height: 812 });
+    // Stretch the entrance so we can sample mid-animation.
+    await page.addInitScript(() => {
+      const style = document.createElement("style");
+      style.textContent =
+        "[data-testid='sheet-content'] { animation-duration: 2s !important; }";
+      document.documentElement.appendChild(style);
+    });
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Open menu" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveClass(/motion-safe:animate-sheet-in-right/);
+
+    const motion = await dialog.evaluate((el) => {
+      const style = getComputedStyle(el);
+      return {
+        animationName: style.animationName,
+        animationDuration: style.animationDuration,
+      };
+    });
+    expect(motion.animationName).toMatch(/sheet-in-right/);
+    expect(motion.animationDuration).not.toBe("0s");
+  });
 });
+

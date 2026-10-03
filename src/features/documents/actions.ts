@@ -110,13 +110,15 @@ export async function saveDocumentAction(
 ): Promise<DocumentActionResult<{ id: string; updatedAt: string }>> {
   try {
     const session = await guardSessionAndSubscription();
-    // session → subscription → owner → Zod (parse id only, then body)
+    // session → subscription → owner → Zod (parse id only, then body).
+    // Owner is re-checked inside the repository transaction (TOCTOU-safe).
     const { documentId } = documentIdOnlySchema.parse(input);
     const existing = await getDocumentById(documentId);
     requireOwner(existing, session.uid);
     const { content } = updateDocumentContentBodySchema.parse(input);
     const updated = await updateDocumentContent({
       documentId,
+      ownerId: session.uid,
       content,
     });
     if (!updated) {
@@ -143,6 +145,7 @@ export async function renameDocumentAction(
     const { title } = renameDocumentBodySchema.parse(input);
     const updated = await renameDocument({
       documentId,
+      ownerId: session.uid,
       title,
     });
     if (!updated) {

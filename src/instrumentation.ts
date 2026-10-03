@@ -1,7 +1,7 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { applyLocalDevDefaultsToProcessEnv, localDevDefaults } =
-      await import("./lib/env-defaults");
+      await import("@/lib/env-defaults");
     const usingDefaults =
       process.env.NODE_ENV !== "production" &&
       Object.keys(localDevDefaults).some((key) => {
@@ -16,7 +16,7 @@ export async function register() {
       );
     }
     try {
-      const { assertStartupEnv } = await import("./lib/startup-env");
+      const { assertStartupEnv } = await import("@/lib/startup-env");
       // Fail closed at startup: refuse to serve when production env is invalid
       // (e.g. emulator hosts without ALLOW_EMULATORS=1).
       await assertStartupEnv();

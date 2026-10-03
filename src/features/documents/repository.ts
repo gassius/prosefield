@@ -145,6 +145,7 @@ export async function createDocument(input: {
 
 export async function updateDocumentContent(input: {
   documentId: string;
+  ownerId: string;
   content: TiptapJson;
 }): Promise<DocumentRecord | null> {
   const db = getAdminFirestore();
@@ -154,21 +155,27 @@ export async function updateDocumentContent(input: {
     if (!snap.exists) {
       return null;
     }
+    const existing = snap.data() ?? {};
+    // Ownership must be checked inside the transaction (TOCTOU-safe).
+    if (existing.ownerId !== input.ownerId) {
+      return null;
+    }
+    const commitTime = new Date();
     tx.update(ref, {
       content: serialiseContent(input.content),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    const existing = snap.data() ?? {};
     return toRecord(ref.id, {
       ...existing,
       content: serialiseContent(input.content),
-      updatedAt: new Date(),
+      updatedAt: commitTime,
     });
   });
 }
 
 export async function renameDocument(input: {
   documentId: string;
+  ownerId: string;
   title: string;
 }): Promise<DocumentRecord | null> {
   const db = getAdminFirestore();
@@ -178,15 +185,19 @@ export async function renameDocument(input: {
     if (!snap.exists) {
       return null;
     }
+    const existing = snap.data() ?? {};
+    if (existing.ownerId !== input.ownerId) {
+      return null;
+    }
+    const commitTime = new Date();
     tx.update(ref, {
       title: input.title,
       updatedAt: FieldValue.serverTimestamp(),
     });
-    const existing = snap.data() ?? {};
     return toRecord(ref.id, {
       ...existing,
       title: input.title,
-      updatedAt: new Date(),
+      updatedAt: commitTime,
     });
   });
 }

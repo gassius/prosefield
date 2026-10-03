@@ -42,6 +42,7 @@ export default defineConfig({
         "src/components/auth/sign-out-button.tsx",
         "src/components/ui/accordion.tsx",
         "src/components/ui/sheet.tsx",
+        "src/instrumentation.ts",
       ],
       // Client Firebase bootstrap is browser-only; covered indirectly by E2E.
       exclude: ["src/lib/firebase/client.ts"],
@@ -60,6 +61,8 @@ export default defineConfig({
         "src/lib/startup-env.ts": highBar,
         "src/lib/utils.ts": highBar,
         "src/features/auth/password.ts": highBar,
+        "src/features/auth/register.ts": highBar,
+        "src/instrumentation.ts": highBar,
         "src/features/auth/{session,guards,users}.ts": authSurfaceBar,
         "src/features/billing/{entitlement,plan-display,configured}.ts": highBar,
         "src/features/billing/{projection,webhook,checkout,customers,session-sync,subscriptions,plan,actions}.ts":

@@ -3,7 +3,6 @@
 import { useId, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
-  createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
@@ -19,6 +18,7 @@ import {
 } from "@/features/auth/constants";
 import { mapAuthError } from "@/features/auth/map-auth-error";
 import { assertRegisterPassword } from "@/features/auth/password";
+import { registerAction } from "@/features/auth/register";
 import { getClientAuth } from "@/lib/firebase/client";
 
 type Mode = "login" | "register";
@@ -81,6 +81,7 @@ export function AuthForm({ mode, nextPath }: AuthFormProps) {
     setPasswordError(null);
 
     if (mode === "register") {
+      // Fast client feedback; server Action enforces the same policy.
       const passwordCheck = assertRegisterPassword(password);
       if (!passwordCheck.ok) {
         setPasswordError(passwordCheck.message);
@@ -93,10 +94,33 @@ export function AuthForm({ mode, nextPath }: AuthFormProps) {
 
     try {
       const auth = await getClientAuth();
-      const credential =
-        mode === "register"
-          ? await createUserWithEmailAndPassword(auth, email.trim(), password)
-          : await signInWithEmailAndPassword(auth, email.trim(), password);
+      const trimmedEmail = email.trim();
+
+      if (mode === "register") {
+        const registered = await registerAction({
+          email: trimmedEmail,
+          password,
+        });
+        if (!registered.ok) {
+          if (registered.field === "email") {
+            setEmailError(registered.message);
+            emailRef.current?.focus();
+          } else if (registered.field === "password") {
+            setPasswordError(registered.message);
+            passwordRef.current?.focus();
+          } else {
+            setSummaryError(registered.message);
+            summaryRef.current?.focus();
+          }
+          return;
+        }
+      }
+
+      const credential = await signInWithEmailAndPassword(
+        auth,
+        trimmedEmail,
+        password,
+      );
 
       const idToken = await credential.user.getIdToken();
       await exchangeSession(idToken);

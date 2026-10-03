@@ -96,6 +96,11 @@ describe("document actions (mocked guards)", () => {
     await expect(
       saveDocumentAction({ documentId: DOC_ID, content: EMPTY_DOCUMENT_CONTENT }),
     ).resolves.toMatchObject({ ok: true, data: { id: DOC_ID } });
+    expect(updateDocumentContent).toHaveBeenCalledWith({
+      documentId: DOC_ID,
+      ownerId: "u1",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
 
     renameDocument.mockResolvedValue({
       id: DOC_ID,
@@ -109,6 +114,11 @@ describe("document actions (mocked guards)", () => {
     await expect(
       renameDocumentAction({ documentId: DOC_ID, title: "Renamed" }),
     ).resolves.toEqual({ ok: true, data: { id: DOC_ID, title: "Renamed" } });
+    expect(renameDocument).toHaveBeenCalledWith({
+      documentId: DOC_ID,
+      ownerId: "u1",
+      title: "Renamed",
+    });
 
     deleteDocument.mockResolvedValue(true);
     await expect(deleteDocumentAction({ documentId: DOC_ID })).resolves.toEqual({
@@ -273,6 +283,7 @@ describe("document actions (mocked guards)", () => {
       ).resolves.toMatchObject({ ok: true, data: { id: DOC_ID } });
       expect(updateDocumentContent).toHaveBeenCalledWith({
         documentId: DOC_ID,
+        ownerId: "u1",
         content: expect.objectContaining({
           type: "doc",
           content: [

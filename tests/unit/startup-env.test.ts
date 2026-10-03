@@ -1,12 +1,13 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 describe("startup env fail-closed", () => {
   afterEach(() => {
-    vi.resetModules();
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+    vi.resetModules();
     vi.doUnmock("@/lib/env");
+    vi.doUnmock("@/lib/startup-env");
+    vi.doUnmock("@/lib/env-defaults");
   });
 
   it("assertStartupEnv calls getEnv (removal of the startup check fails this)", async () => {
@@ -27,14 +28,95 @@ describe("startup env fail-closed", () => {
     await expect(assertStartupEnv()).rejects.toThrow(/emulator hosts/i);
   });
 
-  it("instrumentation register awaits assertStartupEnv and exits on failure", () => {
-    const source = readFileSync(
-      path.resolve(__dirname, "../../src/instrumentation.ts"),
-      "utf8",
+  it("instrumentation register awaits assertStartupEnv and exits on failure", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    vi.stubEnv("NODE_ENV", "test");
+
+    const assertStartupEnv = vi.fn(async () => {
+      throw new Error("startup failed");
+    });
+    vi.doMock("@/lib/startup-env", () => ({ assertStartupEnv }));
+    vi.doMock("@/lib/env-defaults", () => ({
+      localDevDefaults: {},
+      applyLocalDevDefaultsToProcessEnv: vi.fn(),
+    }));
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined) as unknown as (
+        code?: string | number | null | undefined,
+      ) => never);
+
+    const { register } = await import("../../src/instrumentation");
+    await register();
+
+    expect(assertStartupEnv).toHaveBeenCalledTimes(1);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it("instrumentation register awaits assertStartupEnv once on success", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    vi.stubEnv("NODE_ENV", "test");
+
+    const assertStartupEnv = vi.fn(async () => undefined);
+    const applyLocalDevDefaultsToProcessEnv = vi.fn();
+    vi.doMock("@/lib/startup-env", () => ({ assertStartupEnv }));
+    vi.doMock("@/lib/env-defaults", () => ({
+      localDevDefaults: {},
+      applyLocalDevDefaultsToProcessEnv,
+    }));
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined) as unknown as (
+        code?: string | number | null | undefined,
+      ) => never);
+
+    const { register } = await import("../../src/instrumentation");
+    await register();
+
+    expect(assertStartupEnv).toHaveBeenCalledTimes(1);
+    expect(applyLocalDevDefaultsToProcessEnv).toHaveBeenCalledTimes(1);
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it("instrumentation register logs when applying local defaults for blank keys", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("APP_URL", "   ");
+
+    const assertStartupEnv = vi.fn(async () => undefined);
+    const applyLocalDevDefaultsToProcessEnv = vi.fn();
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    vi.doMock("@/lib/startup-env", () => ({ assertStartupEnv }));
+    vi.doMock("@/lib/env-defaults", () => ({
+      localDevDefaults: { APP_URL: "http://localhost:3000" },
+      applyLocalDevDefaultsToProcessEnv,
+    }));
+
+    vi.spyOn(process, "exit").mockImplementation((() => undefined) as unknown as (
+      code?: string | number | null | undefined,
+    ) => never);
+
+    const { register } = await import("../../src/instrumentation");
+    await register();
+
+    expect(assertStartupEnv).toHaveBeenCalledTimes(1);
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/built-in local defaults/i),
     );
-    expect(source).toContain("assertStartupEnv");
-    expect(source).toMatch(/process\.exit\s*\(\s*1\s*\)/);
-    // Bite: deleting the startup check leaves neither call nor exit.
-    expect(source).not.toMatch(/\/\/\s*getEnv\(\)/);
+  });
+
+  it("instrumentation register skips assertStartupEnv when not nodejs runtime", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "edge");
+
+    const assertStartupEnv = vi.fn(async () => undefined);
+    vi.doMock("@/lib/startup-env", () => ({ assertStartupEnv }));
+
+    const { register } = await import("../../src/instrumentation");
+    await register();
+
+    expect(assertStartupEnv).not.toHaveBeenCalled();
   });
 });

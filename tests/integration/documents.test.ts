@@ -4,6 +4,11 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { __resetCookieStore } from "../mocks/next-headers";
+import {
+  PLACEHOLDER_STRIPE_PRICE_ID,
+  PLACEHOLDER_STRIPE_SECRET_KEY,
+  PLACEHOLDER_STRIPE_WEBHOOK_SECRET,
+} from "../fixtures/stripe";
 import { EMPTY_DOCUMENT_CONTENT } from "@/features/documents/schemas";
 
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
@@ -23,9 +28,9 @@ process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ??=
   "demo-prosefield.firebaseapp.com";
 process.env.NEXT_PUBLIC_FIREBASE_APP_ID ??=
   "1:000000000000:web:0000000000000000000000";
-process.env.STRIPE_SECRET_KEY ??= "sk_test_replaceme";
-process.env.STRIPE_WEBHOOK_SECRET ??= "whsec_replaceme";
-process.env.STRIPE_PRICE_ID ??= "price_replaceme";
+process.env.STRIPE_SECRET_KEY ??= PLACEHOLDER_STRIPE_SECRET_KEY;
+process.env.STRIPE_WEBHOOK_SECRET ??= PLACEHOLDER_STRIPE_WEBHOOK_SECRET;
+process.env.STRIPE_PRICE_ID ??= PLACEHOLDER_STRIPE_PRICE_ID;
 process.env.PLAN_DISPLAY_NAME ??= "Prosefield";
 process.env.PLAN_DISPLAY_PRICE ??= "8";
 process.env.PLAN_DISPLAY_CURRENCY ??= "EUR";
@@ -484,6 +489,156 @@ describe("documents guard chain (emulators)", () => {
       content: EMPTY_DOCUMENT_CONTENT,
     });
     expect(repaired.ok).toBe(true);
+  });
+
+  it("transactional save/rename return not_found after concurrent delete (ownership in tx)", async () => {
+    const email = `docs-tx-${randomUUID()}@example.com`;
+    const { localId: uid } = await establishSession(email);
+    await seedActiveSubscription(uid);
+
+    const { createDocumentAction, saveDocumentAction, renameDocumentAction } =
+      await import("@/features/documents/actions");
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+    const { EMPTY_DOCUMENT_CONTENT: empty } = await import(
+      "@/features/documents/schemas"
+    );
+
+    const created = await createDocumentAction({ title: "Race me" });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+    const docId = created.data.id;
+    const db = getAdminFirestore();
+    const ref = db.collection("documents").doc(docId);
+
+    // Force a transaction retry: delete the doc after the first transactional read.
+    // On retry, exists is false → not_found. Plain read-then-write (owner check
+    // outside only) would still attempt a blind update after the outer get.
+    let attempts = 0;
+    const raced = await db.runTransaction(async (tx) => {
+      attempts += 1;
+      const snap = await tx.get(ref);
+      if (attempts === 1) {
+        await ref.delete();
+      }
+      if (!snap.exists) {
+        return null;
+      }
+      const data = snap.data() ?? {};
+      if (data.ownerId !== uid) {
+        return null;
+      }
+      tx.update(ref, {
+        title: "Should not stick",
+        updatedAt: (await import("firebase-admin/firestore")).FieldValue.serverTimestamp(),
+      });
+      return "updated";
+    });
+    expect(attempts).toBeGreaterThanOrEqual(2);
+    expect(raced).toBeNull();
+    expect((await ref.get()).exists).toBe(false);
+
+    // Repository entry points must also refuse missing / wrong-owner writes.
+    const {
+      updateDocumentContent,
+      renameDocument,
+      createDocument,
+    } = await import("@/features/documents/repository");
+
+    const again = await createDocument({ ownerId: uid, title: "Again" });
+    await db.collection("documents").doc(again.id).update({ ownerId: "other-uid" });
+    expect(
+      await updateDocumentContent({
+        documentId: again.id,
+        ownerId: uid,
+        content: empty,
+      }),
+    ).toBeNull();
+    expect(
+      await renameDocument({
+        documentId: again.id,
+        ownerId: uid,
+        title: "Nope",
+      }),
+    ).toBeNull();
+
+    // Action path: concurrent delete between outer owner check and tx commit
+    // surfaces as not_found (tx ownership/exists check).
+    const owned = await createDocumentAction({ title: "For action race" });
+    expect(owned.ok).toBe(true);
+    if (!owned.ok) {
+      return;
+    }
+    await db.collection("documents").doc(owned.data.id).delete();
+    const save = await saveDocumentAction({
+      documentId: owned.data.id,
+      content: empty,
+    });
+    expect(save.ok).toBe(false);
+    if (!save.ok) {
+      expect(save.code).toBe("not_found");
+    }
+    const rename = await renameDocumentAction({
+      documentId: owned.data.id,
+      title: "Gone",
+    });
+    expect(rename.ok).toBe(false);
+    if (!rename.ok) {
+      expect(rename.code).toBe("not_found");
+    }
+  });
+
+  it("plain read-then-write ownership check loses to concurrent owner change", async () => {
+    const email = `docs-plain-${randomUUID()}@example.com`;
+    const { localId: uid } = await establishSession(email);
+    await seedActiveSubscription(uid);
+
+    const { createDocument } = await import("@/features/documents/repository");
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+    const { FieldValue } = await import("firebase-admin/firestore");
+
+    const doc = await createDocument({ ownerId: uid, title: "Plain race" });
+    const db = getAdminFirestore();
+    const ref = db.collection("documents").doc(doc.id);
+
+    // Anti-pattern: ownership checked once outside any transaction.
+    const outer = await ref.get();
+    expect(outer.exists).toBe(true);
+    expect(outer.data()?.ownerId).toBe(uid);
+
+    // Concurrent ownership change in the gap.
+    await ref.update({ ownerId: "hijacker" });
+
+    // Blind write still succeeds — proves why ownership must live in the tx.
+    await ref.update({
+      title: "Clobbered",
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    const clobbered = await ref.get();
+    expect(clobbered.data()?.title).toBe("Clobbered");
+    expect(clobbered.data()?.ownerId).toBe("hijacker");
+
+    // Transactional path with ownerId refuses the same race outcome.
+    const { updateDocumentContent, renameDocument } = await import(
+      "@/features/documents/repository"
+    );
+    expect(
+      await updateDocumentContent({
+        documentId: doc.id,
+        ownerId: uid,
+        content: EMPTY_DOCUMENT_CONTENT,
+      }),
+    ).toBeNull();
+    expect(
+      await renameDocument({
+        documentId: doc.id,
+        ownerId: uid,
+        title: "Still mine",
+      }),
+    ).toBeNull();
+    const still = await ref.get();
+    expect(still.data()?.title).toBe("Clobbered");
   });
 
   it("subscriber CRUD persists content and title", async () => {

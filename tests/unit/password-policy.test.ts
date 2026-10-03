@@ -6,7 +6,7 @@ import {
 } from "@/features/auth/password";
 import { siteCopy } from "@/content/site";
 
-describe("register password policy (server-side)", () => {
+describe("register password policy (shared schema)", () => {
   it("rejects a 7-character password", () => {
     expect(PASSWORD_MIN_LENGTH).toBe(8);
     const short = "abcdefg";
