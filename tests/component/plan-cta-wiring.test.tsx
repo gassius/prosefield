@@ -99,6 +99,21 @@ describe("HomePage plan price and portal FAQ wiring", () => {
 
     const lines = screen.getAllByText("€9/month · Secure checkout");
     expect(lines.length).toBeGreaterThanOrEqual(3);
+
+    // Behavioural stand-in for deleted page-plan-wiring getPlan source-regex:
+    // marketing CTAs must receive checkout reassurance from getPlan(), not stubs.
+    expect(
+      screen.getByRole("heading", { name: siteCopy.benefits.headline }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: siteCopy.pricing.headline }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: siteCopy.faq.headline }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: siteCopy.finalCta.headline }),
+    ).toBeInTheDocument();
   });
 
   it("wires plan.currency into AssuranceStrip (fails if currency is hard-coded EUR)", async () => {

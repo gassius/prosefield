@@ -10,13 +10,26 @@ const docsQueryGet = vi.fn();
 vi.mock("@/lib/firebase/admin", () => ({
   getAdminFirestore: () => ({
     collection: () => ({
-      doc: () => ({
-        get,
-        set,
-        update,
-        delete: del,
-        id: "newdocid00000000001",
-      }),
+      doc: (documentPath?: string) => {
+        // Mirror Admin SDK: document ids cannot contain `/` or be `.` / `..`.
+        if (
+          typeof documentPath === "string" &&
+          (documentPath.includes("/") ||
+            documentPath === "." ||
+            documentPath === "..")
+        ) {
+          throw new Error(
+            `Value for argument "documentPath" is not a valid resource path: ${documentPath}`,
+          );
+        }
+        return {
+          get,
+          set,
+          update,
+          delete: del,
+          id: documentPath ?? "newdocid00000000001",
+        };
+      },
       where: () => ({
         orderBy: () => ({
           get: docsQueryGet,
@@ -294,4 +307,5 @@ describe("documents repository", () => {
     expect(emptySnap?.title).toBe("Untitled document");
     expect(emptySnap?.contentAllowed).toBe(false);
   });
+
 });

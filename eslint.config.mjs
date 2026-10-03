@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Node CJS fixture for Server Action encode/decode (needs require + react-server).
+    "tests/unit/fixtures/**/*.cjs",
   ]),
 ]);
 
