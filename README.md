@@ -4,18 +4,19 @@ Local-first writing workspace. Specs live in [`docs/architecture.md`](docs/archi
 
 ## Prerequisites
 
-- **nvm** (recommended) — run `nvm use` at the repo root so the shell matches [`.nvmrc`](.nvmrc)
-- **Node** — exact version from [`.nvmrc`](.nvmrc) (`nvm use`)
+- **nvm** (recommended) — run `nvm install` at the repo root so the shell matches [`.nvmrc`](.nvmrc)
+- **Node** — exact version from [`.nvmrc`](.nvmrc) (`nvm install` reads it and switches)
 - **pnpm** — via Corepack (`corepack enable`)
-- **Docker + Compose** — only required to run the backend (Auth, Firestore, Emulator UI)
+- **Docker + Compose** — required for the backend (Auth, Firestore, Emulator UI). The Emulator Suite runtime and `firebase-tools` stay inside the Compose image — **do not install the Firebase CLI on the host**.
 
 Nothing else is needed on the host. Emulators run only inside Docker (no global `firebase-tools`).
 
 ## Quick start
 
-1. `nvm use`
-2. Optional: `cp .env.example .env` and paste a Stripe **test** key (`sk_test_…` or `rk_test_…`) when you need real Stripe CLI / billing work. A Stripe test account is free. `pnpm dev` also starts with built-in local defaults if `.env` is missing.
-3. Frontend (no backend required):
+1. `nvm install` (reads [`.nvmrc`](.nvmrc) and switches to that Node)
+2. `corepack enable`
+3. Optional: `cp .env.example .env` and paste a Stripe **test** key (`sk_test_…` or `rk_test_…`) when you need real Stripe CLI / billing work. A Stripe test account is free. `pnpm dev` also starts with built-in local defaults if `.env` is missing.
+4. Frontend on the host (no backend required):
 
    ```bash
    pnpm install
@@ -24,7 +25,7 @@ Nothing else is needed on the host. Emulators run only inside Docker (no global 
 
    Open http://localhost:3000. Pages render with the backend down; features that need Auth/Firestore degrade until the backend is up.
 
-4. Backend (Docker only) — copy `.env.example` to `.env` first (Compose reads Stripe placeholders even when the `stripe` profile is off):
+5. Backend via Docker Compose only — copy `.env.example` to `.env` first (Compose reads Stripe placeholders even when the `stripe` profile is off):
 
    ```bash
    cp -n .env.example .env
@@ -34,6 +35,21 @@ Nothing else is needed on the host. Emulators run only inside Docker (no global 
    Emulator UI http://127.0.0.1:4000 · Auth `:9099` · Firestore `:8080`.
 
    Or use the wrappers (fail fast if Docker isn't running): `pnpm backend:up` / `pnpm backend:down` / `pnpm backend:logs`.
+
+## Architecture overview
+
+Prosefield is one **Next.js 16** App Router app (React 19, TypeScript strict):
+
+| Concern | Choice |
+|---|---|
+| Identity | Firebase Auth (email/password) + server session cookie (`__session`) |
+| Data | Cloud Firestore via Firebase Admin only; browser clients are deny-all |
+| Local backend | Firebase Auth + Firestore emulators in Docker (`demo-prosefield`) |
+| Payments | Stripe Checkout (test mode) + verified webhooks; session-sync fallback on `/billing/status` |
+| Editor | Tiptap (JSON persistence, **manual** save) |
+| UI | Tailwind CSS 4 + minimal shadcn/ui, tokens from Art Direction v1.1 |
+
+**Surfaces:** a public marketing/pricing page, and an authenticated document workspace that only **active** subscribers can use. Server Actions and Route Handlers enforce sessions, entitlement, and all document CRUD. Details and trade-offs: [`docs/architecture.md`](docs/architecture.md).
 
 ### Emulator data
 
@@ -53,14 +69,13 @@ CI never needs real Stripe credentials or network. For a local end-to-end paymen
 
 1. Put your `sk_test_…` or `rk_test_…` in `.env` as `STRIPE_SECRET_KEY` (never commit `.env`).
 2. Run `pnpm stripe:setup` — seeds a Price, writes `STRIPE_PRICE_ID` into `.env`, runs `docker compose run --rm stripe-cli listen --print-secret`, and writes `STRIPE_WEBHOOK_SECRET` into `.env` (updates in place; never prints secret values). Requires Docker. Per [Stripe CLI docs](https://docs.stripe.com/cli/listen), the webhook signing secret does **not** change between `listen --print-secret` and a later `listen --forward-to` with the same API key, so this value matches the long-running `stripe` profile listener.
-3. Start the app on the host (`pnpm dev`) and emulators (`pnpm backend:up`).
-4. Forward webhooks with the Stripe CLI (needs the `app` profile, or point `--forward-to` at `host.docker.internal:3000` if the CLI reaches the host):
+3. Start Next.js **in Docker** with the Stripe CLI forwarder (both own the Compose `app` / `stripe` profiles). Skip host `pnpm dev` — the `app` service also binds `:3000`:
 
    ```bash
    docker compose --profile app --profile stripe up
    ```
 
-5. Register, open `/subscribe`, continue to Checkout, pay with `4242 4242 4242 4242` (any future expiry, any CVC). You should land on `/billing/status`, then `/documents` once the verified webhook (or session-sync fallback) projects `status: active`.
+4. Register, open `/subscribe`, continue to Checkout, pay with `4242 4242 4242 4242` (any future expiry, any CVC). You should land on `/billing/status`, then `/documents` once the verified webhook (or session-sync fallback) projects `status: active`.
 
 `/subscribe` stays **Billing is not configured** until all three of `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET` are set to non-placeholder values. Without them the app still boots: plan display falls back to `PLAN_DISPLAY_*` (€8/month).
 
@@ -71,6 +86,19 @@ docker compose run --rm stripe-cli listen --print-secret
 ```
 
 (`pnpm stripe:seed` / `pnpm stripe:setup` use `tsx --env-file-if-exists=.env`, so exporting `STRIPE_SECRET_KEY=…` without a `.env` file still works.)
+
+Playwright acceptance tests mock payment by seeding the Firestore entitlement projection in the emulator (Architecture §13) — a test-only shortcut with no production equivalent.
+
+## Known limitations
+
+- **Docker is required** for Auth/Firestore. There is no host Emulator Suite runtime or global `firebase-tools` fallback.
+- **Manual save only** — no autosave, no multi-device conflict resolution, no version history.
+- **No real-time collaboration** and no offline client Firestore access (server-only data path).
+- **One plan / one price** — no coupons, taxes, trials, or tiered pricing. Plan display falls back to `PLAN_DISPLAY_*` when Stripe is not configured.
+- **Stripe live keys are rejected** — only `sk_test_` / `rk_test_` keys are accepted.
+- **Customer Portal** is feature-flagged (`FEATURE_CUSTOMER_PORTAL`); "Cancel anytime" copy stays honest with the flag.
+- **No production deploy in the default path** — optional Firebase App Hosting is phase P6 and never blocks local acceptance.
+- **Non-goals** (out of scope): AI features, uploads/export, admin UI, email verification, dark mode, public API. See Architecture §2.3.
 
 ## Scripts
 
