@@ -1,6 +1,10 @@
 "use server";
 
 import { siteCopy } from "@/content/site";
+import {
+  PASSWORD_POLICY_CLAIM,
+  PASSWORD_POLICY_CLAIM_VALUE,
+} from "@/features/auth/constants";
 import { mapAuthError } from "@/features/auth/map-auth-error";
 import { registerInputSchema } from "@/features/auth/register-input";
 import { getAdminAuth } from "@/lib/firebase/admin";
@@ -17,8 +21,9 @@ function firebaseErrorCode(error: unknown): string | undefined {
 }
 
 /**
- * Server-side registration: validate password policy, then create the Auth user
- * via the Admin SDK. The client signs in afterward with the same credentials.
+ * Server-side registration: validate password policy, create the Auth user
+ * via the Admin SDK, then stamp `pf_pw` so the first ID token after client
+ * sign-in carries the session-gate claim.
  */
 export async function registerAction(
   input: unknown,
@@ -42,16 +47,20 @@ export async function registerAction(
       return {
         ok: false,
         field: "email",
-        message: emailIssue.message || "Enter a valid email address.",
+        message: emailIssue.message || siteCopy.auth.invalidEmail,
       };
     }
     return { ok: false, message: siteCopy.auth.genericError };
   }
 
   try {
-    await getAdminAuth().createUser({
+    const auth = getAdminAuth();
+    const user = await auth.createUser({
       email: parsed.data.email,
       password: parsed.data.password,
+    });
+    await auth.setCustomUserClaims(user.uid, {
+      [PASSWORD_POLICY_CLAIM]: PASSWORD_POLICY_CLAIM_VALUE,
     });
     return { ok: true };
   } catch (error) {

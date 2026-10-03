@@ -258,13 +258,27 @@ describe("documents repository", () => {
   });
 
   it("updateDocumentContent uses tx.get/tx.update with ownership inside the transaction", async () => {
+    const { Timestamp } = await import("firebase-admin/firestore");
     const { updateDocumentContent } = await import(
       "@/features/documents/repository"
     );
 
+    const storedUpdatedAt = Timestamp.fromDate(
+      new Date("2026-06-15T12:00:00.000Z"),
+    );
     txGet.mockResolvedValueOnce(ownedSnap());
-    // Also arm ref spies so tx→ref mutations fail on assertion, not TypeError.
-    refGet.mockResolvedValue(ownedSnap());
+    // Post-commit re-read returns the stored server timestamp (not local Date()).
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => ({
+        ownerId: "u1",
+        title: "T",
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        createdAt: new Date("2026-01-01"),
+        updatedAt: storedUpdatedAt,
+      }),
+    });
     refUpdate.mockResolvedValue(undefined);
     const afterUpdate = await updateDocumentContent({
       documentId: "d1",
@@ -272,11 +286,15 @@ describe("documents repository", () => {
       content: EMPTY_DOCUMENT_CONTENT,
     });
     expect(afterUpdate?.contentAllowed).toBe(true);
+    expect(afterUpdate?.updatedAt.toISOString()).toBe(
+      "2026-06-15T12:00:00.000Z",
+    );
     expect(runTransaction).toHaveBeenCalledTimes(1);
     expect(txGet).toHaveBeenCalledTimes(1);
     expect(txUpdate).toHaveBeenCalledTimes(1);
-    // Mutations 9a/9b: writing or reading via ref.* must fail these.
-    expect(refGet).not.toHaveBeenCalled();
+    // Ownership read is tx.get; ref.get is only the post-commit re-read.
+    expect(refGet).toHaveBeenCalledTimes(1);
+    // Mutation 9a: writing via ref.update must fail.
     expect(refUpdate).not.toHaveBeenCalled();
 
     txGet.mockResolvedValueOnce({ exists: false });
@@ -289,6 +307,8 @@ describe("documents repository", () => {
     ).toBeNull();
     expect(txUpdate).toHaveBeenCalledTimes(1);
     expect(refUpdate).not.toHaveBeenCalled();
+    // Failed ownership/exists → no post-commit re-read.
+    expect(refGet).toHaveBeenCalledTimes(1);
 
     txGet.mockResolvedValueOnce(ownedSnap({ ownerId: "other" }));
     expect(
@@ -306,6 +326,15 @@ describe("documents repository", () => {
       id: "d1",
       data: () => ({ ownerId: "u1" }),
     });
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => ({
+        ownerId: "u1",
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        updatedAt: storedUpdatedAt,
+      }),
+    });
     const updatedSparse = await updateDocumentContent({
       documentId: "d1",
       ownerId: "u1",
@@ -313,6 +342,9 @@ describe("documents repository", () => {
     });
     expect(updatedSparse?.contentAllowed).toBe(true);
     expect(updatedSparse?.title).toBe("Untitled document");
+    expect(updatedSparse?.updatedAt.toISOString()).toBe(
+      "2026-06-15T12:00:00.000Z",
+    );
     expect(refUpdate).not.toHaveBeenCalled();
 
     txGet.mockResolvedValueOnce({
@@ -331,10 +363,24 @@ describe("documents repository", () => {
   });
 
   it("renameDocument uses tx.get/tx.update with ownership inside the transaction", async () => {
+    const { Timestamp } = await import("firebase-admin/firestore");
     const { renameDocument } = await import("@/features/documents/repository");
 
+    const storedUpdatedAt = Timestamp.fromDate(
+      new Date("2026-07-01T08:30:00.000Z"),
+    );
     txGet.mockResolvedValueOnce(ownedSnap());
-    refGet.mockResolvedValue(ownedSnap());
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => ({
+        ownerId: "u1",
+        title: "Renamed",
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        createdAt: new Date("2026-01-01"),
+        updatedAt: storedUpdatedAt,
+      }),
+    });
     refUpdate.mockResolvedValue(undefined);
     const afterRename = await renameDocument({
       documentId: "d1",
@@ -342,11 +388,14 @@ describe("documents repository", () => {
       title: "Renamed",
     });
     expect(afterRename?.title).toBe("Renamed");
+    expect(afterRename?.updatedAt.toISOString()).toBe(
+      "2026-07-01T08:30:00.000Z",
+    );
     expect(runTransaction).toHaveBeenCalledTimes(1);
     expect(txGet).toHaveBeenCalledTimes(1);
     expect(txUpdate).toHaveBeenCalledTimes(1);
-    // Mutation 9c (plain get/update shim) must fail these.
-    expect(refGet).not.toHaveBeenCalled();
+    // Mutation 9b: ownership via ref.get would make this 2+.
+    expect(refGet).toHaveBeenCalledTimes(1);
     expect(refUpdate).not.toHaveBeenCalled();
 
     txGet.mockResolvedValueOnce({ exists: false });
@@ -367,12 +416,25 @@ describe("documents repository", () => {
       id: "d1",
       data: () => ({ ownerId: "u1" }),
     });
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => ({
+        ownerId: "u1",
+        title: "After",
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        updatedAt: storedUpdatedAt,
+      }),
+    });
     const renamedSparse = await renameDocument({
       documentId: "d1",
       ownerId: "u1",
       title: "After",
     });
     expect(renamedSparse?.title).toBe("After");
+    expect(renamedSparse?.updatedAt.toISOString()).toBe(
+      "2026-07-01T08:30:00.000Z",
+    );
     expect(refUpdate).not.toHaveBeenCalled();
   });
 });

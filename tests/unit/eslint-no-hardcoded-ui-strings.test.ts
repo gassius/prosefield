@@ -1,35 +1,55 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ESLint } from "eslint";
 
-describe("prosefield/no-hardcoded-ui-strings", () => {
-  const plantedDir = path.resolve(
-    __dirname,
-    "../../src/components/__eslint_planted__",
-  );
-  const planted = path.join(plantedDir, "planted.tsx");
+const repoRoot = path.resolve(__dirname, "../..");
+const configPath = path.resolve(repoRoot, "eslint.config.mjs");
+/** Virtual path under the rule's files glob — never written to disk. */
+const virtualComponentPath = path.join(
+  repoRoot,
+  "src/components/__virtual__/planted.tsx",
+);
 
-  afterEach(() => {
-    rmSync(plantedDir, { recursive: true, force: true });
+async function lintSource(code: string) {
+  const eslint = new ESLint({
+    cwd: repoRoot,
+    overrideConfigFile: configPath,
+  });
+  const results = await eslint.lintText(code, {
+    filePath: virtualComponentPath,
+  });
+  return results.flatMap((r) => r.messages);
+}
+
+function hasRule(messages: { ruleId?: string | null }[]) {
+  return messages.some(
+    (m) => m.ruleId === "prosefield/no-hardcoded-ui-strings",
+  );
+}
+
+describe("prosefield/no-hardcoded-ui-strings", () => {
+  it("fails on a planted hard-coded JSX text string (lintText, no src/ write)", async () => {
+    const messages = await lintSource(
+      `export function Planted() {\n  return <p>Planted hard-coded UI string</p>;\n}\n`,
+    );
+    expect(hasRule(messages)).toBe(true);
   });
 
-  it("fails on a planted hard-coded UI string", async () => {
-    mkdirSync(plantedDir, { recursive: true });
-    writeFileSync(
-      planted,
-      `export function Planted() {\n  return <p>Planted hard-coded UI string</p>;\n}\n`,
-      "utf8",
-    );
+  it("fails on hard-coded aria-label / title / placeholder / alt attributes", async () => {
+    for (const attr of ["aria-label", "title", "placeholder", "alt"] as const) {
+      const messages = await lintSource(
+        `export function Planted() {\n  return <div ${attr}="Planted attr string" />;\n}\n`,
+      );
+      expect(hasRule(messages), `expected rule to flag ${attr}`).toBe(true);
+    }
+  });
 
-    const eslint = new ESLint({
-      cwd: path.resolve(__dirname, "../.."),
-      overrideConfigFile: path.resolve(__dirname, "../../eslint.config.mjs"),
-    });
-    const results = await eslint.lintFiles([planted]);
-    const messages = results.flatMap((r) => r.messages);
+  it("allows siteCopy expressions in those attributes", async () => {
+    const messages = await lintSource(
+      `import { siteCopy } from "@/content/site";\nexport function Ok() {\n  return <div aria-label={siteCopy.documents.toolbarAriaLabel} />;\n}\n`,
+    );
     expect(
-      messages.some((m) => m.ruleId === "prosefield/no-hardcoded-ui-strings"),
-    ).toBe(true);
+      messages.filter((m) => m.ruleId === "prosefield/no-hardcoded-ui-strings"),
+    ).toHaveLength(0);
   });
 });

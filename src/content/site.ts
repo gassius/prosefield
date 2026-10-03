@@ -38,6 +38,7 @@ export const siteCopy = {
     networkError: "Something went wrong. Please try again.",
     signOutError: "We couldn't sign you out. Please try again.",
     passwordHint: "Use at least 8 characters.",
+    invalidEmail: "Enter a valid email address.",
     pleaseWait: "Please wait…",
   },
   a11y: {
@@ -227,6 +228,16 @@ export const siteCopy = {
     contentBlocked:
       "This document contains unsupported formatting and cannot be saved until it is reset. Your stored copy is unchanged.",
     resetBlankPage: "Reset to a blank page",
+    toolbarAriaLabel: "Formatting",
+    toolbarBold: "Bold",
+    toolbarItalic: "Italic",
+    toolbarHeading2: "Heading 2",
+    toolbarHeading3: "Heading 3",
+    toolbarBulletList: "Bullet list",
+    toolbarNumberedList: "Numbered list",
+    toolbarQuote: "Quote",
+    toolbarUndo: "Undo",
+    toolbarRedo: "Redo",
   },
   billingStatus: {
     title: "Confirming payment",

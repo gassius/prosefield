@@ -150,27 +150,31 @@ export async function updateDocumentContent(input: {
 }): Promise<DocumentRecord | null> {
   const db = getAdminFirestore();
   const ref = db.collection("documents").doc(input.documentId);
-  return db.runTransaction(async (tx) => {
+  const wrote = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) {
-      return null;
+      return false;
     }
     const existing = snap.data() ?? {};
     // Ownership must be checked inside the transaction (TOCTOU-safe).
     if (existing.ownerId !== input.ownerId) {
-      return null;
+      return false;
     }
-    const commitTime = new Date();
     tx.update(ref, {
       content: serialiseContent(input.content),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    return toRecord(ref.id, {
-      ...existing,
-      content: serialiseContent(input.content),
-      updatedAt: commitTime,
-    });
+    return true;
   });
+  if (!wrote) {
+    return null;
+  }
+  // Return the stored server timestamp, not a local Date() stand-in.
+  const after = await ref.get();
+  if (!after.exists) {
+    return null;
+  }
+  return toRecord(after.id, after.data() ?? {});
 }
 
 export async function renameDocument(input: {
@@ -180,26 +184,29 @@ export async function renameDocument(input: {
 }): Promise<DocumentRecord | null> {
   const db = getAdminFirestore();
   const ref = db.collection("documents").doc(input.documentId);
-  return db.runTransaction(async (tx) => {
+  const wrote = await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) {
-      return null;
+      return false;
     }
     const existing = snap.data() ?? {};
     if (existing.ownerId !== input.ownerId) {
-      return null;
+      return false;
     }
-    const commitTime = new Date();
     tx.update(ref, {
       title: input.title,
       updatedAt: FieldValue.serverTimestamp(),
     });
-    return toRecord(ref.id, {
-      ...existing,
-      title: input.title,
-      updatedAt: commitTime,
-    });
+    return true;
   });
+  if (!wrote) {
+    return null;
+  }
+  const after = await ref.get();
+  if (!after.exists) {
+    return null;
+  }
+  return toRecord(after.id, after.data() ?? {});
 }
 
 export async function deleteDocument(documentId: string): Promise<boolean> {

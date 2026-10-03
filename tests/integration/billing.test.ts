@@ -11,7 +11,7 @@ import {
   FAKE_STRIPE_SECRET_KEY,
   FAKE_STRIPE_WEBHOOK_SECRET,
 } from "../fixtures/stripe";
-
+import { registerAndSignIn } from "./helpers/emulator-auth";
 
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
@@ -72,28 +72,6 @@ vi.mock("@/lib/stripe/server", async () => {
     __resetStripeClientForTests: () => undefined,
   };
 });
-
-async function signUp(
-  email: string,
-  password: string,
-): Promise<{ idToken: string; localId: string }> {
-  const response = await fetch(
-    `http://${authHost}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        email,
-        password,
-        returnSecureToken: true,
-      }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`signUp failed: ${response.status} ${await response.text()}`);
-  }
-  return (await response.json()) as { idToken: string; localId: string };
-}
 
 function makeSubscription(input: {
   id: string;
@@ -165,7 +143,7 @@ describe("billing (emulators)", () => {
     const { getAdminFirestore } = await import("@/lib/firebase/admin");
 
     const email = `bill-${randomUUID()}@example.com`;
-    const { idToken, localId } = await signUp(email, "password-123");
+    const { idToken, localId } = await registerAndSignIn(email, "password-123");
     const { sessionCookie } = await createSessionCookieFromIdToken(idToken);
     await upsertUserDocument({ uid: localId, email });
     await setSessionCookie(sessionCookie);
@@ -257,7 +235,7 @@ describe("billing (emulators)", () => {
     const { getAdminFirestore } = await import("@/lib/firebase/admin");
 
     const email = `pastdue-${randomUUID()}@example.com`;
-    const { idToken, localId } = await signUp(email, "password-123");
+    const { idToken, localId } = await registerAndSignIn(email, "password-123");
     const { sessionCookie } = await createSessionCookieFromIdToken(idToken);
     await upsertUserDocument({ uid: localId, email });
     await setSessionCookie(sessionCookie);

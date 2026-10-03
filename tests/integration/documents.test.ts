@@ -10,6 +10,7 @@ import {
   PLACEHOLDER_STRIPE_WEBHOOK_SECRET,
 } from "../fixtures/stripe";
 import { EMPTY_DOCUMENT_CONTENT } from "@/features/documents/schemas";
+import { registerAndSignIn } from "./helpers/emulator-auth";
 
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
@@ -37,34 +38,12 @@ process.env.PLAN_DISPLAY_CURRENCY ??= "EUR";
 process.env.PLAN_DISPLAY_INTERVAL ??= "month";
 process.env.FEATURE_CUSTOMER_PORTAL ??= "false";
 
-async function signUp(
-  email: string,
-  password: string,
-): Promise<{ idToken: string; localId: string }> {
-  const response = await fetch(
-    `http://${authHost}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        email,
-        password,
-        returnSecureToken: true,
-      }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`signUp failed: ${response.status} ${await response.text()}`);
-  }
-  return (await response.json()) as { idToken: string; localId: string };
-}
-
 async function establishSession(email: string) {
   const { createSessionCookieFromIdToken, setSessionCookie } = await import(
     "@/features/auth/session"
   );
   const { upsertUserDocument } = await import("@/features/auth/users");
-  const { idToken, localId } = await signUp(email, "password-123");
+  const { idToken, localId } = await registerAndSignIn(email, "password-123");
   const { sessionCookie } = await createSessionCookieFromIdToken(idToken);
   await upsertUserDocument({ uid: localId, email });
   await setSessionCookie(sessionCookie);
@@ -491,7 +470,7 @@ describe("documents guard chain (emulators)", () => {
     expect(repaired.ok).toBe(true);
   });
 
-  it("transactional save/rename refuse wrong owner and deleted docs", async () => {
+  it("transactional save/rename refuse wrong-owner and already-deleted docs", async () => {
     const email = `docs-tx-${randomUUID()}@example.com`;
     const { localId: uid } = await establishSession(email);
     await seedActiveSubscription(uid);
@@ -530,8 +509,8 @@ describe("documents guard chain (emulators)", () => {
     const untouched = await db.collection("documents").doc(again.id).get();
     expect(untouched.data()?.title).toBe("Again");
 
-    // Deleted between outer owner check opportunity and mutation → not_found.
-    const owned = await createDocumentAction({ title: "For action race" });
+    // Doc deleted before the action runs → not_found (sequential, not a race).
+    const owned = await createDocumentAction({ title: "For deleted-doc" });
     expect(owned.ok).toBe(true);
     if (!owned.ok) {
       return;
@@ -555,7 +534,7 @@ describe("documents guard chain (emulators)", () => {
     }
   });
 
-  it("plain read-then-write ownership check loses to concurrent owner change", async () => {
+  it("plain read-then-write ownership check allows owner change between get and update", async () => {
     const email = `docs-plain-${randomUUID()}@example.com`;
     const { localId: uid } = await establishSession(email);
     await seedActiveSubscription(uid);
@@ -564,7 +543,7 @@ describe("documents guard chain (emulators)", () => {
     const { getAdminFirestore } = await import("@/lib/firebase/admin");
     const { FieldValue } = await import("firebase-admin/firestore");
 
-    const doc = await createDocument({ ownerId: uid, title: "Plain race" });
+    const doc = await createDocument({ ownerId: uid, title: "Plain gap" });
     const db = getAdminFirestore();
     const ref = db.collection("documents").doc(doc.id);
 
@@ -573,7 +552,7 @@ describe("documents guard chain (emulators)", () => {
     expect(outer.exists).toBe(true);
     expect(outer.data()?.ownerId).toBe(uid);
 
-    // Concurrent ownership change in the gap.
+    // Owner changed in the gap before the blind write.
     await ref.update({ ownerId: "hijacker" });
 
     // Blind write still succeeds — proves why ownership must live in the tx.
@@ -585,7 +564,7 @@ describe("documents guard chain (emulators)", () => {
     expect(clobbered.data()?.title).toBe("Clobbered");
     expect(clobbered.data()?.ownerId).toBe("hijacker");
 
-    // Transactional path with ownerId refuses the same race outcome.
+    // Transactional path with ownerId refuses the same pre-changed owner.
     const { updateDocumentContent, renameDocument } = await import(
       "@/features/documents/repository"
     );
@@ -642,14 +621,26 @@ describe("documents guard chain (emulators)", () => {
       content,
     });
     expect(saved.ok).toBe(true);
+    if (!saved.ok) {
+      return;
+    }
+    // Returned updatedAt must match the stored Firestore server timestamp
+    // (not a local Date() stand-in).
+    const afterSave = await getDocumentById(created.data.id);
+    expect(saved.data.updatedAt).toBe(afterSave?.updatedAt.toISOString());
 
     const renamed = await renameDocumentAction({
       documentId: created.data.id,
       title: "Draft two",
     });
     expect(renamed.ok).toBe(true);
+    if (!renamed.ok) {
+      return;
+    }
+    const afterRename = await getDocumentById(created.data.id);
+    expect(renamed.data.updatedAt).toBe(afterRename?.updatedAt.toISOString());
 
-    const loaded = await getDocumentById(created.data.id);
+    const loaded = afterRename;
     expect(loaded?.title).toBe("Draft two");
     expect(loaded?.contentAllowed).toBe(true);
     expect(JSON.stringify(loaded?.content)).toContain("Hello field");

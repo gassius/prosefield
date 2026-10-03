@@ -61,9 +61,13 @@ describe("registerAction (emulators)", () => {
     });
   });
 
-  it("accepts an 8-character password and creates the Auth user", async () => {
+  it("accepts an 8-character password and stamps pf_pw on the Auth user", async () => {
     const { registerAction } = await import("@/features/auth/register");
     const { getAdminAuth } = await import("@/lib/firebase/admin");
+    const {
+      PASSWORD_POLICY_CLAIM,
+      PASSWORD_POLICY_CLAIM_VALUE,
+    } = await import("@/features/auth/constants");
     const email = `ok-${randomUUID()}@example.com`;
     const password = "abcdefgh";
     expect(password).toHaveLength(8);
@@ -73,5 +77,8 @@ describe("registerAction (emulators)", () => {
 
     const user = await getAdminAuth().getUserByEmail(email);
     expect(user.email).toBe(email);
+    expect(user.customClaims?.[PASSWORD_POLICY_CLAIM]).toBe(
+      PASSWORD_POLICY_CLAIM_VALUE,
+    );
   });
 });

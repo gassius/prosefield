@@ -1,11 +1,19 @@
 /**
  * Forbid hard-coded UI string literals in JSX outside `src/content/site.ts`.
- * Catches raw JSX text and string literals that are direct children of a
- * JSX expression container (the common hard-code pattern).
+ * Catches raw JSX text, string literals in JSX expression containers, and
+ * UI-facing JSX attribute string literals (`aria-label`, `title`,
+ * `placeholder`, `alt`).
  *
  * Allow-list via leading comment: `eslint-disable-next-line prosefield/no-hardcoded-ui-strings`
  * or the `allowedStrings` option for tiny punctuation-only tokens.
  */
+
+const UI_STRING_ATTRIBUTES = new Set([
+  "aria-label",
+  "title",
+  "placeholder",
+  "alt",
+]);
 
 /** @type {import('eslint').Rule.RuleModule} */
 const rule = {
@@ -66,6 +74,29 @@ const rule = {
           expr.quasis.length === 1
         ) {
           report(expr, expr.quasis[0]?.value?.cooked ?? "");
+        }
+      },
+      JSXAttribute(node) {
+        const name = node.name;
+        const attrName =
+          name?.type === "JSXIdentifier"
+            ? name.name
+            : name?.type === "JSXNamespacedName"
+              ? `${name.namespace.name}:${name.name.name}`
+              : null;
+        if (!attrName || !UI_STRING_ATTRIBUTES.has(attrName)) {
+          return;
+        }
+        const value = node.value;
+        if (value?.type === "Literal" && typeof value.value === "string") {
+          report(value, value.value);
+        }
+        if (
+          value?.type === "JSXExpressionContainer" &&
+          value.expression?.type === "Literal" &&
+          typeof value.expression.value === "string"
+        ) {
+          report(value.expression, value.expression.value);
         }
       },
     };

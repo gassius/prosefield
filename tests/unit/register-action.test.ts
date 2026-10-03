@@ -1,17 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { siteCopy } from "@/content/site";
+import {
+  PASSWORD_POLICY_CLAIM,
+  PASSWORD_POLICY_CLAIM_VALUE,
+} from "@/features/auth/constants";
 
 const createUser = vi.fn();
+const setCustomUserClaims = vi.fn();
 
 vi.mock("@/lib/firebase/admin", () => ({
   getAdminAuth: () => ({
     createUser: (...args: unknown[]) => createUser(...args),
+    setCustomUserClaims: (...args: unknown[]) => setCustomUserClaims(...args),
   }),
 }));
 
 describe("registerAction (server entry point)", () => {
   beforeEach(() => {
     createUser.mockReset();
+    setCustomUserClaims.mockReset();
+    setCustomUserClaims.mockResolvedValue(undefined);
     vi.resetModules();
   });
 
@@ -33,7 +41,7 @@ describe("registerAction (server entry point)", () => {
     expect(createUser).not.toHaveBeenCalled();
   });
 
-  it("accepts an 8-character password and creates the user via Admin SDK", async () => {
+  it("accepts an 8-character password and stamps pf_pw before return", async () => {
     createUser.mockResolvedValue({ uid: "uid-1" });
     const { registerAction } = await import("@/features/auth/register");
 
@@ -47,6 +55,9 @@ describe("registerAction (server entry point)", () => {
     expect(createUser).toHaveBeenCalledWith({
       email: "ok@example.com",
       password: "abcdefgh",
+    });
+    expect(setCustomUserClaims).toHaveBeenCalledWith("uid-1", {
+      [PASSWORD_POLICY_CLAIM]: PASSWORD_POLICY_CLAIM_VALUE,
     });
   });
 
@@ -90,7 +101,7 @@ describe("registerAction (server entry point)", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.field).toBe("email");
-      expect(result.message).toBe("Enter a valid email address.");
+      expect(result.message).toBe(siteCopy.auth.invalidEmail);
     }
     expect(createUser).not.toHaveBeenCalled();
   });
@@ -185,7 +196,7 @@ describe("registerAction (server entry point)", () => {
       expect(emailResult).toEqual({
         ok: false,
         field: "email",
-        message: "Enter a valid email address.",
+        message: siteCopy.auth.invalidEmail,
       });
     } finally {
       registerInputSchema.safeParse = original;
