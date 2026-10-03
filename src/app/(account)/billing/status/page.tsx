@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { PageMain } from "@/components/layout/page-main";
 import { SiteHeader } from "@/components/marketing/site-header";
 import {
   ctaDestinationForState,
@@ -37,9 +38,11 @@ export default async function BillingStatusPage({
   return (
     <>
       <SiteHeader accountState={account} ctaHref={ctaHref} />
-      <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-6 py-16">
-        <BillingStatusClient initialView={initialView} />
-      </div>
+      <PageMain className="justify-center">
+        <div className="mx-auto flex w-full max-w-lg flex-col px-6 py-16">
+          <BillingStatusClient initialView={initialView} />
+        </div>
+      </PageMain>
     </>
   );
 }

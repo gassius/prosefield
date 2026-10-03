@@ -95,13 +95,20 @@ test("landing CTAs route correctly when logged out and logged in", async ({
   page,
 }) => {
   await page.goto("/");
-  const loggedOutCta = page
+  const loggedOutCtas = page
     .locator("section")
     .getByRole("link", { name: "Start your first page" });
-  await expect(loggedOutCta).toHaveAttribute(
+  await expect(loggedOutCtas.first()).toHaveAttribute(
     "href",
     "/register?next=/subscribe",
   );
+  // Hero, pricing, and final CTA share the same state-aware destination.
+  await expect(loggedOutCtas).toHaveCount(3);
+  for (const href of await loggedOutCtas.evaluateAll((nodes) =>
+    nodes.map((node) => (node as HTMLAnchorElement).getAttribute("href")),
+  )) {
+    expect(href).toBe("/register?next=/subscribe");
+  }
 
   const email = uniqueEmail("cta");
   await registerViaUi(page, email, "password-123");
@@ -110,8 +117,13 @@ test("landing CTAs route correctly when logged out and logged in", async ({
 
   await page.goto("/");
   await expectSignedIn(page, email);
-  const loggedInCta = page
+  const loggedInCtas = page
     .locator("section")
     .getByRole("link", { name: "Start your first page" });
-  await expect(loggedInCta).toHaveAttribute("href", "/subscribe");
+  await expect(loggedInCtas).toHaveCount(3);
+  for (const href of await loggedInCtas.evaluateAll((nodes) =>
+    nodes.map((node) => (node as HTMLAnchorElement).getAttribute("href")),
+  )) {
+    expect(href).toBe("/subscribe");
+  }
 });

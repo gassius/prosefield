@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { PageMain } from "@/components/layout/page-main";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { DocumentsWorkspace } from "@/components/documents/documents-workspace";
 import { DocumentEditor } from "@/components/editor/document-editor";
@@ -36,28 +37,30 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
     return (
       <>
         <SiteHeader accountState={account} ctaHref={ctaHref} />
-        <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-6 py-16">
-          <div className="rounded-xl border border-border bg-background p-8">
-            <h1 className="font-display text-2xl font-medium tracking-tight sm:text-3xl">
-              {siteCopy.documents.upgradeTitle}
-            </h1>
-            <p className="text-muted-foreground mt-3 text-base leading-relaxed">
-              {siteCopy.documents.upgradeBody}
-            </p>
-            <p className="mt-4 text-base font-medium text-foreground">
-              {plan.priceLabel}
-            </p>
-            <Link
-              href="/subscribe"
-              className={cn(
-                buttonVariants({ variant: "default" }),
-                "mt-8 inline-flex",
-              )}
-            >
-              {siteCopy.documents.upgradeCta}
-            </Link>
+        <PageMain className="justify-center">
+          <div className="mx-auto flex w-full max-w-lg flex-col px-6 py-16">
+            <div className="rounded-xl border border-border bg-background p-8">
+              <h1 className="font-display text-2xl font-medium tracking-tight sm:text-3xl">
+                {siteCopy.documents.upgradeTitle}
+              </h1>
+              <p className="text-muted-foreground mt-3 text-base leading-relaxed">
+                {siteCopy.documents.upgradeBody}
+              </p>
+              <p className="mt-4 text-base font-medium text-foreground">
+                {plan.priceLabel}
+              </p>
+              <Link
+                href="/subscribe"
+                className={cn(
+                  buttonVariants({ variant: "default" }),
+                  "mt-8 inline-flex",
+                )}
+              >
+                {siteCopy.documents.upgradeCta}
+              </Link>
+            </div>
           </div>
-        </div>
+        </PageMain>
       </>
     );
   }
@@ -83,22 +86,24 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
   return (
     <>
       <SiteHeader accountState={account} ctaHref={ctaHref} />
-      <div className="border-border flex items-center gap-3 border-b px-4 py-3 md:hidden">
-        <Link
-          href="/documents"
-          className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
-        >
-          {siteCopy.documents.backToList}
-        </Link>
-      </div>
-      <DocumentsWorkspace documents={entries} activeId={doc.id}>
-        <DocumentEditor
-          documentId={doc.id}
-          initialTitle={doc.title}
-          initialContent={doc.content}
-          contentAllowed={doc.contentAllowed}
-        />
-      </DocumentsWorkspace>
+      <PageMain>
+        <div className="border-border flex items-center gap-3 border-b px-4 py-3 md:hidden">
+          <Link
+            href="/documents"
+            className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}
+          >
+            {siteCopy.documents.backToList}
+          </Link>
+        </div>
+        <DocumentsWorkspace documents={entries} activeId={doc.id}>
+          <DocumentEditor
+            documentId={doc.id}
+            initialTitle={doc.title}
+            initialContent={doc.content}
+            contentAllowed={doc.contentAllowed}
+          />
+        </DocumentsWorkspace>
+      </PageMain>
     </>
   );
 }

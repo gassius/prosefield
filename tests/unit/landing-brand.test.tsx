@@ -60,10 +60,11 @@ describe("ProsefieldLogo", () => {
 });
 
 describe("HeroEditorPreview", () => {
-  it("is decorative: root aria-hidden + inert, no focusable controls", () => {
+  it("is a labelled inert image with no focusable controls", () => {
     const html = renderToStaticMarkup(createElement(HeroEditorPreview));
     const root = rootTag(html);
-    expect(root).toContain('aria-hidden="true"');
+    expect(root).toContain('role="img"');
+    expect(root).toContain('aria-label="Preview of the Prosefield editor"');
     expect(root).toMatch(/\sinert(=""|\s|>)/);
     expect(html).not.toMatch(
       /<a\b|<button\b|<input\b|<select\b|<textarea\b|tabindex=/i,

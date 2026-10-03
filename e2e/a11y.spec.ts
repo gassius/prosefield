@@ -19,11 +19,26 @@ async function expectNoSeriousOrCritical(page: import("@playwright/test").Page) 
   expect(serious, JSON.stringify(serious, null, 2)).toEqual([]);
 }
 
+const LANDING_WIDTHS = [375, 768, 1024, 1440] as const;
+
 test.describe("accessibility smoke", () => {
-  test("landing", async ({ page }) => {
-    await page.goto("/");
-    await expectNoSeriousOrCritical(page);
-  });
+  for (const width of LANDING_WIDTHS) {
+    test(`landing ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/");
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expectNoSeriousOrCritical(page);
+
+      const overflow = await page.evaluate(() => {
+        const doc = document.documentElement;
+        return {
+          scrollWidth: Math.max(doc.scrollWidth, document.body.scrollWidth),
+          clientWidth: doc.clientWidth,
+        };
+      });
+      expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
+    });
+  }
 
   test("login", async ({ page }) => {
     await page.goto("/login");

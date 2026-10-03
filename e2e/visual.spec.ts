@@ -38,24 +38,19 @@ async function preparePage(
   await page.addStyleTag({ content: FREEZE_CSS });
 }
 
-test.describe("visual regression", () => {
-  test("landing desktop 1440", async ({ page }) => {
-    await preparePage(page, "/", { width: 1440, height: 900 });
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page).toHaveScreenshot("landing-desktop-1440.png", {
-      fullPage: true,
-      mask: [page.locator("time")],
-    });
-  });
+const LANDING_VISUAL_WIDTHS = [375, 768, 1024, 1440] as const;
 
-  test("landing mobile 390", async ({ page }) => {
-    await preparePage(page, "/", { width: 390, height: 844 });
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page).toHaveScreenshot("landing-mobile-390.png", {
-      fullPage: true,
-      mask: [page.locator("time")],
+test.describe("visual regression", () => {
+  for (const width of LANDING_VISUAL_WIDTHS) {
+    test(`landing ${width}`, async ({ page }) => {
+      await preparePage(page, "/", { width, height: 900 });
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expect(page).toHaveScreenshot(`landing-${width}.png`, {
+        fullPage: true,
+        mask: [page.locator("time")],
+      });
     });
-  });
+  }
 
   test("login", async ({ page }) => {
     await preparePage(page, "/login", { width: 1440, height: 900 });

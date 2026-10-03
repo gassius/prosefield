@@ -36,6 +36,11 @@ export default defineConfig({
         "src/features/auth/**/*.{ts,tsx}",
         "src/features/billing/**/*.{ts,tsx}",
         "src/features/documents/**/*.{ts,tsx}",
+        "src/content/**/*.{ts,tsx}",
+        "src/components/layout/**/*.{ts,tsx}",
+        "src/components/marketing/**/*.{ts,tsx}",
+        "src/components/ui/accordion.tsx",
+        "src/components/ui/sheet.tsx",
       ],
       // Client Firebase bootstrap is browser-only; covered indirectly by E2E.
       exclude: ["src/lib/firebase/client.ts"],
