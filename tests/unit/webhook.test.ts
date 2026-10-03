@@ -7,12 +7,16 @@ import {
 
 const constructEvent = vi.fn();
 const retrieveSubscription = vi.fn();
+const listSubscriptions = vi.fn();
 const processEventWithDedupe = vi.fn(async () => ({ processed: true }));
 
 vi.mock("@/lib/stripe/server", () => ({
   getStripe: () => ({
     webhooks: { constructEvent },
-    subscriptions: { retrieve: retrieveSubscription },
+    subscriptions: {
+      retrieve: retrieveSubscription,
+      list: listSubscriptions,
+    },
   }),
 }));
 
@@ -40,6 +44,17 @@ vi.mock("@/features/billing/customers", () => ({
 vi.mock("@/features/billing/projection", () => ({
   processEventWithDedupe,
 }));
+
+function activeSub(id: string, uid = "uid_1") {
+  return {
+    id,
+    metadata: { firebaseUid: uid },
+    customer: "cus_1",
+    status: "active",
+    cancel_at_period_end: false,
+    items: { data: [{ price: { id: "price_1" }, current_period_end: 100 }] },
+  };
+}
 
 describe("webhook helpers", () => {
   afterEach(() => {
@@ -108,14 +123,9 @@ describe("webhook helpers", () => {
       reason: "ignored_type",
     });
 
-    retrieveSubscription.mockResolvedValue({
-      id: "sub_1",
-      metadata: { firebaseUid: "uid_1" },
-      customer: "cus_1",
-      status: "active",
-      cancel_at_period_end: false,
-      items: { data: [{ price: { id: "price_1" }, current_period_end: 100 }] },
-    });
+    const sub = activeSub("sub_1");
+    retrieveSubscription.mockResolvedValue(sub);
+    listSubscriptions.mockResolvedValue({ data: [sub] });
 
     const handled = await handleStripeEvent({
       id: "evt_sub",
@@ -127,6 +137,7 @@ describe("webhook helpers", () => {
     } as unknown as Stripe.Event);
 
     expect(retrieveSubscription).toHaveBeenCalledWith("sub_1");
+    expect(listSubscriptions).toHaveBeenCalled();
     expect(processEventWithDedupe).toHaveBeenCalled();
     expect(handled.handled).toBe(true);
     expect(handled.processed).toBe(true);
@@ -134,14 +145,16 @@ describe("webhook helpers", () => {
 
   it("returns uid_unresolved when firebase uid cannot be resolved", async () => {
     const { handleStripeEvent } = await import("@/features/billing/webhook");
-    retrieveSubscription.mockResolvedValue({
+    const orphan = {
       id: "sub_orphan",
       metadata: {},
       customer: "cus_unknown",
       status: "active",
       cancel_at_period_end: false,
       items: { data: [{ price: { id: "price_1" }, current_period_end: 100 }] },
-    });
+    };
+    retrieveSubscription.mockResolvedValue(orphan);
+    listSubscriptions.mockResolvedValue({ data: [orphan] });
 
     const result = await handleStripeEvent({
       id: "evt_orphan",
@@ -180,14 +193,9 @@ describe("webhook helpers", () => {
 
   it("retrieves subscription from checkout.session.completed", async () => {
     const { handleStripeEvent } = await import("@/features/billing/webhook");
-    retrieveSubscription.mockResolvedValue({
-      id: "sub_cs",
-      metadata: { firebaseUid: "uid_cs" },
-      customer: "cus_1",
-      status: "active",
-      cancel_at_period_end: false,
-      items: { data: [{ price: { id: "price_1" }, current_period_end: 100 }] },
-    });
+    const sub = activeSub("sub_cs", "uid_cs");
+    retrieveSubscription.mockResolvedValue(sub);
+    listSubscriptions.mockResolvedValue({ data: [sub] });
 
     const result = await handleStripeEvent({
       id: "evt_cs",
@@ -209,16 +217,41 @@ describe("webhook helpers", () => {
     expect(result.processed).toBe(true);
   });
 
-  it("resolves subscription id from expanded objects and invoice string", async () => {
+  it("resolves invoice subscription from parent.subscription_details (API 2026-09-30.endive)", async () => {
     const { handleStripeEvent } = await import("@/features/billing/webhook");
-    retrieveSubscription.mockResolvedValue({
-      id: "sub_exp",
-      metadata: { firebaseUid: "uid_exp" },
+    const sub = activeSub("sub_inv", "uid_inv");
+    retrieveSubscription.mockResolvedValue(sub);
+    listSubscriptions.mockResolvedValue({ data: [sub] });
+
+    await handleStripeEvent({
+      id: "evt_inv_ok",
+      type: "invoice.paid",
+      created: 7,
+      data: {
+        object: {
+          object: "invoice",
+          id: "in_2",
+          parent: {
+            type: "subscription_details",
+            subscription_details: {
+              subscription: "sub_inv",
+            },
+          },
+        },
+      },
+    } as unknown as Stripe.Event);
+    expect(retrieveSubscription).toHaveBeenCalledWith("sub_inv");
+    expect(processEventWithDedupe).toHaveBeenCalled();
+  });
+
+  it("resolves subscription id from expanded checkout session and expanded invoice parent", async () => {
+    const { handleStripeEvent } = await import("@/features/billing/webhook");
+    const sub = {
+      ...activeSub("sub_exp", "uid_exp"),
       customer: { id: "cus_obj" },
-      status: "active",
-      cancel_at_period_end: false,
-      items: { data: [{ price: { id: "price_1" }, current_period_end: 100 }] },
-    });
+    };
+    retrieveSubscription.mockResolvedValue(sub);
+    listSubscriptions.mockResolvedValue({ data: [sub] });
 
     await handleStripeEvent({
       id: "evt_cs_obj",
@@ -236,28 +269,27 @@ describe("webhook helpers", () => {
     } as unknown as Stripe.Event);
     expect(retrieveSubscription).toHaveBeenCalledWith("sub_exp");
 
-    retrieveSubscription.mockResolvedValue({
-      id: "sub_inv",
-      metadata: { firebaseUid: "uid_inv" },
-      customer: "cus_1",
-      status: "active",
-      cancel_at_period_end: false,
-      items: { data: [{ price: { id: "price_1" }, current_period_end: 100 }] },
+    retrieveSubscription.mockResolvedValue(activeSub("sub_inv2", "uid_inv"));
+    listSubscriptions.mockResolvedValue({
+      data: [activeSub("sub_inv2", "uid_inv")],
     });
     await handleStripeEvent({
-      id: "evt_inv_ok",
-      type: "invoice.paid",
-      created: 7,
+      id: "evt_inv_exp",
+      type: "invoice.payment_failed",
+      created: 8,
       data: {
         object: {
           object: "invoice",
-          id: "in_2",
-          subscription: "sub_inv",
+          id: "in_3",
+          parent: {
+            subscription_details: {
+              subscription: { id: "sub_inv2" },
+            },
+          },
         },
       },
     } as unknown as Stripe.Event);
-    expect(retrieveSubscription).toHaveBeenCalledWith("sub_inv");
-    expect(processEventWithDedupe).toHaveBeenCalled();
+    expect(retrieveSubscription).toHaveBeenCalledWith("sub_inv2");
   });
 
   it("falls back to customer object on subscription for uid lookup", async () => {
@@ -288,5 +320,35 @@ describe("webhook helpers", () => {
         } as unknown as Stripe.Checkout.Session,
       }),
     ).toBe("uid_from_lookup");
+  });
+
+  it("projects the active sibling when a canceled event arrives for another sub", async () => {
+    const { handleStripeEvent } = await import("@/features/billing/webhook");
+    const canceledA = {
+      id: "sub_A",
+      status: "canceled",
+      metadata: { firebaseUid: "uid_1" },
+      customer: "cus_1",
+      cancel_at_period_end: false,
+      items: { data: [{ price: { id: "price_1" }, current_period_end: 100 }] },
+    };
+    const activeB = activeSub("sub_B");
+    retrieveSubscription.mockResolvedValue(canceledA);
+    listSubscriptions.mockResolvedValue({ data: [canceledA, activeB] });
+
+    await handleStripeEvent({
+      id: "evt_end_a",
+      type: "customer.subscription.deleted",
+      created: 9,
+      data: {
+        object: { object: "subscription", id: "sub_A" },
+      },
+    } as unknown as Stripe.Event);
+
+    expect(processEventWithDedupe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subscription: expect.objectContaining({ id: "sub_B", status: "active" }),
+      }),
+    );
   });
 });

@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type Stripe from "stripe";
+import {
+  FAKE_STRIPE_PRICE_ID,
+  FAKE_STRIPE_SECRET_KEY,
+  FAKE_STRIPE_WEBHOOK_SECRET,
+} from "../fixtures/stripe";
 
 const set = vi.fn();
 const runTransaction = vi.fn();
@@ -18,7 +23,17 @@ describe("projection write helpers", () => {
   afterEach(() => {
     vi.clearAllMocks();
     vi.resetModules();
+    vi.unstubAllEnvs();
   });
+
+  async function loadWithPrice(priceId = FAKE_STRIPE_PRICE_ID) {
+    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
+    vi.stubEnv("STRIPE_PRICE_ID", priceId);
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    return import("@/features/billing/projection");
+  }
 
   const subscription = {
     id: "sub_1",
@@ -27,20 +42,19 @@ describe("projection write helpers", () => {
     customer: "cus_1",
     metadata: {},
     items: {
-      data: [{ price: { id: "price_1" }, current_period_end: 100 }],
+      data: [{ price: { id: FAKE_STRIPE_PRICE_ID }, current_period_end: 100 }],
     },
   } as unknown as Stripe.Subscription;
 
   it("upsertSubscriptionProjection writes merge set", async () => {
     get.mockResolvedValue({ exists: false });
-    const { upsertSubscriptionProjection } = await import(
-      "@/features/billing/projection"
-    );
+    const { upsertSubscriptionProjection } = await loadWithPrice();
     await expect(
       upsertSubscriptionProjection({
         uid: "uid",
         subscription,
         lastEventId: "evt",
+        eventCreated: 10,
       }),
     ).resolves.toEqual({ written: true });
     expect(set).toHaveBeenCalledWith(expect.any(Object), { merge: true });
@@ -54,9 +68,7 @@ describe("projection write helpers", () => {
       };
       return fn(tx);
     });
-    const { processEventWithDedupe } = await import(
-      "@/features/billing/projection"
-    );
+    const { processEventWithDedupe } = await loadWithPrice();
     await expect(
       processEventWithDedupe({
         eventId: "evt_dup",
@@ -77,9 +89,7 @@ describe("projection write helpers", () => {
       };
       return fn(tx);
     });
-    const { processEventWithDedupe } = await import(
-      "@/features/billing/projection"
-    );
+    const { processEventWithDedupe } = await loadWithPrice();
     await expect(
       processEventWithDedupe({
         eventId: "evt_new",
@@ -99,7 +109,6 @@ describe("projection write helpers", () => {
       const tx = {
         get: async () => {
           getCalls += 1;
-          // 1st get: stripeEvents; 2nd get: subscriptions/{uid}
           if (getCalls === 1) {
             return { exists: false };
           }
@@ -115,9 +124,7 @@ describe("projection write helpers", () => {
       };
       return fn(tx);
     });
-    const { processEventWithDedupe } = await import(
-      "@/features/billing/projection"
-    );
+    const { processEventWithDedupe } = await loadWithPrice();
     const canceledA = {
       ...subscription,
       id: "sub_A",
@@ -134,7 +141,6 @@ describe("projection write helpers", () => {
       }),
     ).resolves.toEqual({ processed: true, projected: false });
 
-    // Dedupe write only — projection for active sub_B must stay.
     expect(txSet).toHaveBeenCalledTimes(1);
   });
 
@@ -146,9 +152,7 @@ describe("projection write helpers", () => {
         status: "active",
       }),
     });
-    const { upsertSubscriptionProjection } = await import(
-      "@/features/billing/projection"
-    );
+    const { upsertSubscriptionProjection } = await loadWithPrice();
     const result = await upsertSubscriptionProjection({
       uid: "uid",
       subscription: {
@@ -158,15 +162,79 @@ describe("projection write helpers", () => {
       } as unknown as Stripe.Subscription,
       lastEventId: "evt_stale",
     });
-    expect(result).toEqual({ written: false });
+    expect(result).toEqual({ written: false, reason: "guarded" });
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it("skips projection when stripePriceId does not match STRIPE_PRICE_ID", async () => {
+    get.mockResolvedValue({ exists: false });
+    const { upsertSubscriptionProjection, processEventWithDedupe } =
+      await loadWithPrice();
+    const wrongPrice = {
+      ...subscription,
+      items: {
+        data: [{ price: { id: "price_other" }, current_period_end: 100 }],
+      },
+    } as unknown as Stripe.Subscription;
+
+    await expect(
+      upsertSubscriptionProjection({
+        uid: "uid",
+        subscription: wrongPrice,
+        lastEventId: "evt",
+      }),
+    ).resolves.toEqual({ written: false, reason: "price_mismatch" });
+    expect(set).not.toHaveBeenCalled();
+
+    const txSet = vi.fn();
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => ({ exists: false }),
+        set: txSet,
+      };
+      return fn(tx);
+    });
+    await expect(
+      processEventWithDedupe({
+        eventId: "evt_wrong_price",
+        eventType: "customer.subscription.updated",
+        eventCreated: 1,
+        uid: "uid",
+        subscription: wrongPrice,
+      }),
+    ).resolves.toEqual({ processed: true, projected: false });
+    expect(txSet).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips stale concurrent event when lastStripeEventCreated is newer", async () => {
+    get.mockResolvedValue({
+      exists: true,
+      data: () => ({
+        stripeSubscriptionId: "sub_1",
+        status: "active",
+        lastStripeEventCreated: 200,
+      }),
+    });
+    const { upsertSubscriptionProjection, shouldAcceptStripeEventCreated } =
+      await loadWithPrice();
+    expect(shouldAcceptStripeEventCreated(200, 100)).toBe(false);
+    expect(shouldAcceptStripeEventCreated(null, 100)).toBe(true);
+    expect(shouldAcceptStripeEventCreated(100, null)).toBe(true);
+
+    await expect(
+      upsertSubscriptionProjection({
+        uid: "uid",
+        subscription,
+        lastEventId: "evt_old",
+        eventCreated: 100,
+      }),
+    ).resolves.toEqual({ written: false, reason: "stale_event" });
     expect(set).not.toHaveBeenCalled();
   });
 
   it("getSubscriptionProjection returns null when missing", async () => {
     get.mockResolvedValue({ exists: false });
-    const { getSubscriptionProjection } = await import(
-      "@/features/billing/projection"
-    );
+    const { getSubscriptionProjection } = await loadWithPrice();
     await expect(getSubscriptionProjection("uid")).resolves.toBeNull();
     get.mockResolvedValue({
       exists: true,

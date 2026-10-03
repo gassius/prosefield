@@ -5,6 +5,22 @@
  */
 export const ENTITLED_SUBSCRIPTION_STATUS = "active" as const;
 
+/**
+ * Non-terminal Stripe subscription statuses that block a new Checkout Session.
+ * Terminal (checkout allowed again): canceled, incomplete_expired, paused.
+ * Documented set for past_due double-subscription safety.
+ */
+export const NON_TERMINAL_SUBSCRIPTION_STATUSES = [
+  "active",
+  "trialing",
+  "past_due",
+  "unpaid",
+  "incomplete",
+] as const;
+
+export type NonTerminalSubscriptionStatus =
+  (typeof NON_TERMINAL_SUBSCRIPTION_STATUSES)[number];
+
 export type StripeSubscriptionStatus =
   | "active"
   | "canceled"
@@ -18,6 +34,18 @@ export type StripeSubscriptionStatus =
 
 export function isEntitledStatus(status: string | null | undefined): boolean {
   return status === ENTITLED_SUBSCRIPTION_STATUS;
+}
+
+/** True while the customer still has a live (non-terminal) subscription. */
+export function isNonTerminalSubscriptionStatus(
+  status: string | null | undefined,
+): boolean {
+  if (!status) {
+    return false;
+  }
+  return (NON_TERMINAL_SUBSCRIPTION_STATUSES as readonly string[]).includes(
+    status,
+  );
 }
 
 /** Statuses that mean payment did not unlock access (Art Direction 12.5 failed). */

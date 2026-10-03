@@ -45,17 +45,23 @@ process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
 process.env.STRIPE_PRICE_ID = TEST_PRICE;
 
 const customersCreate = vi.fn();
+const customersUpdate = vi.fn();
 const sessionsCreate = vi.fn();
+const sessionsList = vi.fn();
 const subscriptionsRetrieve = vi.fn();
+const subscriptionsList = vi.fn();
 
 vi.mock("@/lib/stripe/server", async () => {
   const StripeCtor = (await import("stripe")).default;
   const real = new StripeCtor(TEST_SECRET);
   return {
     getStripe: () => ({
-      customers: { create: customersCreate },
-      checkout: { sessions: { create: sessionsCreate } },
-      subscriptions: { retrieve: subscriptionsRetrieve },
+      customers: { create: customersCreate, update: customersUpdate },
+      checkout: { sessions: { create: sessionsCreate, list: sessionsList } },
+      subscriptions: {
+        retrieve: subscriptionsRetrieve,
+        list: subscriptionsList,
+      },
       webhooks: real.webhooks,
     }),
     __resetStripeClientForTests: () => undefined,
@@ -84,6 +90,36 @@ async function signUp(
   return (await response.json()) as { idToken: string; localId: string };
 }
 
+function makeSubscription(input: {
+  id: string;
+  status: string;
+  uid: string;
+  customer: string;
+}) {
+  return {
+    id: input.id,
+    object: "subscription",
+    status: input.status,
+    cancel_at_period_end: false,
+    customer: input.customer,
+    metadata: { firebaseUid: input.uid },
+    items: {
+      object: "list",
+      data: [
+        {
+          id: `si_${input.id}`,
+          object: "subscription_item",
+          current_period_end: 1_900_000_000,
+          current_period_start: 1_800_000_000,
+          price: { id: TEST_PRICE },
+        },
+      ],
+      has_more: false,
+      url: "",
+    },
+  };
+}
+
 describe("billing (emulators)", () => {
   beforeAll(async () => {
     const { __resetEnvCacheForTests } = await import("@/lib/env");
@@ -94,8 +130,14 @@ describe("billing (emulators)", () => {
   beforeEach(async () => {
     __resetCookieStore();
     customersCreate.mockReset();
+    customersUpdate.mockReset();
     sessionsCreate.mockReset();
+    sessionsList.mockReset();
     subscriptionsRetrieve.mockReset();
+    subscriptionsList.mockReset();
+    customersUpdate.mockResolvedValue({});
+    sessionsList.mockResolvedValue({ data: [] });
+    subscriptionsList.mockResolvedValue({ data: [] });
     process.env.STRIPE_SECRET_KEY = TEST_SECRET;
     process.env.STRIPE_WEBHOOK_SECRET = WEBHOOK_SECRET;
     process.env.STRIPE_PRICE_ID = TEST_PRICE;
@@ -145,8 +187,8 @@ describe("billing (emulators)", () => {
 
     customersCreate.mockResolvedValue({ id: "cus_new" });
     sessionsCreate.mockResolvedValue({
-      id: "cs_1",
-      url: "https://checkout.stripe.com/c/pay/cs_1",
+      id: "cs_test_1",
+      url: "https://checkout.stripe.com/c/pay/cs_test_1",
     });
 
     const created = await POST(
@@ -163,17 +205,24 @@ describe("billing (emulators)", () => {
     expect(body.url).toContain("checkout.stripe.com");
     expect(customersCreate).toHaveBeenCalledWith(
       expect.objectContaining({
-        email,
         metadata: { firebaseUid: localId },
       }),
       expect.objectContaining({ idempotencyKey: `customer-${localId}` }),
     );
+    expect(customersUpdate).toHaveBeenCalledWith("cus_new", { email });
+
+    const reverse = await getAdminFirestore()
+      .collection("stripeCustomers")
+      .doc("cus_new")
+      .get();
+    expect(reverse.exists).toBe(true);
+    expect(reverse.data()?.uid).toBe(localId);
 
     // Second checkout reuses stored customer (no second Stripe create).
     customersCreate.mockClear();
     sessionsCreate.mockResolvedValue({
-      id: "cs_2",
-      url: "https://checkout.stripe.com/c/pay/cs_2",
+      id: "cs_test_2",
+      url: "https://checkout.stripe.com/c/pay/cs_test_2",
     });
     const again = await POST(
       new Request("http://localhost:3000/api/checkout", {
@@ -186,6 +235,60 @@ describe("billing (emulators)", () => {
     );
     expect(again.status).toBe(200);
     expect(customersCreate).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/checkout returns 409 for past_due and creates no Checkout Session", async () => {
+    const {
+      createSessionCookieFromIdToken,
+      setSessionCookie,
+    } = await import("@/features/auth/session");
+    const { upsertUserDocument } = await import("@/features/auth/users");
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+
+    const email = `pastdue-${randomUUID()}@example.com`;
+    const { idToken, localId } = await signUp(email, "password-123");
+    const { sessionCookie } = await createSessionCookieFromIdToken(idToken);
+    await upsertUserDocument({ uid: localId, email });
+    await setSessionCookie(sessionCookie);
+
+    await getAdminFirestore().collection("subscriptions").doc(localId).set({
+      status: "past_due",
+      stripeCustomerId: "cus_past_due",
+      stripeSubscriptionId: "sub_past_due",
+      stripePriceId: TEST_PRICE,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      updatedAt: new Date(),
+      lastEventId: "evt_past_due",
+    });
+
+    const { POST } = await import("@/app/api/checkout/route");
+    const response = await POST(
+      new Request("http://localhost:3000/api/checkout", {
+        method: "POST",
+        headers: {
+          origin: "http://localhost:3000",
+          accept: "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(409);
+    expect(sessionsCreate).not.toHaveBeenCalled();
+  });
+
+  it("POST /api/checkout returns 401 JSON when unauthenticated", async () => {
+    __resetCookieStore();
+    const { POST } = await import("@/app/api/checkout/route");
+    const response = await POST(
+      new Request("http://localhost:3000/api/checkout", {
+        method: "POST",
+        headers: {
+          origin: "http://localhost:3000",
+          accept: "application/json",
+        },
+      }),
+    );
+    expect(response.status).toBe(401);
   });
 
   it("webhook rejects bad signatures and accepts signed events with dedupe", async () => {
@@ -204,30 +307,15 @@ describe("billing (emulators)", () => {
 
     const uid = `uid-${randomUUID()}`;
     const eventId = `evt_${randomUUID()}`;
-    const subscription = {
+    const subscription = makeSubscription({
       id: "sub_webhook",
-      object: "subscription",
       status: "active",
-      cancel_at_period_end: false,
+      uid,
       customer: "cus_webhook",
-      metadata: { firebaseUid: uid },
-      items: {
-        object: "list",
-        data: [
-          {
-            id: "si_1",
-            object: "subscription_item",
-            current_period_end: 1_900_000_000,
-            current_period_start: 1_800_000_000,
-            price: { id: TEST_PRICE },
-          },
-        ],
-        has_more: false,
-        url: "",
-      },
-    };
+    });
 
     subscriptionsRetrieve.mockResolvedValue(subscription);
+    subscriptionsList.mockResolvedValue({ data: [subscription] });
 
     const payload = JSON.stringify({
       id: eventId,
@@ -289,7 +377,6 @@ describe("billing (emulators)", () => {
     const stripe = new Stripe(TEST_SECRET);
     const uid = `uid-${randomUUID()}`;
 
-    // Simulate past_due → resubscribe: projection already points at active sub_B.
     await getAdminFirestore().collection("subscriptions").doc(uid).set({
       status: "active",
       stripeCustomerId: "cus_lockout",
@@ -301,28 +388,20 @@ describe("billing (emulators)", () => {
       lastEventId: "evt_sub_b",
     });
 
-    subscriptionsRetrieve.mockResolvedValue({
+    const canceledA = makeSubscription({
       id: "sub_A",
-      object: "subscription",
       status: "canceled",
-      cancel_at_period_end: false,
+      uid,
       customer: "cus_lockout",
-      metadata: { firebaseUid: uid },
-      items: {
-        object: "list",
-        data: [
-          {
-            id: "si_a",
-            object: "subscription_item",
-            current_period_end: 1_900_000_000,
-            current_period_start: 1_800_000_000,
-            price: { id: TEST_PRICE },
-          },
-        ],
-        has_more: false,
-        url: "",
-      },
     });
+    const activeB = makeSubscription({
+      id: "sub_B",
+      status: "active",
+      uid,
+      customer: "cus_lockout",
+    });
+    subscriptionsRetrieve.mockResolvedValue(canceledA);
+    subscriptionsList.mockResolvedValue({ data: [canceledA, activeB] });
 
     const eventId = `evt_${randomUUID()}`;
     const payload = JSON.stringify({
@@ -354,5 +433,120 @@ describe("billing (emulators)", () => {
       .get();
     expect(subSnap.data()?.status).toBe("active");
     expect(subSnap.data()?.stripeSubscriptionId).toBe("sub_B");
+  });
+
+  it("two active subs: ending the projected one keeps access via list prefer-active", async () => {
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+    const { POST } = await import("@/app/api/stripe/webhook/route");
+    const stripe = new Stripe(TEST_SECRET);
+    const uid = `uid-${randomUUID()}`;
+
+    // Projection currently points at sub_A; both A and B are active on Stripe.
+    await getAdminFirestore().collection("subscriptions").doc(uid).set({
+      status: "active",
+      stripeCustomerId: "cus_two",
+      stripeSubscriptionId: "sub_A",
+      stripePriceId: TEST_PRICE,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      updatedAt: new Date(),
+      lastEventId: "evt_a",
+    });
+
+    const endedA = makeSubscription({
+      id: "sub_A",
+      status: "canceled",
+      uid,
+      customer: "cus_two",
+    });
+    const stillActiveB = makeSubscription({
+      id: "sub_B",
+      status: "active",
+      uid,
+      customer: "cus_two",
+    });
+    subscriptionsRetrieve.mockResolvedValue(endedA);
+    subscriptionsList.mockResolvedValue({ data: [endedA, stillActiveB] });
+
+    const eventId = `evt_${randomUUID()}`;
+    const payload = JSON.stringify({
+      id: eventId,
+      object: "event",
+      type: "customer.subscription.deleted",
+      created: Math.floor(Date.now() / 1000),
+      data: { object: { object: "subscription", id: "sub_A" } },
+    });
+    const signature = stripe.webhooks.generateTestHeaderString({
+      payload,
+      secret: WEBHOOK_SECRET,
+    });
+
+    const accepted = await POST(
+      new Request("http://localhost:3000/api/stripe/webhook", {
+        method: "POST",
+        headers: { "stripe-signature": signature },
+        body: payload,
+      }),
+    );
+    expect(accepted.status).toBe(200);
+
+    const subSnap = await getAdminFirestore()
+      .collection("subscriptions")
+      .doc(uid)
+      .get();
+    expect(subSnap.data()?.status).toBe("active");
+    expect(subSnap.data()?.stripeSubscriptionId).toBe("sub_B");
+  });
+
+  it("invoice.paid uses parent.subscription_details.subscription", async () => {
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+    const { POST } = await import("@/app/api/stripe/webhook/route");
+    const stripe = new Stripe(TEST_SECRET);
+    const uid = `uid-${randomUUID()}`;
+    const subscription = makeSubscription({
+      id: "sub_invoice",
+      status: "active",
+      uid,
+      customer: "cus_inv",
+    });
+    subscriptionsRetrieve.mockResolvedValue(subscription);
+    subscriptionsList.mockResolvedValue({ data: [subscription] });
+
+    const eventId = `evt_${randomUUID()}`;
+    const payload = JSON.stringify({
+      id: eventId,
+      object: "event",
+      type: "invoice.paid",
+      created: Math.floor(Date.now() / 1000),
+      data: {
+        object: {
+          object: "invoice",
+          id: "in_1",
+          parent: {
+            type: "subscription_details",
+            subscription_details: { subscription: "sub_invoice" },
+          },
+        },
+      },
+    });
+    const signature = stripe.webhooks.generateTestHeaderString({
+      payload,
+      secret: WEBHOOK_SECRET,
+    });
+
+    const accepted = await POST(
+      new Request("http://localhost:3000/api/stripe/webhook", {
+        method: "POST",
+        headers: { "stripe-signature": signature },
+        body: payload,
+      }),
+    );
+    expect(accepted.status).toBe(200);
+    expect(subscriptionsRetrieve).toHaveBeenCalledWith("sub_invoice");
+    const subSnap = await getAdminFirestore()
+      .collection("subscriptions")
+      .doc(uid)
+      .get();
+    expect(subSnap.data()?.stripeSubscriptionId).toBe("sub_invoice");
   });
 });

@@ -9,6 +9,7 @@ import {
   getSubscriptionProjection,
   upsertSubscriptionProjection,
 } from "@/features/billing/projection";
+import { resolveProjectionSubscription } from "@/features/billing/subscriptions";
 import { getStripe } from "@/lib/stripe/server";
 
 export type BillingStatusView =
@@ -16,6 +17,15 @@ export type BillingStatusView =
   | "active"
   | "failed"
   | "not_configured";
+
+/** Stripe Checkout Session ids are `cs_test_…` or `cs_live_…`. */
+export const CHECKOUT_SESSION_ID_PATTERN = /^cs_(test|live)_/;
+
+export function isValidCheckoutSessionId(
+  sessionId: string | null | undefined,
+): boolean {
+  return typeof sessionId === "string" && CHECKOUT_SESSION_ID_PATTERN.test(sessionId);
+}
 
 /**
  * Server-verified Checkout Session sync (Architecture §5.4 delayed webhook fallback).
@@ -27,6 +37,10 @@ export async function syncFromCheckoutSession(input: {
 }): Promise<{ synced: boolean; reason?: string }> {
   if (!isBillingConfigured()) {
     return { synced: false, reason: "not_configured" };
+  }
+
+  if (!isValidCheckoutSessionId(input.sessionId)) {
+    return { synced: false, reason: "invalid_session_id" };
   }
 
   const stripe = getStripe();
@@ -58,11 +72,13 @@ export async function syncFromCheckoutSession(input: {
     return { synced: false, reason: "no_subscription" };
   }
 
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  const retrieved = await stripe.subscriptions.retrieve(subscriptionId);
+  const subscription = await resolveProjectionSubscription(retrieved);
   await upsertSubscriptionProjection({
     uid: input.uid,
     subscription,
     lastEventId: `session_sync:${input.sessionId}`,
+    eventCreated: Math.floor(Date.now() / 1000),
   });
 
   return { synced: true };
@@ -92,6 +108,9 @@ export async function resolveBillingStatusView(input: {
         return { view: "failed" };
       }
       if (result.reason === "uid_mismatch") {
+        return { view: "failed" };
+      }
+      if (result.reason === "invalid_session_id") {
         return { view: "failed" };
       }
     } catch (error) {

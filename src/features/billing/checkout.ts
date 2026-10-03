@@ -5,7 +5,9 @@ import {
   isBillingConfigured,
 } from "@/features/billing/configured";
 import { getOrCreateStripeCustomer } from "@/features/billing/customers";
-import { isEntitledStatus } from "@/features/billing/entitlement";
+import {
+  isNonTerminalSubscriptionStatus,
+} from "@/features/billing/entitlement";
 import { getSubscriptionProjection } from "@/features/billing/projection";
 import { getEnv } from "@/lib/env";
 import { getStripe } from "@/lib/stripe/server";
@@ -22,7 +24,8 @@ export class CheckoutError extends Error {
 
 /**
  * Create a Stripe Checkout Session for the signed-in user.
- * Throws CheckoutError when billing is not configured or already active.
+ * Throws CheckoutError when billing is not configured or a non-terminal
+ * subscription already exists (active, trialing, past_due, unpaid, incomplete).
  */
 export async function createCheckoutSession(input: {
   uid: string;
@@ -33,7 +36,7 @@ export async function createCheckoutSession(input: {
   }
 
   const projection = await getSubscriptionProjection(input.uid);
-  if (projection && isEntitledStatus(projection.status)) {
+  if (projection && isNonTerminalSubscriptionStatus(projection.status)) {
     throw new CheckoutError("Subscription already active", "already_active");
   }
 
@@ -44,6 +47,35 @@ export async function createCheckoutSession(input: {
   });
 
   const stripe = getStripe();
+
+  // Refuse checkout while Stripe still has any non-terminal subscription.
+  const existing = await stripe.subscriptions.list({
+    customer: customerId,
+    status: "all",
+    limit: 100,
+  });
+  if (
+    existing.data.some((sub) => isNonTerminalSubscriptionStatus(sub.status))
+  ) {
+    throw new CheckoutError("Subscription already active", "already_active");
+  }
+
+  // Reuse an open Checkout Session (double-click / two-tab safety).
+  const openSessions = await stripe.checkout.sessions.list({
+    customer: customerId,
+    status: "open",
+    limit: 5,
+  });
+  const reusable = openSessions.data.find(
+    (session) =>
+      session.client_reference_id === input.uid &&
+      typeof session.url === "string" &&
+      session.url.length > 0,
+  );
+  if (reusable?.url) {
+    return { url: reusable.url, sessionId: reusable.id };
+  }
+
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
@@ -54,6 +86,7 @@ export async function createCheckoutSession(input: {
     },
     success_url: `${env.APP_URL}/billing/status?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${env.APP_URL}/subscribe`,
+    integration_identifier: "prosefield",
   });
 
   if (!session.url) {

@@ -11,12 +11,16 @@ import {
 
 const retrieveSession = vi.fn();
 const retrieveSubscription = vi.fn();
+const listSubscriptions = vi.fn();
 const upsertSubscriptionProjection = vi.fn();
 
 vi.mock("@/lib/stripe/server", () => ({
   getStripe: () => ({
     checkout: { sessions: { retrieve: retrieveSession } },
-    subscriptions: { retrieve: retrieveSubscription },
+    subscriptions: {
+      retrieve: retrieveSubscription,
+      list: listSubscriptions,
+    },
   }),
 }));
 
@@ -39,39 +43,54 @@ describe("session-sync", () => {
     const { __resetEnvCacheForTests } = await import("@/lib/env");
     __resetEnvCacheForTests();
 
+    const { syncFromCheckoutSession, isValidCheckoutSessionId } = await import(
+      "@/features/billing/session-sync"
+    );
+    expect(isValidCheckoutSessionId("cs_test_abc")).toBe(true);
+    expect(isValidCheckoutSessionId("cs_live_abc")).toBe(true);
+    expect(isValidCheckoutSessionId("not_a_session")).toBe(false);
+    expect(
+      await syncFromCheckoutSession({ uid: "uid_1", sessionId: "evil" }),
+    ).toEqual({ synced: false, reason: "invalid_session_id" });
+
     retrieveSession.mockResolvedValue({
       client_reference_id: "other",
       status: "complete",
       subscription: "sub_1",
     });
-    const { syncFromCheckoutSession } = await import(
-      "@/features/billing/session-sync"
-    );
     expect(
-      await syncFromCheckoutSession({ uid: "uid_1", sessionId: "cs_1" }),
+      await syncFromCheckoutSession({
+        uid: "uid_1",
+        sessionId: "cs_test_1",
+      }),
     ).toEqual({ synced: false, reason: "uid_mismatch" });
 
+    const sub = {
+      id: "sub_1",
+      status: "active",
+      customer: "cus_1",
+      cancel_at_period_end: false,
+      items: { data: [{ price: { id: "price_1" }, current_period_end: 1 }] },
+    };
     retrieveSession.mockResolvedValue({
       client_reference_id: "uid_1",
       status: "complete",
       payment_status: "paid",
       subscription: "sub_1",
     });
-    retrieveSubscription.mockResolvedValue({
-      id: "sub_1",
-      status: "active",
-      customer: "cus_1",
-      cancel_at_period_end: false,
-      items: { data: [{ price: { id: "price_1" }, current_period_end: 1 }] },
-    });
+    retrieveSubscription.mockResolvedValue(sub);
+    listSubscriptions.mockResolvedValue({ data: [sub] });
 
     expect(
-      await syncFromCheckoutSession({ uid: "uid_1", sessionId: "cs_1" }),
+      await syncFromCheckoutSession({
+        uid: "uid_1",
+        sessionId: "cs_test_1",
+      }),
     ).toEqual({ synced: true });
     expect(upsertSubscriptionProjection).toHaveBeenCalledWith(
       expect.objectContaining({
         uid: "uid_1",
-        lastEventId: "session_sync:cs_1",
+        lastEventId: "session_sync:cs_test_1",
       }),
     );
   });

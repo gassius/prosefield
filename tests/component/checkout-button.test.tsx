@@ -34,6 +34,27 @@ describe("CheckoutButton", () => {
     });
   });
 
+  it("redirects to login on 401 unauthenticated", async () => {
+    const fetchMock = vi.fn(
+      async (_url: string, init?: RequestInit) => {
+        expect(init?.headers).toEqual({ accept: "application/json" });
+        return new Response(null, { status: 401 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { CheckoutButton } = await import(
+      "@/components/billing/checkout-button"
+    );
+    render(<CheckoutButton label="Continue to secure checkout" />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Continue to secure checkout" }),
+    );
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith("/login?next=/subscribe");
+    });
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
   it("shows not-configured error from 503 body", async () => {
     vi.stubGlobal(
       "fetch",

@@ -11,13 +11,17 @@ import {
 
 const retrieveSession = vi.fn();
 const retrieveSubscription = vi.fn();
+const listSubscriptions = vi.fn();
 const upsertSubscriptionProjection = vi.fn();
 const getSubscriptionProjection = vi.fn();
 
 vi.mock("@/lib/stripe/server", () => ({
   getStripe: () => ({
     checkout: { sessions: { retrieve: retrieveSession } },
-    subscriptions: { retrieve: retrieveSubscription },
+    subscriptions: {
+      retrieve: retrieveSubscription,
+      list: listSubscriptions,
+    },
   }),
 }));
 
@@ -50,7 +54,10 @@ describe("session-sync coverage", () => {
       status: "expired",
     });
     expect(
-      await syncFromCheckoutSession({ uid: "uid_1", sessionId: "cs" }),
+      await syncFromCheckoutSession({
+        uid: "uid_1",
+        sessionId: "cs_test_x",
+      }),
     ).toEqual({ synced: false, reason: "expired" });
 
     retrieveSession.mockResolvedValue({
@@ -59,7 +66,10 @@ describe("session-sync coverage", () => {
       payment_status: "unpaid",
     });
     expect(
-      await syncFromCheckoutSession({ uid: "uid_1", sessionId: "cs" }),
+      await syncFromCheckoutSession({
+        uid: "uid_1",
+        sessionId: "cs_test_x",
+      }),
     ).toEqual({ synced: false, reason: "unpaid" });
 
     retrieveSession.mockResolvedValue({
@@ -68,7 +78,10 @@ describe("session-sync coverage", () => {
       payment_status: "paid",
     });
     expect(
-      await syncFromCheckoutSession({ uid: "uid_1", sessionId: "cs" }),
+      await syncFromCheckoutSession({
+        uid: "uid_1",
+        sessionId: "cs_test_x",
+      }),
     ).toEqual({ synced: false, reason: "not_complete" });
 
     retrieveSession.mockResolvedValue({
@@ -78,24 +91,32 @@ describe("session-sync coverage", () => {
       subscription: null,
     });
     expect(
-      await syncFromCheckoutSession({ uid: "uid_1", sessionId: "cs" }),
+      await syncFromCheckoutSession({
+        uid: "uid_1",
+        sessionId: "cs_test_x",
+      }),
     ).toEqual({ synced: false, reason: "no_subscription" });
 
+    const sub = {
+      id: "sub_obj",
+      status: "active",
+      cancel_at_period_end: false,
+      customer: "cus_1",
+      items: { data: [{ price: { id: "price_1" }, current_period_end: 1 }] },
+    };
     retrieveSession.mockResolvedValue({
       client_reference_id: "uid_1",
       status: "complete",
       payment_status: "paid",
       subscription: { id: "sub_obj" },
     });
-    retrieveSubscription.mockResolvedValue({
-      id: "sub_obj",
-      status: "active",
-      cancel_at_period_end: false,
-      customer: "cus_1",
-      items: { data: [{ price: { id: "price_1" }, current_period_end: 1 }] },
-    });
+    retrieveSubscription.mockResolvedValue(sub);
+    listSubscriptions.mockResolvedValue({ data: [sub] });
     expect(
-      await syncFromCheckoutSession({ uid: "uid_1", sessionId: "cs" }),
+      await syncFromCheckoutSession({
+        uid: "uid_1",
+        sessionId: "cs_test_x",
+      }),
     ).toEqual({ synced: true });
   });
 
@@ -123,7 +144,7 @@ describe("session-sync coverage", () => {
 
     const notConfigured = await sync.resolveBillingStatusView({
       uid: "u",
-      sessionId: "cs_1",
+      sessionId: "cs_test_1",
     });
     expect(notConfigured.view).toBe("not_configured");
 
@@ -134,13 +155,19 @@ describe("session-sync coverage", () => {
     });
     getSubscriptionProjection.mockResolvedValue(null);
     expect(
-      await configured.resolveBillingStatusView({ uid: "u", sessionId: "cs" }),
+      await configured.resolveBillingStatusView({
+        uid: "u",
+        sessionId: "cs_test_x",
+      }),
     ).toEqual({ view: "failed" });
 
     retrieveSession.mockRejectedValue(new Error("stripe down"));
     getSubscriptionProjection.mockResolvedValue(null);
     expect(
-      await configured.resolveBillingStatusView({ uid: "u", sessionId: "cs" }),
+      await configured.resolveBillingStatusView({
+        uid: "u",
+        sessionId: "cs_test_x",
+      }),
     ).toEqual({ view: "pending" });
 
     retrieveSession.mockResolvedValue({
@@ -149,7 +176,17 @@ describe("session-sync coverage", () => {
       subscription: "sub_1",
     });
     expect(
-      await configured.resolveBillingStatusView({ uid: "u", sessionId: "cs" }),
+      await configured.resolveBillingStatusView({
+        uid: "u",
+        sessionId: "cs_test_x",
+      }),
+    ).toEqual({ view: "failed" });
+
+    expect(
+      await configured.resolveBillingStatusView({
+        uid: "u",
+        sessionId: "not-a-cs-id",
+      }),
     ).toEqual({ view: "failed" });
   });
 });

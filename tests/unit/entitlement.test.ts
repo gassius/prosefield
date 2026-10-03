@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   isEntitledStatus,
   isFailedBillingStatus,
+  isNonTerminalSubscriptionStatus,
+  NON_TERMINAL_SUBSCRIPTION_STATUSES,
   shouldReplaceSubscriptionProjection,
 } from "@/features/billing/entitlement";
 
@@ -22,6 +24,23 @@ describe("entitlement", () => {
     ]) {
       expect(isEntitledStatus(status)).toBe(false);
     }
+  });
+
+  it("documents non-terminal statuses that block checkout", () => {
+    expect([...NON_TERMINAL_SUBSCRIPTION_STATUSES]).toEqual([
+      "active",
+      "trialing",
+      "past_due",
+      "unpaid",
+      "incomplete",
+    ]);
+    for (const status of NON_TERMINAL_SUBSCRIPTION_STATUSES) {
+      expect(isNonTerminalSubscriptionStatus(status)).toBe(true);
+    }
+    expect(isNonTerminalSubscriptionStatus("canceled")).toBe(false);
+    expect(isNonTerminalSubscriptionStatus("incomplete_expired")).toBe(false);
+    expect(isNonTerminalSubscriptionStatus("paused")).toBe(false);
+    expect(isNonTerminalSubscriptionStatus(null)).toBe(false);
   });
 
   it("marks terminal failure statuses for the billing status page", () => {
@@ -73,6 +92,15 @@ describe("entitlement", () => {
       shouldReplaceSubscriptionProjection(
         { stripeSubscriptionId: "sub_A", status: "past_due" },
         { id: "sub_B", status: "canceled" },
+      ),
+    ).toBe(true);
+  });
+
+  it("incoming active subscription always wins over a different active projection", () => {
+    expect(
+      shouldReplaceSubscriptionProjection(
+        { stripeSubscriptionId: "sub_A", status: "active" },
+        { id: "sub_B", status: "active" },
       ),
     ).toBe(true);
   });

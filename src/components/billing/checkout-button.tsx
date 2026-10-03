@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { siteCopy } from "@/content/site";
 
 /**
- * Starts Checkout via POST /api/checkout (JSON clients get 409/503; browsers redirect).
+ * Starts Checkout via POST /api/checkout (JSON clients get 409/503/401; browsers redirect).
  */
 export function CheckoutButton(props: { label: string }) {
   const router = useRouter();
@@ -21,10 +21,14 @@ export function CheckoutButton(props: { label: string }) {
         method: "POST",
         headers: {
           accept: "application/json",
-          origin: window.location.origin,
         },
         redirect: "manual",
       });
+
+      if (response.status === 401) {
+        router.replace("/login?next=/subscribe");
+        return;
+      }
 
       if (response.status === 409) {
         router.replace("/documents");
@@ -37,19 +41,20 @@ export function CheckoutButton(props: { label: string }) {
         return;
       }
 
-      // 303 to Stripe — follow Location.
-      if (response.status === 303 || response.status === 0) {
-        const location = response.headers.get("Location");
-        if (location) {
-          window.location.assign(location);
-          return;
-        }
-      }
-
+      // JSON success body with Checkout URL.
       if (response.ok) {
         const body = (await response.json()) as { url?: string };
         if (body.url) {
           window.location.assign(body.url);
+          return;
+        }
+      }
+
+      // Form-style 303 to Stripe — follow Location when present.
+      if (response.status === 303) {
+        const location = response.headers.get("Location");
+        if (location) {
+          window.location.assign(location);
           return;
         }
       }
