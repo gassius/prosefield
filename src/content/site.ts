@@ -36,6 +36,7 @@ export const siteCopy = {
     needAccount: "Need an account?",
     genericError: "Email or password is incorrect.",
     networkError: "Something went wrong. Please try again.",
+    signOutError: "We couldn't sign you out. Please try again.",
     passwordHint: "Use at least 8 characters.",
   },
   a11y: {

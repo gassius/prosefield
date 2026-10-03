@@ -1,19 +1,27 @@
 "use client";
 
+import { AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { siteCopy } from "@/content/site";
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "@/features/auth/constants";
 
+type SignOutFailureLog = {
+  event: "sign_out_failed";
+  reason: "http" | "network" | "csrf";
+  status?: number;
+};
+
 function readCsrfFromDocument(): string | undefined {
-  if (typeof document === "undefined") {
-    return undefined;
-  }
   const match = document.cookie
     .split("; ")
     .find((row) => row.startsWith(`${CSRF_COOKIE_NAME}=`));
   return match ? decodeURIComponent(match.split("=").slice(1).join("=")) : undefined;
+}
+
+function logSignOutFailure(detail: SignOutFailureLog): void {
+  console.error("[sign-out]", detail);
 }
 
 type SignOutButtonProps = {
@@ -31,8 +39,8 @@ export function SignOutButton({ className }: SignOutButtonProps) {
     try {
       const token = readCsrfFromDocument();
       if (!token) {
-        console.error("[sign-out] missing CSRF cookie");
-        setError(siteCopy.auth.networkError);
+        logSignOutFailure({ event: "sign_out_failed", reason: "csrf" });
+        setError(siteCopy.auth.signOutError);
         return;
       }
       const response = await fetch("/api/session", {
@@ -43,17 +51,19 @@ export function SignOutButton({ className }: SignOutButtonProps) {
         },
       });
       if (!response.ok) {
-        console.error("[sign-out] DELETE /api/session failed", {
+        logSignOutFailure({
+          event: "sign_out_failed",
+          reason: "http",
           status: response.status,
         });
-        setError(siteCopy.auth.networkError);
+        setError(siteCopy.auth.signOutError);
         return;
       }
       router.replace("/");
       router.refresh();
-    } catch (err) {
-      console.error("[sign-out] request failed", err);
-      setError(siteCopy.auth.networkError);
+    } catch {
+      logSignOutFailure({ event: "sign_out_failed", reason: "network" });
+      setError(siteCopy.auth.signOutError);
     } finally {
       setPending(false);
     }
@@ -72,8 +82,12 @@ export function SignOutButton({ className }: SignOutButtonProps) {
         {siteCopy.header.signOut}
       </Button>
       {error ? (
-        <span role="alert" className="text-destructive text-xs">
-          {error}
+        <span
+          role="alert"
+          className="bg-destructive-soft text-destructive inline-flex max-w-[16rem] items-start gap-1.5 rounded-md px-2 py-1 text-xs"
+        >
+          <AlertCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <span>{error}</span>
         </span>
       ) : null}
     </span>
