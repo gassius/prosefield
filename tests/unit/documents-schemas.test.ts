@@ -100,6 +100,30 @@ describe("document allow-list and bounds", () => {
     expect(documentContentSchema.parse(doc)).toMatchObject({
       content: [{ type: "orderedList", attrs: { start: 1 } }],
     });
+    expect(
+      assertAllowedTiptapJson({
+        type: "orderedList",
+        attrs: { start: 3, type: "a" },
+        content: [],
+      }),
+    ).toEqual({
+      type: "orderedList",
+      attrs: { start: 3, type: "a" },
+      content: [],
+    });
+    expect(
+      assertAllowedTiptapJson({
+        type: "orderedList",
+        attrs: { type: null },
+        content: [],
+      }),
+    ).toEqual({ type: "orderedList", content: [] });
+    expect(
+      assertAllowedTiptapJson({
+        type: "orderedList",
+        content: [],
+      }),
+    ).toEqual({ type: "orderedList", content: [] });
     expect(() =>
       assertAllowedTiptapJson({
         type: "orderedList",
@@ -110,10 +134,31 @@ describe("document allow-list and bounds", () => {
     expect(() =>
       assertAllowedTiptapJson({
         type: "orderedList",
+        attrs: { start: 1.5 },
+        content: [],
+      }),
+    ).toThrow(/start/);
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "orderedList",
         attrs: { start: 1, type: "decimal" },
         content: [],
       }),
     ).toThrow(/type/);
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "orderedList",
+        attrs: { start: 1, weird: true },
+        content: [],
+      }),
+    ).toThrow(/unexpected attrs/);
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "orderedList",
+        attrs: "nope",
+        content: [],
+      }),
+    ).toThrow(/attrs must be an object/);
   });
 
   it("plainTiptapJson clones null-prototype attrs for Server Actions", () => {
