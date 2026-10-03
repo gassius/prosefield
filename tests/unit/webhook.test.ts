@@ -380,6 +380,16 @@ describe("webhook helpers", () => {
         } as unknown as Stripe.Checkout.Session,
       }),
     ).toBe("uid_from_lookup");
+
+    // Session present but customer null → no lookup (covers null branch).
+    expect(
+      await resolveFirebaseUid({
+        session: {
+          client_reference_id: null,
+          customer: null,
+        } as unknown as Stripe.Checkout.Session,
+      }),
+    ).toBeNull();
   });
 
   it("projects the active sibling when a canceled event arrives for another sub", async () => {

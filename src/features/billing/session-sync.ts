@@ -115,10 +115,7 @@ export async function resolveBillingStatusView(input: {
       if (result.reason === "uid_mismatch") {
         return { view: "failed" };
       }
-      // Invalid ids are not a payment failure — fall through to projection/pending.
-      if (result.reason === "invalid_session_id") {
-        // intentionally not "failed"
-      }
+      // invalid_session_id: not a payment failure — fall through to projection/pending.
     } catch (error) {
       console.error("[billing] session sync failed", {
         code:

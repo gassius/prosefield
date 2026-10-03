@@ -60,6 +60,31 @@ describe("projection write helpers", () => {
     expect(set).toHaveBeenCalledWith(expect.any(Object), { merge: true });
   });
 
+  it("upsertSubscriptionProjection accepts missing eventCreated (null stamp)", async () => {
+    get.mockResolvedValue({
+      exists: true,
+      data: () => ({
+        stripeSubscriptionId: "sub_1",
+        status: "active",
+        // non-number lastStripeEventCreated exercises the typeof branch
+        lastStripeEventCreated: "not-a-number",
+      }),
+    });
+    const { upsertSubscriptionProjection } = await loadWithPrice();
+    await expect(
+      upsertSubscriptionProjection({
+        uid: "uid",
+        subscription,
+        lastEventId: "evt_nostamp",
+        // omit eventCreated → null stamp path
+      }),
+    ).resolves.toEqual({ written: true });
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({ lastStripeEventCreated: null }),
+      { merge: true },
+    );
+  });
+
   it("processEventWithDedupe no-ops when event exists", async () => {
     runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {

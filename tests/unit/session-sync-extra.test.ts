@@ -174,6 +174,15 @@ describe("session-sync coverage", () => {
       }),
     ).toEqual({ view: "pending" });
 
+    retrieveSession.mockRejectedValue({ code: "api_error" });
+    getSubscriptionProjection.mockResolvedValue(null);
+    expect(
+      await configured.resolveBillingStatusView({
+        uid: "u",
+        sessionId: "cs_test_x",
+      }),
+    ).toEqual({ view: "pending" });
+
     retrieveSession.mockResolvedValue({
       client_reference_id: "other",
       status: "complete",

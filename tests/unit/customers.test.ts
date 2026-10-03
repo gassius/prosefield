@@ -168,6 +168,70 @@ describe("customers", () => {
     ).resolves.toBe("cus_ok");
   });
 
+  it("skips email update when email is empty", async () => {
+    customersCreate.mockResolvedValue({ id: "cus_noemail" });
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => ({ exists: false, data: () => undefined }),
+        set: vi.fn(),
+      };
+      return fn(tx);
+    });
+    const { getOrCreateStripeCustomer } = await import(
+      "@/features/billing/customers"
+    );
+    await expect(
+      getOrCreateStripeCustomer({ uid: "uid_empty", email: "" }),
+    ).resolves.toBe("cus_noemail");
+    expect(customersUpdate).not.toHaveBeenCalled();
+    expect(customersRetrieve).not.toHaveBeenCalled();
+  });
+
+  it("logs unknown when existing-customer retrieve fails without a code", async () => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => ({
+          exists: true,
+          data: () => ({ stripeCustomerId: "cus_existing" }),
+        }),
+        set: vi.fn(),
+      };
+      return fn(tx);
+    });
+    customersRetrieve.mockRejectedValue("not-an-object");
+    const { getOrCreateStripeCustomer } = await import(
+      "@/features/billing/customers"
+    );
+    await expect(
+      getOrCreateStripeCustomer({ uid: "uid", email: "a@b.co" }),
+    ).resolves.toBe("cus_existing");
+    expect(customersUpdate).not.toHaveBeenCalled();
+  });
+
+  it("skips update when retrieved Stripe customer is deleted", async () => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => ({
+          exists: true,
+          data: () => ({ stripeCustomerId: "cus_deleted" }),
+        }),
+        set: vi.fn(),
+      };
+      return fn(tx);
+    });
+    customersRetrieve.mockResolvedValue({
+      id: "cus_deleted",
+      deleted: true,
+    });
+    const { getOrCreateStripeCustomer } = await import(
+      "@/features/billing/customers"
+    );
+    await expect(
+      getOrCreateStripeCustomer({ uid: "uid", email: "a@b.co" }),
+    ).resolves.toBe("cus_deleted");
+    expect(customersUpdate).not.toHaveBeenCalled();
+  });
+
   it("looks up uid by stripe customer id", async () => {
     stripeCustomersGet.mockResolvedValue({
       exists: true,
