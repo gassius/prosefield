@@ -38,6 +38,9 @@ export const ALLOWED_MARK_TYPES = ["bold", "italic"] as const;
 
 export const ALLOWED_HEADING_LEVELS = [2, 3] as const;
 
+/** HTML `ol` type values TipTap's OrderedList may emit (plus null default). */
+export const ALLOWED_ORDERED_LIST_TYPES = ["1", "a", "A", "i", "I"] as const;
+
 export type TiptapJson = {
   type: string;
   content?: TiptapJson[];
@@ -56,9 +59,20 @@ export function serialisedContentSize(content: unknown): number {
   return new TextEncoder().encode(JSON.stringify(content)).length;
 }
 
+/**
+ * TipTap/ProseMirror `getJSON()` builds `attrs` with a null prototype.
+ * React Server Actions reject (or mangle) null-prototype objects, which made
+ * heading saves fail Zod with "Invalid document input". Clone to plain JSON
+ * before crossing the Server Action boundary.
+ */
+export function plainTiptapJson(value: unknown): TiptapJson {
+  return JSON.parse(JSON.stringify(value)) as TiptapJson;
+}
+
 const allowedNodeSet = new Set<string>(ALLOWED_NODE_TYPES);
 const allowedMarkSet = new Set<string>(ALLOWED_MARK_TYPES);
 const allowedHeadingSet = new Set<number>(ALLOWED_HEADING_LEVELS);
+const allowedOrderedListTypeSet = new Set<string>(ALLOWED_ORDERED_LIST_TYPES);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -91,6 +105,47 @@ export function assertAllowedTiptapJson(
       throw new Error(`${path}: heading level must be 2 or 3`);
     }
     result.attrs = { level };
+  } else if (type === "orderedList") {
+    // TipTap OrderedList always serialises { start, type } (type default null).
+    if (value.attrs !== undefined) {
+      if (!isPlainObject(value.attrs)) {
+        throw new Error(`${path}: orderedList attrs must be an object`);
+      }
+      const attrs = value.attrs;
+      for (const key of Object.keys(attrs)) {
+        if (key !== "start" && key !== "type") {
+          throw new Error(`${path}: unexpected attrs on 'orderedList'`);
+        }
+      }
+      const start = attrs.start;
+      if (
+        start !== undefined &&
+        (typeof start !== "number" ||
+          !Number.isInteger(start) ||
+          start < 1)
+      ) {
+        throw new Error(`${path}: orderedList start must be an integer ≥ 1`);
+      }
+      const listType = attrs.type;
+      if (
+        listType !== undefined &&
+        listType !== null &&
+        (typeof listType !== "string" ||
+          !allowedOrderedListTypeSet.has(listType))
+      ) {
+        throw new Error(`${path}: orderedList type is not allowed`);
+      }
+      const nextAttrs: Record<string, unknown> = {};
+      if (typeof start === "number") {
+        nextAttrs.start = start;
+      }
+      if (typeof listType === "string") {
+        nextAttrs.type = listType;
+      }
+      if (Object.keys(nextAttrs).length > 0) {
+        result.attrs = nextAttrs;
+      }
+    }
   } else if (value.attrs !== undefined) {
     // No other node types may carry attrs on the allow-list.
     if (

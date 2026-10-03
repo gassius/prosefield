@@ -20,6 +20,7 @@ import {
 } from "@/features/documents/save-state";
 import {
   EMPTY_DOCUMENT_CONTENT,
+  plainTiptapJson,
   type TiptapJson,
 } from "@/features/documents/schemas";
 import { cn } from "@/lib/utils";
@@ -110,7 +111,8 @@ export function DocumentEditor({
       return;
     }
     setSaveStatus((current) => reduceSaveStatus(current, { type: "save" }));
-    const content = editor.getJSON() as TiptapJson;
+    // TipTap attrs are null-prototype; plain-clone before Server Actions.
+    const content = plainTiptapJson(editor.getJSON());
     const result = await saveDocumentAction({ documentId, content });
     if (!result.ok) {
       setSaveStatus((current) => reduceSaveStatus(current, { type: "failure" }));
