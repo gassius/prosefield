@@ -258,16 +258,6 @@ describe("documents repository", () => {
     const emptySnap = await getDocumentById("d9");
     expect(emptySnap?.title).toBe("Untitled document");
     expect(emptySnap?.contentAllowed).toBe(false);
-
-    const { __unsafeSetDocumentContentForTests } = await import(
-      "@/features/documents/repository"
-    );
-    refUpdate.mockResolvedValue(undefined);
-    await __unsafeSetDocumentContentForTests({
-      documentId: "d1",
-      contentJson: '{"type":"doc","content":[]}',
-    });
-    expect(refUpdate).toHaveBeenCalled();
   });
 
   it("updateDocumentContent uses tx.get/tx.update with ownership inside the transaction", async () => {

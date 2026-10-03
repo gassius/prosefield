@@ -218,17 +218,3 @@ export async function deleteDocument(documentId: string): Promise<boolean> {
   await ref.delete();
   return true;
 }
-
-/** Test/helper: raw Firestore content string without going through allow-list. */
-export async function __unsafeSetDocumentContentForTests(input: {
-  documentId: string;
-  contentJson: string;
-}): Promise<void> {
-  await getAdminFirestore()
-    .collection("documents")
-    .doc(input.documentId)
-    .update({
-      content: input.contentJson,
-      updatedAt: FieldValue.serverTimestamp(),
-    });
-}
