@@ -71,13 +71,18 @@ test("happy path: landing → register → mocked pay → create/edit/save/renam
     "Untitled document",
   );
 
-  // --- Rename (wait for server confirm: input re-enabled, no alert) ---
+  // --- Rename (server-confirmed: input re-enabled + sidebar list title) ---
+  // Do not assert page-wide role=alert — Sonner mounts a live-region alert.
   const title = page.getByLabel("Document title");
   await title.fill("Happy path notes");
   await title.blur();
   await expect(title).toBeEnabled();
-  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(title).toHaveValue("Happy path notes");
+  await expect(
+    page
+      .getByRole("complementary", { name: "Documents" })
+      .getByText("Happy path notes"),
+  ).toBeVisible();
 
   // --- Edit + save ---
   const editor = page.locator("[contenteditable='true']").first();
