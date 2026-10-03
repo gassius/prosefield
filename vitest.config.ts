@@ -62,6 +62,7 @@ export default defineConfig({
         "src/lib/utils.ts": highBar,
         "src/features/auth/password.ts": highBar,
         "src/features/auth/register.ts": highBar,
+        "src/features/auth/register-input.ts": highBar,
         "src/instrumentation.ts": highBar,
         "src/features/auth/{session,guards,users}.ts": authSurfaceBar,
         "src/features/billing/{entitlement,plan-display,configured}.ts": highBar,

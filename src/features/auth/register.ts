@@ -1,18 +1,9 @@
 "use server";
 
-import { z } from "zod";
 import { siteCopy } from "@/content/site";
 import { mapAuthError } from "@/features/auth/map-auth-error";
-import { registerPasswordSchema } from "@/features/auth/password";
+import { registerInputSchema } from "@/features/auth/register-input";
 import { getAdminAuth } from "@/lib/firebase/admin";
-
-const registerInputSchema = z.object({
-  email: z.string().trim().email({ message: "Enter a valid email address." }),
-  password: registerPasswordSchema,
-});
-
-/** Test hook so unit tests can force zod issue branches. */
-export const registerInputSchemaForTests = registerInputSchema;
 
 export type RegisterActionResult =
   | { ok: true }

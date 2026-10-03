@@ -122,11 +122,12 @@ describe("registerAction (server entry point)", () => {
   });
 
   it("returns a generic error when zod fails without email/password path issues", async () => {
-    const { registerAction, registerInputSchemaForTests } = await import(
-      "@/features/auth/register"
+    const { registerInputSchema } = await import(
+      "@/features/auth/register-input"
     );
-    const original = registerInputSchemaForTests.safeParse;
-    registerInputSchemaForTests.safeParse = () =>
+    const { registerAction } = await import("@/features/auth/register");
+    const original = registerInputSchema.safeParse;
+    registerInputSchema.safeParse = () =>
       ({
         success: false,
         error: { issues: [{ path: ["other"], message: "nope" }] },
@@ -141,17 +142,18 @@ describe("registerAction (server entry point)", () => {
         message: siteCopy.auth.genericError,
       });
     } finally {
-      registerInputSchemaForTests.safeParse = original;
+      registerInputSchema.safeParse = original;
     }
   });
 
   it("falls back when password/email zod issues omit messages", async () => {
-    const { registerAction, registerInputSchemaForTests } = await import(
-      "@/features/auth/register"
+    const { registerInputSchema } = await import(
+      "@/features/auth/register-input"
     );
-    const original = registerInputSchemaForTests.safeParse;
+    const { registerAction } = await import("@/features/auth/register");
+    const original = registerInputSchema.safeParse;
 
-    registerInputSchemaForTests.safeParse = () =>
+    registerInputSchema.safeParse = () =>
       ({
         success: false,
         error: { issues: [{ path: ["password"] }] },
@@ -167,10 +169,10 @@ describe("registerAction (server entry point)", () => {
         message: siteCopy.auth.passwordHint,
       });
     } finally {
-      registerInputSchemaForTests.safeParse = original;
+      registerInputSchema.safeParse = original;
     }
 
-    registerInputSchemaForTests.safeParse = () =>
+    registerInputSchema.safeParse = () =>
       ({
         success: false,
         error: { issues: [{ path: ["email"] }] },
@@ -186,7 +188,7 @@ describe("registerAction (server entry point)", () => {
         message: "Enter a valid email address.",
       });
     } finally {
-      registerInputSchemaForTests.safeParse = original;
+      registerInputSchema.safeParse = original;
     }
   });
 });

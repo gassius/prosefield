@@ -491,7 +491,7 @@ describe("documents guard chain (emulators)", () => {
     expect(repaired.ok).toBe(true);
   });
 
-  it("transactional save/rename return not_found after concurrent delete (ownership in tx)", async () => {
+  it("transactional save/rename refuse wrong owner and deleted docs", async () => {
     const email = `docs-tx-${randomUUID()}@example.com`;
     const { localId: uid } = await establishSession(email);
     await seedActiveSubscription(uid);
@@ -502,50 +502,15 @@ describe("documents guard chain (emulators)", () => {
     const { EMPTY_DOCUMENT_CONTENT: empty } = await import(
       "@/features/documents/schemas"
     );
-
-    const created = await createDocumentAction({ title: "Race me" });
-    expect(created.ok).toBe(true);
-    if (!created.ok) {
-      return;
-    }
-    const docId = created.data.id;
-    const db = getAdminFirestore();
-    const ref = db.collection("documents").doc(docId);
-
-    // Force a transaction retry: delete the doc after the first transactional read.
-    // On retry, exists is false → not_found. Plain read-then-write (owner check
-    // outside only) would still attempt a blind update after the outer get.
-    let attempts = 0;
-    const raced = await db.runTransaction(async (tx) => {
-      attempts += 1;
-      const snap = await tx.get(ref);
-      if (attempts === 1) {
-        await ref.delete();
-      }
-      if (!snap.exists) {
-        return null;
-      }
-      const data = snap.data() ?? {};
-      if (data.ownerId !== uid) {
-        return null;
-      }
-      tx.update(ref, {
-        title: "Should not stick",
-        updatedAt: (await import("firebase-admin/firestore")).FieldValue.serverTimestamp(),
-      });
-      return "updated";
-    });
-    expect(attempts).toBeGreaterThanOrEqual(2);
-    expect(raced).toBeNull();
-    expect((await ref.get()).exists).toBe(false);
-
-    // Repository entry points must also refuse missing / wrong-owner writes.
     const {
       updateDocumentContent,
       renameDocument,
       createDocument,
     } = await import("@/features/documents/repository");
 
+    const db = getAdminFirestore();
+
+    // Ownership checked inside the transaction (not only via outer get).
     const again = await createDocument({ ownerId: uid, title: "Again" });
     await db.collection("documents").doc(again.id).update({ ownerId: "other-uid" });
     expect(
@@ -562,9 +527,10 @@ describe("documents guard chain (emulators)", () => {
         title: "Nope",
       }),
     ).toBeNull();
+    const untouched = await db.collection("documents").doc(again.id).get();
+    expect(untouched.data()?.title).toBe("Again");
 
-    // Action path: concurrent delete between outer owner check and tx commit
-    // surfaces as not_found (tx ownership/exists check).
+    // Deleted between outer owner check opportunity and mutation → not_found.
     const owned = await createDocumentAction({ title: "For action race" });
     expect(owned.ok).toBe(true);
     if (!owned.ok) {
