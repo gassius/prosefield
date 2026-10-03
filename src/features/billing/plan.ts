@@ -47,11 +47,8 @@ const getCachedStripePlan = unstable_cache(
  * Must not throw during `pnpm build` without `.env` (same as main).
  */
 export async function getPlan(): Promise<PlanDisplay> {
-  try {
-    if (!isBillingConfigured()) {
-      return getPlanDisplay();
-    }
-  } catch {
+  // isBillingConfigured() never throws (returns false on env parse failure).
+  if (!isBillingConfigured()) {
     return getPlanDisplay();
   }
 

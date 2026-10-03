@@ -9,7 +9,7 @@ export type MappedAuthError = {
 export function mapAuthError(code: string | undefined): MappedAuthError {
   switch (code) {
     case "auth/invalid-email":
-      return { field: "email", message: "Enter a valid email address." };
+      return { field: "email", message: siteCopy.auth.invalidEmail };
     case "auth/weak-password":
       return {
         field: "password",

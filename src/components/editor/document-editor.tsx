@@ -160,16 +160,13 @@ export function DocumentEditor({
           role="alert"
           data-testid="content-blocked"
         >
-          <p>
-            This document contains unsupported formatting and cannot be saved
-            until it is reset. Your stored copy is unchanged.
-          </p>
+          <p>{siteCopy.documents.contentBlocked}</p>
           <button
             type="button"
             className="mt-2 underline"
             onClick={acknowledgeReset}
           >
-            Reset to a blank page
+            {siteCopy.documents.resetBlankPage}
           </button>
         </div>
       ) : null}

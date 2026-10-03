@@ -3,12 +3,30 @@ import "server-only";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { cookies } from "next/headers";
 import {
+  PASSWORD_POLICY_CLAIM,
+  PASSWORD_POLICY_CLAIM_VALUE,
+  PASSWORD_POLICY_GRANDFATHER_BEFORE_MS,
   SESSION_COOKIE_NAME,
   SESSION_EXPIRES_IN_MS,
 } from "@/features/auth/constants";
 import { isRecentAuthTime } from "@/features/auth/auth-time";
 import { getAdminAuth } from "@/lib/firebase/admin";
 import { getEnv } from "@/lib/env";
+
+function hasPasswordPolicyClaim(decoded: DecodedIdToken): boolean {
+  return decoded[PASSWORD_POLICY_CLAIM] === PASSWORD_POLICY_CLAIM_VALUE;
+}
+
+async function isGrandfatheredWithoutPasswordClaim(
+  uid: string,
+): Promise<boolean> {
+  const user = await getAdminAuth().getUser(uid);
+  const createdMs = Date.parse(user.metadata.creationTime);
+  return (
+    Number.isFinite(createdMs) &&
+    createdMs < PASSWORD_POLICY_GRANDFATHER_BEFORE_MS
+  );
+}
 
 export { SESSION_COOKIE_NAME, SESSION_EXPIRES_IN_MS };
 export { isRecentAuthTime } from "@/features/auth/auth-time";
@@ -68,6 +86,15 @@ export async function createSessionCookieFromIdToken(
       "Recent sign-in required",
       "recent_auth_required",
     );
+  }
+
+  if (!hasPasswordPolicyClaim(decoded)) {
+    const grandfathered = await isGrandfatheredWithoutPasswordClaim(
+      decoded.uid,
+    );
+    if (!grandfathered) {
+      throw new SessionError("Unauthorized", "unauthorized");
+    }
   }
 
   const sessionCookie = await auth.createSessionCookie(idToken, {

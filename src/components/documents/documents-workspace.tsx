@@ -4,6 +4,7 @@ import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DocumentList, type DocumentListEntry } from "@/components/documents/document-list";
 import { EmptyDocuments } from "@/components/documents/empty-documents";
+import { siteCopy } from "@/content/site";
 import { createDocumentAction } from "@/features/documents/actions";
 
 type DocumentsWorkspaceProps = {
@@ -63,7 +64,7 @@ export function DocumentsWorkspace({
           </div>
         ) : (
           <div className="text-muted-foreground hidden flex-1 items-center justify-center p-8 md:flex">
-            <p>Select a document or create a new one.</p>
+            <p>{siteCopy.documents.selectOrCreate}</p>
           </div>
         )}
       </div>

@@ -7,7 +7,7 @@ describe("mapAuthError", () => {
   it("maps invalid email to the email field", () => {
     expect(mapAuthError("auth/invalid-email")).toEqual({
       field: "email",
-      message: "Enter a valid email address.",
+      message: siteCopy.auth.invalidEmail,
     });
   });
 

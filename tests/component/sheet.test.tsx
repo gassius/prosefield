@@ -69,5 +69,10 @@ describe("Sheet", () => {
     // Slide/fade animate-in helpers must not remain (they ignore prefers-reduced-motion).
     expect(content.className).not.toMatch(/animate-in|slide-in-from/);
     expect(overlay.className).not.toMatch(/animate-in|fade-in/);
+    // Open slide must use the motion-safe entrance keyframe (not only data-state transforms).
+    expect(content.className).toContain("motion-safe:animate-sheet-in-right");
+    expect(content.className).toMatch(/data-\[state=open\]:translate-x-0/);
+    expect(content.className).toMatch(/data-\[state=closed\]:translate-x-full/);
   });
 });
+

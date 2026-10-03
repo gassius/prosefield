@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Menu } from "lucide-react";
 import { ProsefieldLogo } from "@/components/brand/prosefield-logo";
 import { SignOutButton } from "@/components/auth/sign-out-button";
@@ -31,9 +31,27 @@ const navLinks = [
   { href: "/#faq", label: siteCopy.header.navFaq },
 ] as const;
 
+/** Tailwind `sm` breakpoint — close the mobile Sheet when the viewport widens past it. */
+export const MOBILE_NAV_MAX_WIDTH_PX = 639;
+
 export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
   const [open, setOpen] = useState(false);
   const loggedIn = accountState.kind !== "logged_out";
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+    const media = window.matchMedia(`(min-width: ${MOBILE_NAV_MAX_WIDTH_PX + 1}px)`);
+    const onChange = () => {
+      if (media.matches) {
+        setOpen(false);
+      }
+    };
+    onChange();
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
 
   return (
     <header className="border-border bg-background/95 relative border-b">

@@ -4,7 +4,13 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { __resetCookieStore } from "../mocks/next-headers";
+import {
+  PLACEHOLDER_STRIPE_PRICE_ID,
+  PLACEHOLDER_STRIPE_SECRET_KEY,
+  PLACEHOLDER_STRIPE_WEBHOOK_SECRET,
+} from "../fixtures/stripe";
 import { EMPTY_DOCUMENT_CONTENT } from "@/features/documents/schemas";
+import { registerAndSignIn } from "./helpers/emulator-auth";
 
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
@@ -23,43 +29,21 @@ process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ??=
   "demo-prosefield.firebaseapp.com";
 process.env.NEXT_PUBLIC_FIREBASE_APP_ID ??=
   "1:000000000000:web:0000000000000000000000";
-process.env.STRIPE_SECRET_KEY ??= "sk_test_replaceme";
-process.env.STRIPE_WEBHOOK_SECRET ??= "whsec_replaceme";
-process.env.STRIPE_PRICE_ID ??= "price_replaceme";
+process.env.STRIPE_SECRET_KEY ??= PLACEHOLDER_STRIPE_SECRET_KEY;
+process.env.STRIPE_WEBHOOK_SECRET ??= PLACEHOLDER_STRIPE_WEBHOOK_SECRET;
+process.env.STRIPE_PRICE_ID ??= PLACEHOLDER_STRIPE_PRICE_ID;
 process.env.PLAN_DISPLAY_NAME ??= "Prosefield";
 process.env.PLAN_DISPLAY_PRICE ??= "8";
 process.env.PLAN_DISPLAY_CURRENCY ??= "EUR";
 process.env.PLAN_DISPLAY_INTERVAL ??= "month";
 process.env.FEATURE_CUSTOMER_PORTAL ??= "false";
 
-async function signUp(
-  email: string,
-  password: string,
-): Promise<{ idToken: string; localId: string }> {
-  const response = await fetch(
-    `http://${authHost}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        email,
-        password,
-        returnSecureToken: true,
-      }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`signUp failed: ${response.status} ${await response.text()}`);
-  }
-  return (await response.json()) as { idToken: string; localId: string };
-}
-
 async function establishSession(email: string) {
   const { createSessionCookieFromIdToken, setSessionCookie } = await import(
     "@/features/auth/session"
   );
   const { upsertUserDocument } = await import("@/features/auth/users");
-  const { idToken, localId } = await signUp(email, "password-123");
+  const { idToken, localId } = await registerAndSignIn(email, "password-123");
   const { sessionCookie } = await createSessionCookieFromIdToken(idToken);
   await upsertUserDocument({ uid: localId, email });
   await setSessionCookie(sessionCookie);
@@ -487,6 +471,122 @@ describe("documents guard chain (emulators)", () => {
     expect(repaired.ok).toBe(true);
   });
 
+  it("transactional save/rename refuse wrong-owner and already-deleted docs", async () => {
+    const email = `docs-tx-${randomUUID()}@example.com`;
+    const { localId: uid } = await establishSession(email);
+    await seedActiveSubscription(uid);
+
+    const { createDocumentAction, saveDocumentAction, renameDocumentAction } =
+      await import("@/features/documents/actions");
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+    const { EMPTY_DOCUMENT_CONTENT: empty } = await import(
+      "@/features/documents/schemas"
+    );
+    const {
+      updateDocumentContent,
+      renameDocument,
+      createDocument,
+    } = await import("@/features/documents/repository");
+
+    const db = getAdminFirestore();
+
+    // Ownership checked inside the transaction (not only via outer get).
+    const again = await createDocument({ ownerId: uid, title: "Again" });
+    await db.collection("documents").doc(again.id).update({ ownerId: "other-uid" });
+    expect(
+      await updateDocumentContent({
+        documentId: again.id,
+        ownerId: uid,
+        content: empty,
+      }),
+    ).toBeNull();
+    expect(
+      await renameDocument({
+        documentId: again.id,
+        ownerId: uid,
+        title: "Nope",
+      }),
+    ).toBeNull();
+    const untouched = await db.collection("documents").doc(again.id).get();
+    expect(untouched.data()?.title).toBe("Again");
+
+    // Doc deleted before the action runs → not_found (sequential, not a race).
+    const owned = await createDocumentAction({ title: "For deleted-doc" });
+    expect(owned.ok).toBe(true);
+    if (!owned.ok) {
+      return;
+    }
+    await db.collection("documents").doc(owned.data.id).delete();
+    const save = await saveDocumentAction({
+      documentId: owned.data.id,
+      content: empty,
+    });
+    expect(save.ok).toBe(false);
+    if (!save.ok) {
+      expect(save.code).toBe("not_found");
+    }
+    const rename = await renameDocumentAction({
+      documentId: owned.data.id,
+      title: "Gone",
+    });
+    expect(rename.ok).toBe(false);
+    if (!rename.ok) {
+      expect(rename.code).toBe("not_found");
+    }
+  });
+
+  it("plain read-then-write ownership check allows owner change between get and update", async () => {
+    const email = `docs-plain-${randomUUID()}@example.com`;
+    const { localId: uid } = await establishSession(email);
+    await seedActiveSubscription(uid);
+
+    const { createDocument } = await import("@/features/documents/repository");
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+    const { FieldValue } = await import("firebase-admin/firestore");
+
+    const doc = await createDocument({ ownerId: uid, title: "Plain gap" });
+    const db = getAdminFirestore();
+    const ref = db.collection("documents").doc(doc.id);
+
+    // Anti-pattern: ownership checked once outside any transaction.
+    const outer = await ref.get();
+    expect(outer.exists).toBe(true);
+    expect(outer.data()?.ownerId).toBe(uid);
+
+    // Owner changed in the gap before the blind write.
+    await ref.update({ ownerId: "hijacker" });
+
+    // Blind write still succeeds — proves why ownership must live in the tx.
+    await ref.update({
+      title: "Clobbered",
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    const clobbered = await ref.get();
+    expect(clobbered.data()?.title).toBe("Clobbered");
+    expect(clobbered.data()?.ownerId).toBe("hijacker");
+
+    // Transactional path with ownerId refuses the same pre-changed owner.
+    const { updateDocumentContent, renameDocument } = await import(
+      "@/features/documents/repository"
+    );
+    expect(
+      await updateDocumentContent({
+        documentId: doc.id,
+        ownerId: uid,
+        content: EMPTY_DOCUMENT_CONTENT,
+      }),
+    ).toBeNull();
+    expect(
+      await renameDocument({
+        documentId: doc.id,
+        ownerId: uid,
+        title: "Still mine",
+      }),
+    ).toBeNull();
+    const still = await ref.get();
+    expect(still.data()?.title).toBe("Clobbered");
+  });
+
   it("subscriber CRUD persists content and title", async () => {
     const email = `docs-crud-${randomUUID()}@example.com`;
     const { localId: uid } = await establishSession(email);
@@ -522,14 +622,26 @@ describe("documents guard chain (emulators)", () => {
       content,
     });
     expect(saved.ok).toBe(true);
+    if (!saved.ok) {
+      return;
+    }
+    // Returned updatedAt must match the stored Firestore server timestamp
+    // (not a local Date() stand-in).
+    const afterSave = await getDocumentById(created.data.id);
+    expect(saved.data.updatedAt).toBe(afterSave?.updatedAt.toISOString());
 
     const renamed = await renameDocumentAction({
       documentId: created.data.id,
       title: "Draft two",
     });
     expect(renamed.ok).toBe(true);
+    if (!renamed.ok) {
+      return;
+    }
+    const afterRename = await getDocumentById(created.data.id);
+    expect(renamed.data.updatedAt).toBe(afterRename?.updatedAt.toISOString());
 
-    const loaded = await getDocumentById(created.data.id);
+    const loaded = afterRename;
     expect(loaded?.title).toBe("Draft two");
     expect(loaded?.contentAllowed).toBe(true);
     expect(JSON.stringify(loaded?.content)).toContain("Hello field");

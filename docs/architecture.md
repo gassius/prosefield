@@ -254,7 +254,7 @@ apphosting.yaml (P6), .env.example, docs/ (architecture.md, art-direction.md, wr
 | `users` | uid | `email`, `stripeCustomerId \| null`, `createdAt`, `updatedAt` |
 | `stripeCustomers` | Stripe customer id | `uid`, `createdAt` (reverse lookup) |
 | `subscriptions` | uid | `stripeCustomerId`, `stripeSubscriptionId`, `stripePriceId`, `status`, `currentPeriodEnd`, `cancelAtPeriodEnd`, `updatedAt`, `lastEventId` (diagnostics) |
-| `documents` | auto | `ownerId` (immutable), `title` (trimmed, 1–120 chars), `content` (Tiptap JSON, serialised ≤ 512 KB, under Firestore's 1 MiB limit), `createdAt`, `updatedAt` |
+| `documents` | auto | `ownerId` (immutable), `title` (trimmed, 1–120 chars), `content` (Tiptap JSON, serialised ≤ 512 KiB, under Firestore's 1 MiB limit), `createdAt`, `updatedAt` |
 | `stripeEvents` | Stripe event id | `type`, `created`, `processedAt` |
 
 Composite index: `documents(ownerId ASC, updatedAt DESC)`, committed in `firestore.indexes.json`.
