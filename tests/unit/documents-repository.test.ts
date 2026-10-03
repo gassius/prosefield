@@ -256,6 +256,19 @@ describe("documents repository", () => {
     expect(updatedSparse?.contentAllowed).toBe(true);
     expect(updatedSparse?.title).toBe("Untitled document");
 
+    // exists=true but data() undefined → snap.data() ?? {} branch in the transaction.
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => undefined,
+    });
+    const updatedEmptyData = await updateDocumentContent({
+      documentId: "d1",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(updatedEmptyData?.contentAllowed).toBe(true);
+    expect(updatedEmptyData?.title).toBe("Untitled document");
+
     get.mockResolvedValueOnce({
       exists: true,
       id: "d1",
@@ -266,6 +279,17 @@ describe("documents repository", () => {
       title: "After",
     });
     expect(renamedSparse?.title).toBe("After");
+
+    get.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => undefined,
+    });
+    const renamedEmptyData = await renameDocument({
+      documentId: "d1",
+      title: "After empty",
+    });
+    expect(renamedEmptyData?.title).toBe("After empty");
 
     get.mockResolvedValueOnce({
       exists: true,

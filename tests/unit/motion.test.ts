@@ -54,6 +54,16 @@ describe("motion duration helpers", () => {
         transitionDuration: "5ms",
       }),
     ).toBe(true);
+    // Short named animation counts as reduced when duration ≤10ms.
+    expect(
+      isReducedMotionStyle({
+        animationName: "sheet-in-right",
+        animationDuration: "8ms",
+        transitionProperty: "none",
+        transitionDuration: "0s",
+      }),
+    ).toBe(true);
   });
 });
+
 
