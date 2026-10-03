@@ -41,6 +41,17 @@ export const ALLOWED_HEADING_LEVELS = [2, 3] as const;
 /** HTML `ol` type values TipTap's OrderedList may emit (plus null default). */
 export const ALLOWED_ORDERED_LIST_TYPES = ["1", "a", "A", "i", "I"] as const;
 
+/**
+ * Attr keys `assertAllowedTiptapJson` deliberately handles.
+ * Drift tests compare TipTap `getSchema` attrs against this map.
+ */
+export const VALIDATOR_HANDLED_ATTRS: Readonly<
+  Record<string, readonly string[]>
+> = {
+  heading: ["level"],
+  orderedList: ["start", "type"],
+};
+
 export type TiptapJson = {
   type: string;
   content?: TiptapJson[];

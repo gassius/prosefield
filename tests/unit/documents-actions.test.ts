@@ -134,6 +134,31 @@ describe("document actions (mocked guards)", () => {
     expect(requireSession).toHaveBeenCalledWith({ checkRevoked: true });
   });
 
+  it("ignores client-supplied ownerId on create", async () => {
+    const { createDocumentAction } = await import(
+      "@/features/documents/actions"
+    );
+    createDocument.mockResolvedValue({
+      id: DOC_ID,
+      ownerId: "u1",
+      title: "Mine",
+      content: EMPTY_DOCUMENT_CONTENT,
+      contentAllowed: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await createDocumentAction({
+      ownerId: "attacker",
+      title: "Mine",
+    });
+    expect(createDocument).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerId: "u1" }),
+    );
+    expect(createDocument).not.toHaveBeenCalledWith(
+      expect.objectContaining({ ownerId: "attacker" }),
+    );
+  });
+
   it("maps missing post-write updates and deletes to not_found", async () => {
     const { saveDocumentAction, renameDocumentAction, deleteDocumentAction } =
       await import("@/features/documents/actions");
