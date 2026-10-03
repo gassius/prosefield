@@ -7,9 +7,9 @@ Local-first writing workspace. Specs live in [`docs/architecture.md`](docs/archi
 - **nvm** (recommended) — run `nvm use` at the repo root so the shell matches [`.nvmrc`](.nvmrc)
 - **Node** — exact version from [`.nvmrc`](.nvmrc) (`nvm use`)
 - **pnpm** — via Corepack (`corepack enable`)
-- **Docker + Compose** — required for the backend (Auth, Firestore, Emulator UI). Java and `firebase-tools` stay inside the Compose image — **do not install Java or the Firebase CLI on the host**.
+- **Docker + Compose** — required for the backend (Auth, Firestore, Emulator UI). The Emulator Suite runtime and `firebase-tools` stay inside the Compose image — **do not install the Firebase CLI on the host**.
 
-Nothing else is needed on the host. Emulators run only inside Docker (no global `firebase-tools`, no host JRE).
+Nothing else is needed on the host. Emulators run only inside Docker (no global `firebase-tools`).
 
 ## Quick start
 
@@ -91,7 +91,7 @@ Playwright acceptance tests mock payment by seeding the Firestore entitlement pr
 
 ## Known limitations
 
-- **Docker is required** for Auth/Firestore. There is no host-Java or global `firebase-tools` fallback.
+- **Docker is required** for Auth/Firestore. There is no host Emulator Suite runtime or global `firebase-tools` fallback.
 - **Manual save only** — no autosave, no multi-device conflict resolution, no version history.
 - **No real-time collaboration** and no offline client Firestore access (server-only data path).
 - **One plan / one price** — no coupons, taxes, trials, or tiered pricing. Plan display falls back to `PLAN_DISPLAY_*` when Stripe is not configured.

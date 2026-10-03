@@ -14,8 +14,9 @@ describe("README technical sections (P5a)", () => {
     expect(text).toMatch(/pnpm install/);
     expect(text).toMatch(/pnpm dev/);
     expect(text).toMatch(/docker compose up -d --wait/);
-    expect(text).toMatch(/do not install Java/i);
-    expect(text).toMatch(/no host JRE/i);
+    expect(text).toMatch(/do not install the Firebase CLI on the host/i);
+    expect(text).toMatch(/no global `firebase-tools`/);
+    expect(text).toMatch(/Emulator Suite runtime/);
   });
 
   it("documents architecture overview with core stack choices", () => {
