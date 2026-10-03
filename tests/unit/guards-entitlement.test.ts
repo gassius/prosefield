@@ -77,4 +77,63 @@ describe("guards entitlement wiring (active only)", () => {
     });
     await expect(requireActiveSubscription("u1")).resolves.toBeUndefined();
   });
+
+  it("treats missing projection, non-string status, and Firestore errors as not subscribed", async () => {
+    const { getAccountState } = await import("@/features/auth/guards");
+
+    firestoreGet.mockResolvedValue({ exists: false });
+    await expect(getAccountState()).resolves.toMatchObject({
+      kind: "logged_in",
+      subscriptionActive: false,
+    });
+
+    firestoreGet.mockResolvedValue({
+      exists: true,
+      data: () => ({ status: 1 }),
+    });
+    await expect(getAccountState()).resolves.toMatchObject({
+      kind: "logged_in",
+      subscriptionActive: false,
+    });
+
+    firestoreGet.mockRejectedValue(new Error("emulator down"));
+    await expect(getAccountState()).resolves.toMatchObject({
+      kind: "logged_in",
+      subscriptionActive: false,
+    });
+  });
+
+  it("returns logged_out when session lookup throws or returns null", async () => {
+    const { getAccountState } = await import("@/features/auth/guards");
+
+    getOptionalSession.mockRejectedValueOnce(new Error("revoked"));
+    await expect(getAccountState()).resolves.toEqual({ kind: "logged_out" });
+
+    getOptionalSession.mockResolvedValueOnce(null);
+    await expect(getAccountState()).resolves.toEqual({ kind: "logged_out" });
+  });
+
+  it("uses empty email when session email is not a string", async () => {
+    getOptionalSession.mockResolvedValue({
+      uid: "u1",
+      email: null,
+      auth_time: Math.floor(Date.now() / 1000),
+    });
+    firestoreGet.mockResolvedValue({
+      exists: true,
+      data: () => ({ status: "active" }),
+    });
+    const { getAccountState } = await import("@/features/auth/guards");
+    await expect(getAccountState()).resolves.toMatchObject({
+      kind: "subscriber",
+      email: "",
+    });
+  });
+
+  it("requireSession throws when there is no session", async () => {
+    getOptionalSession.mockResolvedValue(null);
+    const { requireSession } = await import("@/features/auth/guards");
+    const { SessionError } = await import("@/features/auth/session");
+    await expect(requireSession()).rejects.toBeInstanceOf(SessionError);
+  });
 });

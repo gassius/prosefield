@@ -188,6 +188,12 @@ export const siteCopy = {
     checkoutCta: "Continue to secure checkout",
     checkoutBusy: "Starting checkout…",
     checkoutError: "Could not start checkout. Please try again.",
+    /**
+     * Shown on 409 (non-terminal subscription). Explains past_due/unpaid and
+     * the next step without bouncing back to /documents in a silent loop.
+     */
+    checkoutConflict:
+      "You already have a subscription on this account. If your last payment didn't go through, check your email from Stripe to update your card — then refresh this page once it's paid.",
   },
   documents: {
     upgradeTitle: "Subscribe to start writing",

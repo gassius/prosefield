@@ -58,7 +58,7 @@ export default defineConfig({
         "src/lib/utils.ts": highBar,
         "src/features/auth/{session,guards,users}.ts": authSurfaceBar,
         "src/features/billing/{entitlement,plan-display,configured}.ts": highBar,
-        "src/features/billing/{projection,webhook,checkout,customers,session-sync,plan,actions}.ts":
+        "src/features/billing/{projection,webhook,checkout,customers,session-sync,subscriptions,plan,actions}.ts":
           authSurfaceBar,
         "src/features/documents/{schemas,format-time,save-state,ownership,editor-extensions}.ts":
           {

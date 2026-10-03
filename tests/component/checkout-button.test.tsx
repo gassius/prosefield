@@ -17,7 +17,7 @@ describe("CheckoutButton", () => {
     vi.resetModules();
   });
 
-  it("redirects to /documents on 409 already active", async () => {
+  it("shows conflict next-step message on 409 without bouncing to /documents", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(null, { status: 409 })),
@@ -29,9 +29,34 @@ describe("CheckoutButton", () => {
     await userEvent.click(
       screen.getByRole("button", { name: "Continue to secure checkout" }),
     );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /already have a subscription/i,
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /check your email from Stripe/i,
+    );
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("redirects to login on 401 unauthenticated", async () => {
+    const fetchMock = vi.fn(
+      async (_url: string, init?: RequestInit) => {
+        expect(init?.headers).toEqual({ accept: "application/json" });
+        return new Response(null, { status: 401 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { CheckoutButton } = await import(
+      "@/components/billing/checkout-button"
+    );
+    render(<CheckoutButton label="Continue to secure checkout" />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Continue to secure checkout" }),
+    );
     await waitFor(() => {
-      expect(replace).toHaveBeenCalledWith("/documents");
+      expect(replace).toHaveBeenCalledWith("/login?next=/subscribe");
     });
+    expect(fetchMock).toHaveBeenCalled();
   });
 
   it("shows not-configured error from 503 body", async () => {

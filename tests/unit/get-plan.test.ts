@@ -119,4 +119,40 @@ describe("getPlan", () => {
     );
     await expect(__fetchPlanFromStripeForTests()).rejects.toThrow(/recurring/i);
   });
+
+  it("uses display name when Stripe product is deleted", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
+    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
+    vi.stubEnv("PLAN_DISPLAY_NAME", "Prosefield");
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    retrievePrice.mockResolvedValue({
+      unit_amount: 800,
+      currency: "eur",
+      recurring: { interval: "month" },
+      product: { id: "prod_x", deleted: true },
+    });
+    const { __fetchPlanFromStripeForTests } = await import(
+      "@/features/billing/plan"
+    );
+    const plan = await __fetchPlanFromStripeForTests();
+    expect(plan.name).toBe("Prosefield");
+  });
+
+  it("falls back when Stripe fails with a coded error", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
+    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
+    vi.stubEnv("PLAN_DISPLAY_PRICE", "8");
+    vi.stubEnv("PLAN_DISPLAY_CURRENCY", "EUR");
+    vi.stubEnv("PLAN_DISPLAY_INTERVAL", "month");
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    retrievePrice.mockRejectedValue({ code: "rate_limit" });
+
+    const { getPlan } = await import("@/features/billing/plan");
+    const plan = await getPlan();
+    expect(plan.checkoutReassurance).toBe("€8/month · Secure checkout");
+  });
 });

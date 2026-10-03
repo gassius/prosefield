@@ -2,12 +2,18 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type Stripe from "stripe";
 
 const customersCreate = vi.fn();
+const customersUpdate = vi.fn();
+const customersRetrieve = vi.fn();
 const runTransaction = vi.fn();
 const stripeCustomersGet = vi.fn();
 
 vi.mock("@/lib/stripe/server", () => ({
   getStripe: () => ({
-    customers: { create: customersCreate },
+    customers: {
+      create: customersCreate,
+      update: customersUpdate,
+      retrieve: customersRetrieve,
+    },
   }),
 }));
 
@@ -39,8 +45,8 @@ describe("customers", () => {
     vi.resetModules();
   });
 
-  it("returns existing stripeCustomerId without calling Stripe", async () => {
-    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<string>) => {
+  it("returns existing stripeCustomerId and skips update when email matches", async () => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
         get: async () => ({
           exists: true,
@@ -50,6 +56,11 @@ describe("customers", () => {
       };
       return fn(tx);
     });
+    customersRetrieve.mockResolvedValue({
+      id: "cus_existing",
+      email: "a@b.co",
+      deleted: false,
+    });
     const { getOrCreateStripeCustomer } = await import(
       "@/features/billing/customers"
     );
@@ -57,12 +68,42 @@ describe("customers", () => {
       getOrCreateStripeCustomer({ uid: "uid", email: "a@b.co" }),
     ).resolves.toBe("cus_existing");
     expect(customersCreate).not.toHaveBeenCalled();
+    expect(customersUpdate).not.toHaveBeenCalled();
   });
 
-  it("creates a customer with idempotency key and reverse lookup", async () => {
+  it("updates email on existing customer only when it differs", async () => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => ({
+          exists: true,
+          data: () => ({ stripeCustomerId: "cus_existing" }),
+        }),
+        set: vi.fn(),
+      };
+      return fn(tx);
+    });
+    customersRetrieve.mockResolvedValue({
+      id: "cus_existing",
+      email: "old@b.co",
+      deleted: false,
+    });
+    customersUpdate.mockResolvedValue({ id: "cus_existing" });
+    const { getOrCreateStripeCustomer } = await import(
+      "@/features/billing/customers"
+    );
+    await expect(
+      getOrCreateStripeCustomer({ uid: "uid", email: "new@b.co" }),
+    ).resolves.toBe("cus_existing");
+    expect(customersUpdate).toHaveBeenCalledWith("cus_existing", {
+      email: "new@b.co",
+    });
+  });
+
+  it("creates a customer with idempotency key without email, then updates email", async () => {
     customersCreate.mockResolvedValue({ id: "cus_new" });
+    customersUpdate.mockResolvedValue({ id: "cus_new" });
     const set = vi.fn();
-    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<string>) => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
         get: async () => ({
           exists: true,
@@ -79,16 +120,21 @@ describe("customers", () => {
       getOrCreateStripeCustomer({ uid: "uid_1", email: "a@b.co" }),
     ).resolves.toBe("cus_new");
     expect(customersCreate).toHaveBeenCalledWith(
-      { email: "a@b.co", metadata: { firebaseUid: "uid_1" } },
+      { metadata: { firebaseUid: "uid_1" } },
       { idempotencyKey: "customer-uid_1" },
     );
+    expect(customersUpdate).toHaveBeenCalledWith("cus_new", {
+      email: "a@b.co",
+    });
+    expect(customersRetrieve).not.toHaveBeenCalled();
     expect(set).toHaveBeenCalled();
   });
 
   it("creates the user doc when missing during customer creation", async () => {
     customersCreate.mockResolvedValue({ id: "cus_brand" });
+    customersUpdate.mockResolvedValue({ id: "cus_brand" });
     const set = vi.fn();
-    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<string>) => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
         get: async () => ({ exists: false, data: () => undefined }),
         set,
@@ -102,6 +148,88 @@ describe("customers", () => {
       getOrCreateStripeCustomer({ uid: "uid_2", email: "new@b.co" }),
     ).resolves.toBe("cus_brand");
     expect(set).toHaveBeenCalled();
+  });
+
+  it("still returns customer id when email update fails with a Stripe code", async () => {
+    customersCreate.mockResolvedValue({ id: "cus_ok" });
+    customersUpdate.mockRejectedValue({ code: "rate_limit", message: "slow" });
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => ({ exists: false, data: () => undefined }),
+        set: vi.fn(),
+      };
+      return fn(tx);
+    });
+    const { getOrCreateStripeCustomer } = await import(
+      "@/features/billing/customers"
+    );
+    await expect(
+      getOrCreateStripeCustomer({ uid: "uid_3", email: "x@y.co" }),
+    ).resolves.toBe("cus_ok");
+  });
+
+  it("skips email update when email is empty", async () => {
+    customersCreate.mockResolvedValue({ id: "cus_noemail" });
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => ({ exists: false, data: () => undefined }),
+        set: vi.fn(),
+      };
+      return fn(tx);
+    });
+    const { getOrCreateStripeCustomer } = await import(
+      "@/features/billing/customers"
+    );
+    await expect(
+      getOrCreateStripeCustomer({ uid: "uid_empty", email: "" }),
+    ).resolves.toBe("cus_noemail");
+    expect(customersUpdate).not.toHaveBeenCalled();
+    expect(customersRetrieve).not.toHaveBeenCalled();
+  });
+
+  it("logs unknown when existing-customer retrieve fails without a code", async () => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => ({
+          exists: true,
+          data: () => ({ stripeCustomerId: "cus_existing" }),
+        }),
+        set: vi.fn(),
+      };
+      return fn(tx);
+    });
+    customersRetrieve.mockRejectedValue("not-an-object");
+    const { getOrCreateStripeCustomer } = await import(
+      "@/features/billing/customers"
+    );
+    await expect(
+      getOrCreateStripeCustomer({ uid: "uid", email: "a@b.co" }),
+    ).resolves.toBe("cus_existing");
+    expect(customersUpdate).not.toHaveBeenCalled();
+  });
+
+  it("skips update when retrieved Stripe customer is deleted", async () => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => ({
+          exists: true,
+          data: () => ({ stripeCustomerId: "cus_deleted" }),
+        }),
+        set: vi.fn(),
+      };
+      return fn(tx);
+    });
+    customersRetrieve.mockResolvedValue({
+      id: "cus_deleted",
+      deleted: true,
+    });
+    const { getOrCreateStripeCustomer } = await import(
+      "@/features/billing/customers"
+    );
+    await expect(
+      getOrCreateStripeCustomer({ uid: "uid", email: "a@b.co" }),
+    ).resolves.toBe("cus_deleted");
+    expect(customersUpdate).not.toHaveBeenCalled();
   });
 
   it("looks up uid by stripe customer id", async () => {
@@ -127,20 +255,33 @@ describe("webhook subscription id extraction paths", () => {
     vi.clearAllMocks();
   });
 
-  it("handles checkout.session and invoice event shapes", async () => {
+  it("handles checkout.session and invoice parent.subscription_details shapes", async () => {
+    const retrieve = vi.fn(async () => ({
+      id: "sub_from_session",
+      metadata: { firebaseUid: "uid_s" },
+      customer: "cus_s",
+      status: "active",
+      cancel_at_period_end: false,
+      items: { data: [{ price: { id: "price_1" }, current_period_end: 1 }] },
+    }));
+    const list = vi.fn(async () => ({
+      data: [
+        {
+          id: "sub_from_session",
+          metadata: { firebaseUid: "uid_s" },
+          customer: "cus_s",
+          status: "active",
+          cancel_at_period_end: false,
+          items: {
+            data: [{ price: { id: "price_1" }, current_period_end: 1 }],
+          },
+        },
+      ],
+    }));
     vi.doMock("@/lib/stripe/server", () => ({
       getStripe: () => ({
         webhooks: { constructEvent: vi.fn() },
-        subscriptions: {
-          retrieve: vi.fn(async () => ({
-            id: "sub_from_session",
-            metadata: { firebaseUid: "uid_s" },
-            customer: "cus_s",
-            status: "active",
-            cancel_at_period_end: false,
-            items: { data: [{ price: { id: "price_1" }, current_period_end: 1 }] },
-          })),
-        },
+        subscriptions: { retrieve, list },
       }),
     }));
     vi.doMock("@/features/billing/projection", () => ({
@@ -189,7 +330,9 @@ describe("webhook subscription id extraction paths", () => {
       data: {
         object: {
           object: "invoice",
-          subscription: { id: "sub_from_session" },
+          parent: {
+            subscription_details: { subscription: "sub_from_session" },
+          },
         },
       },
     } as unknown as Stripe.Event);

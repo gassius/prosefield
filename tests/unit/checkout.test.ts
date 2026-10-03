@@ -11,11 +11,14 @@ import {
 
 const customersCreate = vi.fn();
 const sessionsCreate = vi.fn();
+const sessionsList = vi.fn();
+const subscriptionsList = vi.fn();
 
 vi.mock("@/lib/stripe/server", () => ({
   getStripe: () => ({
-    customers: { create: customersCreate },
-    checkout: { sessions: { create: sessionsCreate } },
+    customers: { create: customersCreate, update: vi.fn() },
+    checkout: { sessions: { create: sessionsCreate, list: sessionsList } },
+    subscriptions: { list: subscriptionsList },
   }),
 }));
 
@@ -36,6 +39,13 @@ describe("createCheckoutSession", () => {
     vi.unstubAllEnvs();
   });
 
+  function stubConfiguredEnv() {
+    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
+    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
+    vi.stubEnv("APP_URL", "http://localhost:3000");
+  }
+
   it("throws not_configured for placeholder Stripe keys", async () => {
     vi.stubEnv("STRIPE_SECRET_KEY", PLACEHOLDER_STRIPE_SECRET_KEY);
     vi.stubEnv("STRIPE_PRICE_ID", PLACEHOLDER_STRIPE_PRICE_ID);
@@ -51,9 +61,7 @@ describe("createCheckoutSession", () => {
   });
 
   it("throws already_active when projection is active", async () => {
-    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
-    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
-    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
+    stubConfiguredEnv();
     const { __resetEnvCacheForTests } = await import("@/lib/env");
     __resetEnvCacheForTests();
     const projection = await import("@/features/billing/projection");
@@ -68,13 +76,11 @@ describe("createCheckoutSession", () => {
       createCheckoutSession({ uid: "u1", email: "a@b.co" }),
     ).rejects.toMatchObject({ code: "already_active" });
     expect(CheckoutError).toBeTruthy();
+    expect(sessionsCreate).not.toHaveBeenCalled();
   });
 
-  it("allows checkout when projection is past_due (resubscribe)", async () => {
-    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
-    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
-    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
-    vi.stubEnv("APP_URL", "http://localhost:3000");
+  it("throws already_active for past_due and does not create a Checkout Session", async () => {
+    stubConfiguredEnv();
     const { __resetEnvCacheForTests } = await import("@/lib/env");
     __resetEnvCacheForTests();
     const projection = await import("@/features/billing/projection");
@@ -82,9 +88,24 @@ describe("createCheckoutSession", () => {
       status: "past_due",
       stripeSubscriptionId: "sub_A",
     } as never);
-    sessionsCreate.mockResolvedValue({
-      id: "cs_resub",
-      url: "https://checkout.stripe.com/c/pay/cs_resub",
+
+    const { createCheckoutSession } = await import(
+      "@/features/billing/checkout"
+    );
+    await expect(
+      createCheckoutSession({ uid: "u1", email: "a@b.co" }),
+    ).rejects.toMatchObject({ code: "already_active" });
+    expect(sessionsCreate).not.toHaveBeenCalled();
+  });
+
+  it("throws already_active when Stripe lists a non-terminal subscription", async () => {
+    stubConfiguredEnv();
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    const projection = await import("@/features/billing/projection");
+    vi.mocked(projection.getSubscriptionProjection).mockResolvedValue(null);
+    subscriptionsList.mockResolvedValue({
+      data: [{ id: "sub_incomplete", status: "incomplete" }],
     });
 
     const { createCheckoutSession } = await import(
@@ -92,18 +113,48 @@ describe("createCheckoutSession", () => {
     );
     await expect(
       createCheckoutSession({ uid: "u1", email: "a@b.co" }),
-    ).resolves.toMatchObject({ sessionId: "cs_resub" });
+    ).rejects.toMatchObject({ code: "already_active" });
+    expect(sessionsCreate).not.toHaveBeenCalled();
   });
 
-  it("creates a subscription Checkout Session with firebaseUid metadata", async () => {
-    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
-    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
-    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
-    vi.stubEnv("APP_URL", "http://localhost:3000");
+  it("reuses an open Checkout Session instead of creating another", async () => {
+    stubConfiguredEnv();
     const { __resetEnvCacheForTests } = await import("@/lib/env");
     __resetEnvCacheForTests();
     const projection = await import("@/features/billing/projection");
     vi.mocked(projection.getSubscriptionProjection).mockResolvedValue(null);
+    subscriptionsList.mockResolvedValue({ data: [] });
+    sessionsList.mockResolvedValue({
+      data: [
+        {
+          id: "cs_open",
+          client_reference_id: "uid_1",
+          url: "https://checkout.stripe.com/c/pay/cs_open",
+          status: "open",
+        },
+      ],
+    });
+
+    const { createCheckoutSession } = await import(
+      "@/features/billing/checkout"
+    );
+    await expect(
+      createCheckoutSession({ uid: "uid_1", email: "a@b.co" }),
+    ).resolves.toEqual({
+      url: "https://checkout.stripe.com/c/pay/cs_open",
+      sessionId: "cs_open",
+    });
+    expect(sessionsCreate).not.toHaveBeenCalled();
+  });
+
+  it("creates a subscription Checkout Session with firebaseUid metadata and integration_identifier", async () => {
+    stubConfiguredEnv();
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    const projection = await import("@/features/billing/projection");
+    vi.mocked(projection.getSubscriptionProjection).mockResolvedValue(null);
+    subscriptionsList.mockResolvedValue({ data: [] });
+    sessionsList.mockResolvedValue({ data: [] });
     sessionsCreate.mockResolvedValue({
       id: "cs_test",
       url: "https://checkout.stripe.com/c/pay/cs_test",
@@ -127,19 +178,19 @@ describe("createCheckoutSession", () => {
         success_url:
           "http://localhost:3000/billing/status?session_id={CHECKOUT_SESSION_ID}",
         cancel_url: "http://localhost:3000/subscribe",
+        integration_identifier: "prosefield",
       }),
     );
   });
 
   it("throws stripe_error when Checkout Session has no url", async () => {
-    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
-    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
-    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
-    vi.stubEnv("APP_URL", "http://localhost:3000");
+    stubConfiguredEnv();
     const { __resetEnvCacheForTests } = await import("@/lib/env");
     __resetEnvCacheForTests();
     const projection = await import("@/features/billing/projection");
     vi.mocked(projection.getSubscriptionProjection).mockResolvedValue(null);
+    subscriptionsList.mockResolvedValue({ data: [] });
+    sessionsList.mockResolvedValue({ data: [] });
     sessionsCreate.mockResolvedValue({ id: "cs_nourl", url: null });
 
     const { createCheckoutSession } = await import(

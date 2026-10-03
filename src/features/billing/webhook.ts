@@ -3,6 +3,7 @@ import "server-only";
 import type Stripe from "stripe";
 import { lookupUidByStripeCustomerId } from "@/features/billing/customers";
 import { processEventWithDedupe } from "@/features/billing/projection";
+import { resolveProjectionSubscription } from "@/features/billing/subscriptions";
 import { getEnv } from "@/lib/env";
 import { getStripe } from "@/lib/stripe/server";
 
@@ -64,13 +65,48 @@ export async function resolveFirebaseUid(input: {
   return null;
 }
 
-function subscriptionIdFromEvent(
-  event: Stripe.Event,
-): string | null {
+function subscriptionIdFromInvoice(obj: {
+  subscription?: string | { id?: string } | null;
+  parent?: {
+    subscription_details?: {
+      subscription?: string | { id?: string } | null;
+    } | null;
+  } | null;
+}): string | null {
+  // API 2026-09-30.endive: subscription lives under parent.subscription_details.
+  const fromParent = obj.parent?.subscription_details?.subscription;
+  if (typeof fromParent === "string") {
+    return fromParent;
+  }
+  if (
+    fromParent &&
+    typeof fromParent === "object" &&
+    typeof fromParent.id === "string"
+  ) {
+    return fromParent.id;
+  }
+
+  // Legacy top-level shape (pre-basil) — keep as last-resort fallback.
+  const legacy = obj.subscription;
+  if (typeof legacy === "string") {
+    return legacy;
+  }
+  if (legacy && typeof legacy === "object" && typeof legacy.id === "string") {
+    return legacy.id;
+  }
+  return null;
+}
+
+function subscriptionIdFromEvent(event: Stripe.Event): string | null {
   const obj = event.data.object as {
     object?: string;
     id?: string;
     subscription?: string | { id?: string } | null;
+    parent?: {
+      subscription_details?: {
+        subscription?: string | { id?: string } | null;
+      } | null;
+    } | null;
   };
 
   if (obj.object === "subscription" && typeof obj.id === "string") {
@@ -88,13 +124,7 @@ function subscriptionIdFromEvent(
   }
 
   if (obj.object === "invoice") {
-    const sub = obj.subscription;
-    if (typeof sub === "string") {
-      return sub;
-    }
-    if (sub && typeof sub === "object" && typeof sub.id === "string") {
-      return sub.id;
-    }
+    return subscriptionIdFromInvoice(obj);
   }
 
   return null;
@@ -116,7 +146,8 @@ export function constructStripeEvent(
 }
 
 /**
- * Handle a verified Stripe event: retrieve canonical Subscription, dedupe, project.
+ * Handle a verified Stripe event: retrieve canonical Subscription, prefer an
+ * active subscription for the customer, dedupe, project.
  */
 export async function handleStripeEvent(event: Stripe.Event): Promise<{
   handled: boolean;
@@ -129,7 +160,6 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<{
 
   const stripe = getStripe();
   let session: Stripe.Checkout.Session | null = null;
-  let subscription: Stripe.Subscription | null = null;
 
   if (event.type === "checkout.session.completed") {
     session = event.data.object as Stripe.Checkout.Session;
@@ -140,7 +170,8 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<{
     return { handled: true, processed: false, reason: "no_subscription_id" };
   }
 
-  subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  const retrieved = await stripe.subscriptions.retrieve(subscriptionId);
+  const subscription = await resolveProjectionSubscription(retrieved);
 
   const uid = await resolveFirebaseUid({
     subscription,
