@@ -90,6 +90,15 @@ describe("upsertEnvKey (.env updater)", () => {
     ]);
   });
 
+  it("replaces a key when the file has no trailing newline", () => {
+    const original = "STRIPE_PRICE_ID=price_old\nAPP_URL=http://localhost:3000";
+    const next = upsertEnvKey(original, "STRIPE_PRICE_ID", "price_new");
+    expect(next).toBe(
+      "STRIPE_PRICE_ID=price_new\nAPP_URL=http://localhost:3000",
+    );
+    expect(next.endsWith("\n")).toBe(false);
+  });
+
   it("rejects live keys (sk_live_ / rk_live_)", () => {
     expect(() => assertStripeTestSecretKey(FAKE_STRIPE_LIVE_SECRET_KEY)).toThrow(
       /live key/,

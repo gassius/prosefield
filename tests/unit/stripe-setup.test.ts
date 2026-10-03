@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { runStripeSetup, StripeSetupError } from "@/lib/stripe/setup";
+import {
+  formatUnknownError,
+  runStripeSetup,
+  StripeSetupError,
+} from "@/lib/stripe/setup";
 import {
   FAKE_STRIPE_LIVE_RESTRICTED_KEY,
   FAKE_STRIPE_LIVE_SECRET_KEY,
@@ -9,6 +13,17 @@ import {
   FAKE_STRIPE_WEBHOOK_SECRET,
   PLACEHOLDER_STRIPE_PRICE_ID,
 } from "../fixtures/stripe";
+
+describe("formatUnknownError", () => {
+  it("reads message from Error instances", () => {
+    expect(formatUnknownError(new Error("boom"))).toBe("boom");
+  });
+
+  it("stringifies non-Error throws", () => {
+    expect(formatUnknownError("not-an-error")).toBe("not-an-error");
+    expect(formatUnknownError(42)).toBe("42");
+  });
+});
 
 describe("runStripeSetup", () => {
   it("seeds a price, prints a webhook secret, and writes both into .env without logging secrets", async () => {
@@ -131,6 +146,18 @@ describe("runStripeSetup", () => {
         writeFile: vi.fn(),
         seedPriceId: async () => FAKE_STRIPE_PRICE_ID,
         printWebhookSecret: async () => "not-a-secret",
+      }),
+    ).rejects.toThrow(/whsec_/);
+  });
+
+  it("fails when stripe-cli returns only the whsec_ prefix", async () => {
+    await expect(
+      runStripeSetup({
+        envFilePath: ".env",
+        readFile: () => `STRIPE_SECRET_KEY=${FAKE_STRIPE_SECRET_KEY}\n`,
+        writeFile: vi.fn(),
+        seedPriceId: async () => FAKE_STRIPE_PRICE_ID,
+        printWebhookSecret: async () => "whsec_",
       }),
     ).rejects.toThrow(/whsec_/);
   });

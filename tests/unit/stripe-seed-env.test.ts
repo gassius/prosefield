@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it, vi } from "vitest";
-import { seedTestPrice } from "@/lib/stripe/seed-test-price";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createDefaultStripe,
+  resolveStripeFactory,
+  seedTestPrice,
+} from "@/lib/stripe/seed-test-price";
 import {
   FAKE_STRIPE_LIVE_SECRET_KEY,
   FAKE_STRIPE_SECRET_KEY,
@@ -28,6 +32,10 @@ describe("pnpm stripe:seed .env loading", () => {
 });
 
 describe("seedTestPrice", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("creates a product and price with an injected Stripe client (no network)", async () => {
     const productsCreate = vi.fn().mockResolvedValue({
       id: "prod_test1",
@@ -94,5 +102,18 @@ describe("seedTestPrice", () => {
         currency: "eur",
       }),
     );
+  });
+
+  it("falls back to createDefaultStripe when createStripe is omitted", () => {
+    const injected = vi.fn();
+    expect(resolveStripeFactory(injected)).toBe(injected);
+    expect(resolveStripeFactory(undefined)).toBe(createDefaultStripe);
+    expect(resolveStripeFactory()).toBe(createDefaultStripe);
+  });
+
+  it("createDefaultStripe constructs a Stripe client", () => {
+    const client = createDefaultStripe(FAKE_STRIPE_SECRET_KEY);
+    expect(client).toBeTruthy();
+    expect(typeof client.products.create).toBe("function");
   });
 });

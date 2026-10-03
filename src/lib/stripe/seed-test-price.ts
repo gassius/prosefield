@@ -19,6 +19,18 @@ export type SeedTestPriceResult = {
   productName: string;
 };
 
+/** Default Stripe client factory (overridable in tests via createStripe option). */
+export function createDefaultStripe(secretKey: string): Stripe {
+  return new Stripe(secretKey);
+}
+
+/** Resolve which client factory to use — exported so both branches are testable. */
+export function resolveStripeFactory(
+  createStripe?: (secretKey: string) => Stripe,
+): (secretKey: string) => Stripe {
+  return createStripe ?? createDefaultStripe;
+}
+
 export async function seedTestPrice(
   secretKey: string | undefined,
   options: SeedTestPriceOptions = {},
@@ -35,9 +47,7 @@ export async function seedTestPrice(
     throw new Error(`Invalid PLAN_DISPLAY_PRICE: ${amountEnv}`);
   }
 
-  const createStripe =
-    options.createStripe ?? ((key: string) => new Stripe(key));
-  const stripe = createStripe(secretKey);
+  const stripe = resolveStripeFactory(options.createStripe)(secretKey);
 
   const product = await stripe.products.create({
     name,

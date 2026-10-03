@@ -26,6 +26,11 @@ export class StripeSetupError extends Error {
   }
 }
 
+/** Exported for branch coverage of Error vs non-Error throws. */
+export function formatUnknownError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export async function runStripeSetup(deps: StripeSetupDeps): Promise<void> {
   let content: string;
   try {
@@ -40,9 +45,7 @@ export async function runStripeSetup(deps: StripeSetupDeps): Promise<void> {
   try {
     assertStripeTestSecretKey(secretKey);
   } catch (error) {
-    throw new StripeSetupError(
-      error instanceof Error ? error.message : String(error),
-    );
+    throw new StripeSetupError(formatUnknownError(error));
   }
 
   const priceId = await deps.seedPriceId(secretKey);
@@ -51,7 +54,10 @@ export async function runStripeSetup(deps: StripeSetupDeps): Promise<void> {
   deps.log?.("Updated STRIPE_PRICE_ID in .env");
 
   const webhookSecret = (await deps.printWebhookSecret()).trim();
-  if (!webhookSecret.startsWith("whsec_") || webhookSecret.length <= "whsec_".length) {
+  if (
+    !webhookSecret.startsWith("whsec_") ||
+    webhookSecret.length <= "whsec_".length
+  ) {
     throw new StripeSetupError(
       "stripe-cli listen --print-secret did not return a whsec_… value. Is Docker running?",
     );

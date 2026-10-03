@@ -30,7 +30,7 @@ export function getEnvKey(content: string, key: string): string | undefined {
     if (!match || match[1] !== key) {
       continue;
     }
-    return stripWrappingQuotes(match[2] ?? "").trim();
+    return stripWrappingQuotes(match[2]).trim();
   }
   return undefined;
 }
