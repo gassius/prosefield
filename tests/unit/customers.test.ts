@@ -3,12 +3,17 @@ import type Stripe from "stripe";
 
 const customersCreate = vi.fn();
 const customersUpdate = vi.fn();
+const customersRetrieve = vi.fn();
 const runTransaction = vi.fn();
 const stripeCustomersGet = vi.fn();
 
 vi.mock("@/lib/stripe/server", () => ({
   getStripe: () => ({
-    customers: { create: customersCreate, update: customersUpdate },
+    customers: {
+      create: customersCreate,
+      update: customersUpdate,
+      retrieve: customersRetrieve,
+    },
   }),
 }));
 
@@ -40,8 +45,8 @@ describe("customers", () => {
     vi.resetModules();
   });
 
-  it("returns existing stripeCustomerId without calling Stripe create", async () => {
-    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<string>) => {
+  it("returns existing stripeCustomerId and skips update when email matches", async () => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
         get: async () => ({
           exists: true,
@@ -51,7 +56,11 @@ describe("customers", () => {
       };
       return fn(tx);
     });
-    customersUpdate.mockResolvedValue({ id: "cus_existing" });
+    customersRetrieve.mockResolvedValue({
+      id: "cus_existing",
+      email: "a@b.co",
+      deleted: false,
+    });
     const { getOrCreateStripeCustomer } = await import(
       "@/features/billing/customers"
     );
@@ -59,8 +68,34 @@ describe("customers", () => {
       getOrCreateStripeCustomer({ uid: "uid", email: "a@b.co" }),
     ).resolves.toBe("cus_existing");
     expect(customersCreate).not.toHaveBeenCalled();
+    expect(customersUpdate).not.toHaveBeenCalled();
+  });
+
+  it("updates email on existing customer only when it differs", async () => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => ({
+          exists: true,
+          data: () => ({ stripeCustomerId: "cus_existing" }),
+        }),
+        set: vi.fn(),
+      };
+      return fn(tx);
+    });
+    customersRetrieve.mockResolvedValue({
+      id: "cus_existing",
+      email: "old@b.co",
+      deleted: false,
+    });
+    customersUpdate.mockResolvedValue({ id: "cus_existing" });
+    const { getOrCreateStripeCustomer } = await import(
+      "@/features/billing/customers"
+    );
+    await expect(
+      getOrCreateStripeCustomer({ uid: "uid", email: "new@b.co" }),
+    ).resolves.toBe("cus_existing");
     expect(customersUpdate).toHaveBeenCalledWith("cus_existing", {
-      email: "a@b.co",
+      email: "new@b.co",
     });
   });
 
@@ -68,7 +103,7 @@ describe("customers", () => {
     customersCreate.mockResolvedValue({ id: "cus_new" });
     customersUpdate.mockResolvedValue({ id: "cus_new" });
     const set = vi.fn();
-    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<string>) => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
         get: async () => ({
           exists: true,
@@ -91,6 +126,7 @@ describe("customers", () => {
     expect(customersUpdate).toHaveBeenCalledWith("cus_new", {
       email: "a@b.co",
     });
+    expect(customersRetrieve).not.toHaveBeenCalled();
     expect(set).toHaveBeenCalled();
   });
 
@@ -98,7 +134,7 @@ describe("customers", () => {
     customersCreate.mockResolvedValue({ id: "cus_brand" });
     customersUpdate.mockResolvedValue({ id: "cus_brand" });
     const set = vi.fn();
-    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<string>) => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
         get: async () => ({ exists: false, data: () => undefined }),
         set,
@@ -114,10 +150,10 @@ describe("customers", () => {
     expect(set).toHaveBeenCalled();
   });
 
-  it("still returns customer id when email update fails", async () => {
+  it("still returns customer id when email update fails with a Stripe code", async () => {
     customersCreate.mockResolvedValue({ id: "cus_ok" });
-    customersUpdate.mockRejectedValue(new Error("stripe email fail"));
-    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<string>) => {
+    customersUpdate.mockRejectedValue({ code: "rate_limit", message: "slow" });
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
       const tx = {
         get: async () => ({ exists: false, data: () => undefined }),
         set: vi.fn(),

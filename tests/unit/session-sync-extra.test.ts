@@ -109,6 +109,7 @@ describe("session-sync coverage", () => {
       status: "complete",
       payment_status: "paid",
       subscription: { id: "sub_obj" },
+      created: 1_700_000_050,
     });
     retrieveSubscription.mockResolvedValue(sub);
     listSubscriptions.mockResolvedValue({ data: [sub] });
@@ -118,6 +119,9 @@ describe("session-sync coverage", () => {
         sessionId: "cs_test_x",
       }),
     ).toEqual({ synced: true });
+    expect(upsertSubscriptionProjection).toHaveBeenCalledWith(
+      expect.objectContaining({ eventCreated: 1_700_000_050 }),
+    );
   });
 
   it("syncFromCheckoutSession returns not_configured for placeholders", async () => {
@@ -182,11 +186,19 @@ describe("session-sync coverage", () => {
       }),
     ).toEqual({ view: "failed" });
 
+    getSubscriptionProjection.mockResolvedValue(null);
     expect(
       await configured.resolveBillingStatusView({
         uid: "u",
         sessionId: "not-a-cs-id",
       }),
-    ).toEqual({ view: "failed" });
+    ).toEqual({ view: "pending" });
+
+    expect(
+      await configured.resolveBillingStatusView({
+        uid: "u",
+        sessionId: "cs_foo",
+      }),
+    ).toEqual({ view: "pending" });
   });
 });

@@ -46,6 +46,7 @@ process.env.STRIPE_PRICE_ID = TEST_PRICE;
 
 const customersCreate = vi.fn();
 const customersUpdate = vi.fn();
+const customersRetrieve = vi.fn();
 const sessionsCreate = vi.fn();
 const sessionsList = vi.fn();
 const subscriptionsRetrieve = vi.fn();
@@ -56,7 +57,11 @@ vi.mock("@/lib/stripe/server", async () => {
   const real = new StripeCtor(TEST_SECRET);
   return {
     getStripe: () => ({
-      customers: { create: customersCreate, update: customersUpdate },
+      customers: {
+        create: customersCreate,
+        update: customersUpdate,
+        retrieve: customersRetrieve,
+      },
       checkout: { sessions: { create: sessionsCreate, list: sessionsList } },
       subscriptions: {
         retrieve: subscriptionsRetrieve,
@@ -131,11 +136,17 @@ describe("billing (emulators)", () => {
     __resetCookieStore();
     customersCreate.mockReset();
     customersUpdate.mockReset();
+    customersRetrieve.mockReset();
     sessionsCreate.mockReset();
     sessionsList.mockReset();
     subscriptionsRetrieve.mockReset();
     subscriptionsList.mockReset();
     customersUpdate.mockResolvedValue({});
+    customersRetrieve.mockResolvedValue({
+      id: "cus_existing",
+      email: "match@example.com",
+      deleted: false,
+    });
     sessionsList.mockResolvedValue({ data: [] });
     subscriptionsList.mockResolvedValue({ data: [] });
     process.env.STRIPE_SECRET_KEY = TEST_SECRET;

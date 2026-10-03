@@ -18,7 +18,7 @@ export type BillingStatusView =
   | "failed"
   | "not_configured";
 
-/** Stripe Checkout Session ids are `cs_test_…` or `cs_live_…`. */
+/** Stripe Checkout Session ids are `cs_test_…` or `cs_live_…` only. */
 export const CHECKOUT_SESSION_ID_PATTERN = /^cs_(test|live)_/;
 
 export function isValidCheckoutSessionId(
@@ -30,6 +30,8 @@ export function isValidCheckoutSessionId(
 /**
  * Server-verified Checkout Session sync (Architecture §5.4 delayed webhook fallback).
  * Requires client_reference_id === uid and session status === 'complete'.
+ * Stamps `lastStripeEventCreated` from Checkout Session `created` (Stripe clock),
+ * matching webhook `event.created` — never the server wall clock.
  */
 export async function syncFromCheckoutSession(input: {
   uid: string;
@@ -74,11 +76,14 @@ export async function syncFromCheckoutSession(input: {
 
   const retrieved = await stripe.subscriptions.retrieve(subscriptionId);
   const subscription = await resolveProjectionSubscription(retrieved);
+  // Stripe clock (session.created), same source family as webhook event.created.
+  const eventCreated =
+    typeof session.created === "number" ? session.created : null;
   await upsertSubscriptionProjection({
     uid: input.uid,
     subscription,
     lastEventId: `session_sync:${input.sessionId}`,
-    eventCreated: Math.floor(Date.now() / 1000),
+    eventCreated,
   });
 
   return { synced: true };
@@ -110,8 +115,9 @@ export async function resolveBillingStatusView(input: {
       if (result.reason === "uid_mismatch") {
         return { view: "failed" };
       }
+      // Invalid ids are not a payment failure — fall through to projection/pending.
       if (result.reason === "invalid_session_id") {
-        return { view: "failed" };
+        // intentionally not "failed"
       }
     } catch (error) {
       console.error("[billing] session sync failed", {

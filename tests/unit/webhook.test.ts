@@ -244,6 +244,66 @@ describe("webhook helpers", () => {
     expect(processEventWithDedupe).toHaveBeenCalled();
   });
 
+  it("falls back to legacy top-level invoice.subscription when parent is absent", async () => {
+    const { handleStripeEvent } = await import("@/features/billing/webhook");
+    const sub = activeSub("sub_legacy", "uid_legacy");
+    retrieveSubscription.mockResolvedValue(sub);
+    listSubscriptions.mockResolvedValue({ data: [sub] });
+
+    await handleStripeEvent({
+      id: "evt_inv_legacy",
+      type: "invoice.paid",
+      created: 8,
+      data: {
+        object: {
+          object: "invoice",
+          id: "in_legacy",
+          subscription: "sub_legacy",
+        },
+      },
+    } as unknown as Stripe.Event);
+    expect(retrieveSubscription).toHaveBeenCalledWith("sub_legacy");
+
+    retrieveSubscription.mockClear();
+    processEventWithDedupe.mockClear();
+    await handleStripeEvent({
+      id: "evt_inv_legacy_obj",
+      type: "invoice.payment_failed",
+      created: 9,
+      data: {
+        object: {
+          object: "invoice",
+          id: "in_legacy_obj",
+          subscription: { id: "sub_legacy" },
+        },
+      },
+    } as unknown as Stripe.Event);
+    expect(retrieveSubscription).toHaveBeenCalledWith("sub_legacy");
+  });
+
+  it("returns no_subscription_id for checkout.session without a subscription", async () => {
+    const { handleStripeEvent } = await import("@/features/billing/webhook");
+    const result = await handleStripeEvent({
+      id: "evt_cs_empty",
+      type: "checkout.session.completed",
+      created: 10,
+      data: {
+        object: {
+          object: "checkout.session",
+          id: "cs_empty",
+          client_reference_id: "uid_1",
+          subscription: null,
+        },
+      },
+    } as unknown as Stripe.Event);
+    expect(result).toEqual({
+      handled: true,
+      processed: false,
+      reason: "no_subscription_id",
+    });
+    expect(retrieveSubscription).not.toHaveBeenCalled();
+  });
+
   it("resolves subscription id from expanded checkout session and expanded invoice parent", async () => {
     const { handleStripeEvent } = await import("@/features/billing/webhook");
     const sub = {

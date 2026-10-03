@@ -11,6 +11,7 @@ export const runtime = "nodejs";
  * POST /api/stripe/webhook — raw body + signature verify (Architecture §5.4).
  * Never parse JSON before constructEvent.
  * Reject placeholder secrets before constructEvent when billing is unconfigured.
+ * Success body omits internal handler `reason` (no leak to callers).
  */
 export async function POST(request: Request) {
   if (!isBillingConfigured()) {
@@ -36,7 +37,6 @@ export async function POST(request: Request) {
       received: true,
       handled: result.handled,
       processed: result.processed,
-      reason: result.reason,
     });
   } catch (error) {
     console.error("[webhook] handler failed", {

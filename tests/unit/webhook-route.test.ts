@@ -57,6 +57,7 @@ describe("POST /api/stripe/webhook route", () => {
     handleStripeEvent.mockResolvedValue({
       handled: true,
       processed: true,
+      reason: "should_not_leak",
     });
 
     const { POST } = await import("@/app/api/stripe/webhook/route");
@@ -69,5 +70,12 @@ describe("POST /api/stripe/webhook route", () => {
     );
     expect(response.status).toBe(200);
     expect(constructStripeEvent).toHaveBeenCalledWith("raw", "sig");
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body).toEqual({
+      received: true,
+      handled: true,
+      processed: true,
+    });
+    expect(body).not.toHaveProperty("reason");
   });
 });

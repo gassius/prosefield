@@ -31,7 +31,9 @@ export function CheckoutButton(props: { label: string }) {
       }
 
       if (response.status === 409) {
-        router.replace("/documents");
+        // Stay on /subscribe with a clear next step — do not bounce to
+        // /documents (past_due/unpaid users would loop through the upgrade gate).
+        setError(siteCopy.subscribe.checkoutConflict);
         return;
       }
 

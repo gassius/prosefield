@@ -36,6 +36,31 @@ describe("session-sync", () => {
     vi.unstubAllEnvs();
   });
 
+  it("accepts only cs_test_ and cs_live_ session ids", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
+    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+
+    const { isValidCheckoutSessionId, syncFromCheckoutSession } = await import(
+      "@/features/billing/session-sync"
+    );
+    expect(isValidCheckoutSessionId("cs_test_abc")).toBe(true);
+    expect(isValidCheckoutSessionId("cs_live_abc")).toBe(true);
+    // Weakening to /^cs_/ must fail these:
+    expect(isValidCheckoutSessionId("cs_foo")).toBe(false);
+    expect(isValidCheckoutSessionId("cs_prod_1")).toBe(false);
+    expect(isValidCheckoutSessionId("not_a_session")).toBe(false);
+
+    for (const bad of ["cs_foo", "cs_prod_1", "evil"]) {
+      expect(
+        await syncFromCheckoutSession({ uid: "uid_1", sessionId: bad }),
+      ).toEqual({ synced: false, reason: "invalid_session_id" });
+    }
+    expect(retrieveSession).not.toHaveBeenCalled();
+  });
+
   it("rejects uid mismatch and projects when session is complete", async () => {
     vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
@@ -43,20 +68,15 @@ describe("session-sync", () => {
     const { __resetEnvCacheForTests } = await import("@/lib/env");
     __resetEnvCacheForTests();
 
-    const { syncFromCheckoutSession, isValidCheckoutSessionId } = await import(
+    const { syncFromCheckoutSession } = await import(
       "@/features/billing/session-sync"
     );
-    expect(isValidCheckoutSessionId("cs_test_abc")).toBe(true);
-    expect(isValidCheckoutSessionId("cs_live_abc")).toBe(true);
-    expect(isValidCheckoutSessionId("not_a_session")).toBe(false);
-    expect(
-      await syncFromCheckoutSession({ uid: "uid_1", sessionId: "evil" }),
-    ).toEqual({ synced: false, reason: "invalid_session_id" });
 
     retrieveSession.mockResolvedValue({
       client_reference_id: "other",
       status: "complete",
       subscription: "sub_1",
+      created: 1_700_000_000,
     });
     expect(
       await syncFromCheckoutSession({
@@ -77,6 +97,7 @@ describe("session-sync", () => {
       status: "complete",
       payment_status: "paid",
       subscription: "sub_1",
+      created: 1_700_000_123,
     });
     retrieveSubscription.mockResolvedValue(sub);
     listSubscriptions.mockResolvedValue({ data: [sub] });
@@ -91,6 +112,53 @@ describe("session-sync", () => {
       expect.objectContaining({
         uid: "uid_1",
         lastEventId: "session_sync:cs_test_1",
+        // Stripe clock from session.created — removing this stamp must fail.
+        eventCreated: 1_700_000_123,
+      }),
+    );
+  });
+
+  it("session-sync prefers an active sibling over the retrieved canceled sub", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
+    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+
+    const canceled = {
+      id: "sub_A",
+      status: "canceled",
+      customer: "cus_1",
+      cancel_at_period_end: false,
+      items: { data: [{ price: { id: "price_1" }, current_period_end: 1 }] },
+    };
+    const active = {
+      id: "sub_B",
+      status: "active",
+      customer: "cus_1",
+      cancel_at_period_end: false,
+      items: { data: [{ price: { id: "price_1" }, current_period_end: 1 }] },
+    };
+    retrieveSession.mockResolvedValue({
+      client_reference_id: "uid_1",
+      status: "complete",
+      payment_status: "paid",
+      subscription: "sub_A",
+      created: 1_700_000_200,
+    });
+    retrieveSubscription.mockResolvedValue(canceled);
+    listSubscriptions.mockResolvedValue({ data: [canceled, active] });
+
+    const { syncFromCheckoutSession } = await import(
+      "@/features/billing/session-sync"
+    );
+    await expect(
+      syncFromCheckoutSession({ uid: "uid_1", sessionId: "cs_test_sib" }),
+    ).resolves.toEqual({ synced: true });
+    expect(upsertSubscriptionProjection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subscription: expect.objectContaining({ id: "sub_B", status: "active" }),
+        eventCreated: 1_700_000_200,
       }),
     );
   });

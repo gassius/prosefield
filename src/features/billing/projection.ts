@@ -2,7 +2,10 @@ import "server-only";
 
 import { FieldValue, type Timestamp } from "firebase-admin/firestore";
 import type Stripe from "stripe";
-import { shouldReplaceSubscriptionProjection } from "@/features/billing/entitlement";
+import {
+  isEntitledStatus,
+  shouldReplaceSubscriptionProjection,
+} from "@/features/billing/entitlement";
 import { getEnv } from "@/lib/env";
 import { getAdminFirestore } from "@/lib/firebase/admin";
 
@@ -15,7 +18,13 @@ export type SubscriptionProjection = {
   cancelAtPeriodEnd: boolean;
   updatedAt: Timestamp | Date | FieldValue;
   lastEventId: string | null;
-  /** Monotonic Stripe event.created used to skip stale concurrent writes. */
+  /**
+   * Monotonic Stripe clock marker (`event.created` or Checkout Session
+   * `created`). Both webhook and session-sync use Stripe's clock — never
+   * the server wall clock — so concurrent deliveries can be ordered.
+   * This narrows retrieve-outside-transaction races; it does not eliminate
+   * them (event.created order ≠ retrieve order). Later events still win.
+   */
   lastStripeEventCreated?: number | null;
 };
 
@@ -53,6 +62,21 @@ export function subscriptionMatchesConfiguredPrice(
 }
 
 /**
+ * Skip projection only when the incoming sub would *grant* access on a
+ * mismatched price. Non-entitled statuses (canceled, unpaid, …) still project
+ * so old-price revocations cannot leave a stale `active` doc.
+ */
+export function shouldSkipMismatchedPriceGrant(
+  subscription: Stripe.Subscription,
+  priceId: string = getEnv().STRIPE_PRICE_ID,
+): boolean {
+  return (
+    isEntitledStatus(subscription.status) &&
+    !subscriptionMatchesConfiguredPrice(subscription, priceId)
+  );
+}
+
+/**
  * Build the Firestore projection fields from a canonical Stripe Subscription.
  */
 export function projectionFromSubscription(
@@ -76,8 +100,9 @@ export function projectionFromSubscription(
 }
 
 /**
- * Whether an incoming event should overwrite the stored projection given
- * retrieve-outside-transaction races (stale concurrent deliveries).
+ * Whether an incoming Stripe-clock marker should overwrite the stored one.
+ * Both sides must be Stripe clocks (`event.created` / Checkout `session.created`).
+ * See `lastStripeEventCreated` on {@link SubscriptionProjection}.
  */
 export function shouldAcceptStripeEventCreated(
   existingCreated: number | null | undefined,
@@ -96,7 +121,8 @@ export function shouldAcceptStripeEventCreated(
  * Upsert `subscriptions/{uid}` from a retrieved Stripe Subscription snapshot.
  * Shared by the webhook and `/billing/status` session-sync fallback.
  * Skips the write when a different, currently active subscription owns the doc,
- * when the price does not match STRIPE_PRICE_ID, or when the event is older.
+ * when an entitled mismatched-price sub would grant access, or when the event
+ * is older on the Stripe clock.
  */
 export async function upsertSubscriptionProjection(input: {
   uid: string;
@@ -104,7 +130,7 @@ export async function upsertSubscriptionProjection(input: {
   lastEventId: string | null;
   eventCreated?: number | null;
 }): Promise<{ written: boolean; reason?: string }> {
-  if (!subscriptionMatchesConfiguredPrice(input.subscription)) {
+  if (shouldSkipMismatchedPriceGrant(input.subscription)) {
     return { written: false, reason: "price_mismatch" };
   }
 
@@ -143,7 +169,7 @@ export async function upsertSubscriptionProjection(input: {
  * Transactional stripeEvents dedupe + projection upsert (Architecture §5.4).
  * Returns whether this event was newly processed. Always records the event when
  * new; may skip the projection write to protect an active different subscription,
- * reject a wrong price, or skip a stale concurrent event.
+ * reject an entitled mismatched-price grant, or skip a stale concurrent event.
  */
 export async function processEventWithDedupe(input: {
   eventId: string;
@@ -152,7 +178,7 @@ export async function processEventWithDedupe(input: {
   uid: string;
   subscription: Stripe.Subscription;
 }): Promise<{ processed: boolean; projected: boolean }> {
-  if (!subscriptionMatchesConfiguredPrice(input.subscription)) {
+  if (shouldSkipMismatchedPriceGrant(input.subscription)) {
     const db = getAdminFirestore();
     const eventRef = db.collection("stripeEvents").doc(input.eventId);
     return db.runTransaction(async (tx) => {

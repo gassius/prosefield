@@ -144,6 +144,45 @@ describe("projection write helpers", () => {
     expect(txSet).toHaveBeenCalledTimes(1);
   });
 
+  it("processEventWithDedupe skips stale event when lastStripeEventCreated is newer", async () => {
+    const txSet = vi.fn();
+    let getCalls = 0;
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => {
+          getCalls += 1;
+          if (getCalls === 1) {
+            return { exists: false };
+          }
+          return {
+            exists: true,
+            data: () => ({
+              stripeSubscriptionId: "sub_1",
+              status: "active",
+              lastStripeEventCreated: 200,
+            }),
+          };
+        },
+        set: txSet,
+      };
+      return fn(tx);
+    });
+    const { processEventWithDedupe } = await loadWithPrice();
+
+    await expect(
+      processEventWithDedupe({
+        eventId: "evt_stale_webhook",
+        eventType: "customer.subscription.updated",
+        eventCreated: 100,
+        uid: "uid",
+        subscription,
+      }),
+    ).resolves.toEqual({ processed: true, projected: false });
+
+    // Dedupe/event write only — no subscriptions/{uid} projection write.
+    expect(txSet).toHaveBeenCalledTimes(1);
+  });
+
   it("upsertSubscriptionProjection skips overwrite of active other subscription", async () => {
     get.mockResolvedValue({
       exists: true,
@@ -166,11 +205,11 @@ describe("projection write helpers", () => {
     expect(set).not.toHaveBeenCalled();
   });
 
-  it("skips projection when stripePriceId does not match STRIPE_PRICE_ID", async () => {
+  it("skips entitled grant when stripePriceId does not match STRIPE_PRICE_ID", async () => {
     get.mockResolvedValue({ exists: false });
     const { upsertSubscriptionProjection, processEventWithDedupe } =
       await loadWithPrice();
-    const wrongPrice = {
+    const wrongPriceActive = {
       ...subscription,
       items: {
         data: [{ price: { id: "price_other" }, current_period_end: 100 }],
@@ -180,7 +219,7 @@ describe("projection write helpers", () => {
     await expect(
       upsertSubscriptionProjection({
         uid: "uid",
-        subscription: wrongPrice,
+        subscription: wrongPriceActive,
         lastEventId: "evt",
       }),
     ).resolves.toEqual({ written: false, reason: "price_mismatch" });
@@ -200,10 +239,90 @@ describe("projection write helpers", () => {
         eventType: "customer.subscription.updated",
         eventCreated: 1,
         uid: "uid",
-        subscription: wrongPrice,
+        subscription: wrongPriceActive,
       }),
     ).resolves.toEqual({ processed: true, projected: false });
     expect(txSet).toHaveBeenCalledTimes(1);
+  });
+
+  it("processEventWithDedupe no-ops duplicate on price-mismatch grant path", async () => {
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => ({ exists: true }),
+        set: vi.fn(),
+      };
+      return fn(tx);
+    });
+    const { processEventWithDedupe } = await loadWithPrice();
+    const wrongPriceActive = {
+      ...subscription,
+      items: {
+        data: [{ price: { id: "price_other" }, current_period_end: 100 }],
+      },
+    } as unknown as Stripe.Subscription;
+
+    await expect(
+      processEventWithDedupe({
+        eventId: "evt_dup_price",
+        eventType: "customer.subscription.updated",
+        eventCreated: 1,
+        uid: "uid",
+        subscription: wrongPriceActive,
+      }),
+    ).resolves.toEqual({ processed: false, projected: false });
+  });
+
+  it("projects old-price canceled subscription to revoke access", async () => {
+    get.mockResolvedValue({
+      exists: true,
+      data: () => ({
+        stripeSubscriptionId: "sub_old",
+        status: "active",
+        stripePriceId: "price_old",
+      }),
+    });
+    const { upsertSubscriptionProjection, processEventWithDedupe } =
+      await loadWithPrice();
+    const oldPriceCanceled = {
+      ...subscription,
+      id: "sub_old",
+      status: "canceled",
+      items: {
+        data: [{ price: { id: "price_old" }, current_period_end: 100 }],
+      },
+    } as unknown as Stripe.Subscription;
+
+    await expect(
+      upsertSubscriptionProjection({
+        uid: "uid",
+        subscription: oldPriceCanceled,
+        lastEventId: "evt_cancel",
+        eventCreated: 50,
+      }),
+    ).resolves.toEqual({ written: true });
+    expect(set).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "canceled", stripePriceId: "price_old" }),
+      { merge: true },
+    );
+
+    const txSet = vi.fn();
+    runTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
+      const tx = {
+        get: async () => ({ exists: false }),
+        set: txSet,
+      };
+      return fn(tx);
+    });
+    await expect(
+      processEventWithDedupe({
+        eventId: "evt_cancel_dedupe",
+        eventType: "customer.subscription.deleted",
+        eventCreated: 51,
+        uid: "uid",
+        subscription: oldPriceCanceled,
+      }),
+    ).resolves.toEqual({ processed: true, projected: true });
+    expect(txSet).toHaveBeenCalledTimes(2);
   });
 
   it("skips stale concurrent event when lastStripeEventCreated is newer", async () => {
