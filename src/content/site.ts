@@ -3,10 +3,13 @@
  * hard-code them. FEATURE_CUSTOMER_PORTAL gates Art Direction 4.5 claims.
  */
 
+/** Shared hero + footer tagline (conversion-facing brand line). */
+export const brandTagline = "A focused home for your writing" as const;
+
 export const siteCopy = {
   brand: {
     name: "Prosefield",
-    promise: "Make space for better writing.",
+    promise: brandTagline,
   },
   header: {
     signIn: "Sign in",
@@ -43,11 +46,11 @@ export const siteCopy = {
     skipToContent: "Skip to content",
   },
   home: {
-    eyebrow: "A focused home for your writing",
+    eyebrow: brandTagline,
     headline: "Turn scattered thoughts into something worth reading.",
     supporting:
       "Prosefield gives your ideas a quiet, capable workspace—from the rough first line to the draft you are ready to share.",
-    explore: "Explore the editor",
+    explore: "Why Prosefield",
     cancelAnytime: "Cancel anytime",
   },
   assurance: {
@@ -114,19 +117,19 @@ export const siteCopy = {
         id: "private",
         question: "Are my documents private?",
         answer:
-          "Yes. Document access is checked on the server. The browser cannot read your Firestore data directly.",
+          "Yes. Your documents stay private to your account—only you can open and edit them.",
       },
       {
         id: "subscribe",
         question: "What happens after I subscribe?",
         answer:
-          "Stripe confirms payment with a signed webhook. Only then does Prosefield unlock your document workspace.",
+          "You get access to an incredible text editor that keeps you focused, with your private documents waiting whenever you return.",
       },
       {
         id: "mobile",
         question: "Does Prosefield work on mobile?",
         answer:
-          "Yes. The landing page, document list and editor are built to work on phones, tablets and desktops.",
+          "Yes. The editor works on phones, tablets and desktops, so you can write wherever you are.",
       },
     ],
     cancelItem: {
@@ -177,7 +180,7 @@ export const siteCopy = {
     navLabel: "Footer",
     privacyHeading: "Privacy",
     privacyBody:
-      "Prosefield stores your account and documents in Firebase. Access is enforced on the server; there is no browser Firestore access.",
+      "Your writing stays private to your account. We keep it secure so only you can open and edit your documents.",
     termsHeading: "Terms",
     termsBody:
       "Prosefield is a take-home demonstration product. Subscriptions use Stripe test mode only.",

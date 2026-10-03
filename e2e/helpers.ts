@@ -114,7 +114,11 @@ export async function lookupUidByEmail(
   return body.localId;
 }
 
-/** Test-only shortcut: write the entitlement projection directly (Architecture §13). */
+/**
+ * Test-only shortcut: write the entitlement projection directly (Architecture §13).
+ * CI never talks to Stripe — this mocks a verified webhook/session-sync grant.
+ * No production code path exposes this write.
+ */
 export async function seedSubscriptionProjection(
   uid: string,
   status: string,

@@ -137,6 +137,31 @@ describe("document allow-list and bounds", () => {
         content: [{ type: "horizontalRule" }],
       }),
     ).toThrow(/not allowed/);
+    // Finding set 4/5 (#25): unknown heading attrs are rejected, not dropped.
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "doc",
+        content: [
+          {
+            type: "heading",
+            attrs: { level: 2, weird: true },
+            content: [],
+          },
+        ],
+      }),
+    ).toThrow(/unexpected attrs on 'heading'/);
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "doc",
+        content: [{ type: "heading", attrs: "nope", content: [] }],
+      }),
+    ).toThrow(/heading attrs must be an object/);
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "doc",
+        content: [{ type: "heading", content: [] }],
+      }),
+    ).toThrow(/heading level/);
   });
 
   it("accepts TipTap orderedList attrs (start + type null) the editor emits", () => {

@@ -90,6 +90,18 @@ export const ALLOWED_MARK_ATTR_KEYS: Readonly<Record<string, readonly string[]>>
     link: ["href"],
   };
 
+/**
+ * Attr keys `assertAllowedTiptapJson` deliberately handles.
+ * Drift tests compare TipTap `getSchema` attrs against this map.
+ * Subset of {@link ALLOWED_NODE_ATTR_KEYS} for nodes that declare attrs.
+ */
+export const VALIDATOR_HANDLED_ATTRS: Readonly<
+  Record<string, readonly string[]>
+> = {
+  heading: ["level"],
+  orderedList: ["start", "type"],
+};
+
 export type TiptapJson = {
   type: string;
   content?: TiptapJson[];

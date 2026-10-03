@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { siteCopy } from "../src/content/site";
 import {
   expectSignedIn,
   loginViaUi,
@@ -165,7 +166,7 @@ test("h2 and h3 headings save and persist after reload (bug 869fbe1dm)", async (
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("status")).toHaveText("Saved");
   // Next.js route announcer may expose a generic alert; assert save did not fail.
-  await expect(page.getByText("Save failed. Try again.")).toHaveCount(0);
+  await expect(page.getByText(siteCopy.documents.saveFailed)).toHaveCount(0);
 
   const url = page.url();
   await page.reload();
@@ -177,4 +178,40 @@ test("h2 and h3 headings save and persist after reload (bug 869fbe1dm)", async (
     page.getByRole("heading", { level: 3, name: "Subsection title" }),
   ).toBeVisible();
   await expect(page).toHaveURL(url);
+});
+
+test("numbered list saves and persists after reload", async ({ page }) => {
+  await registerActiveSubscriber(page);
+  await page.getByRole("button", { name: "New document" }).click();
+  await expect(page).toHaveURL(/\/documents\/[^/]+/);
+
+  const editor = page.locator("[contenteditable='true']").first();
+  await editor.click();
+  await page.getByRole("button", { name: "Numbered list" }).click();
+  await expect(editor).toBeFocused();
+  await editor.pressSequentially("First item");
+  await page.keyboard.press("Enter");
+  await editor.pressSequentially("Second item");
+
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status")).toHaveText("Saved");
+  await expect(page.getByText(siteCopy.documents.saveFailed)).toHaveCount(0);
+
+  const url = page.url();
+  await page.reload();
+  await expect(page.getByText("First item")).toBeVisible();
+  await expect(page.getByText("Second item")).toBeVisible();
+  await expect(page.locator("ol")).toBeVisible();
+  await expect(page).toHaveURL(url);
+});
+
+test("invalid documentId path returns 404", async ({ page }) => {
+  await registerActiveSubscriber(page);
+  // Next 16.3.7 passes params.documentId as undecoded "a%2Fb" (Admin accepts
+  // that id). documentIdSchema → notFound/404. Without the check this E2E
+  // still 404s on a miss — bite is tests/unit/document-page.test.ts.
+  // (Do not use %2E%2E — browsers normalize ".." out of the URL.)
+  const response = await page.goto("/documents/a%2Fb");
+  expect(response?.status()).toBe(404);
 });

@@ -18,9 +18,5 @@ describe("document page wiring", () => {
     expect(source).not.toMatch(/contentAllowed=\{\s*false\s*\}/);
   });
 
-  it("validates documentId before Firestore lookup and 404s on failure", () => {
-    expect(source).toContain("documentIdSchema.safeParse(documentId)");
-    expect(source).toMatch(/if\s*\(\s*!documentIdSchema\.safeParse/);
-    expect(source).toContain("notFound()");
-  });
+  // documentId validation bite → tests/unit/document-page.test.ts (finding 14).
 });
