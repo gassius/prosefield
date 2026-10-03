@@ -71,10 +71,12 @@ test("happy path: landing → register → mocked pay → create/edit/save/renam
     "Untitled document",
   );
 
-  // --- Rename ---
+  // --- Rename (wait for server confirm: input re-enabled, no alert) ---
   const title = page.getByLabel("Document title");
   await title.fill("Happy path notes");
   await title.blur();
+  await expect(title).toBeEnabled();
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(title).toHaveValue("Happy path notes");
 
   // --- Edit + save ---
@@ -84,6 +86,12 @@ test("happy path: landing → register → mocked pay → create/edit/save/renam
   await expect(page.getByText("Unsaved changes")).toBeVisible();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("status")).toHaveText("Saved");
+
+  // Persistence bite: reload must still show rename + body from the server.
+  await page.reload();
+  await expect(page.getByLabel("Document title")).toHaveValue(
+    "Happy path notes",
+  );
   await expect(page.getByText("Seeded subscriber can write.")).toBeVisible();
 
   // --- Delete ---

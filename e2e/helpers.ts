@@ -147,21 +147,3 @@ export async function seedSubscriptionProjection(
     );
   }
 }
-
-/**
- * Seeded test-only active subscriber fixture (Architecture §13).
- * Registers via the UI, then writes `status: active` into the emulator
- * projection — the CI stand-in for a successful Stripe Checkout payment.
- */
-export async function seedActiveSubscriber(
-  page: Page,
-  options?: { emailPrefix?: string; password?: string },
-): Promise<{ email: string; password: string; uid: string }> {
-  const email = uniqueEmail(options?.emailPrefix ?? "subscriber");
-  const password = options?.password ?? "password-123";
-  await registerViaUi(page, email, password);
-  await expectSignedIn(page, email);
-  const uid = await lookupUidByEmail(email, password);
-  await seedSubscriptionProjection(uid, "active");
-  return { email, password, uid };
-}

@@ -6,17 +6,54 @@ function readme(): string {
   return readFileSync(path.resolve(process.cwd(), "README.md"), "utf8");
 }
 
+function packageScripts(): Set<string> {
+  const pkg = JSON.parse(
+    readFileSync(path.resolve(process.cwd(), "package.json"), "utf8"),
+  ) as { scripts: Record<string, string> };
+  return new Set(Object.keys(pkg.scripts));
+}
+
+/** Collect `pnpm <name>` tokens from fenced blocks and inline backticks. */
+function pnpmScriptNames(text: string): string[] {
+  const names = new Set<string>();
+  for (const match of text.matchAll(/`pnpm ([a-zA-Z0-9:_-]+)`/g)) {
+    names.add(match[1]!);
+  }
+  for (const match of text.matchAll(/^pnpm ([a-zA-Z0-9:_-]+)/gm)) {
+    names.add(match[1]!);
+  }
+  return [...names];
+}
+
 describe("README technical sections (P5a)", () => {
-  it("quick start uses nvm, host pnpm dev, and Docker Compose backend only", () => {
+  it("quick start uses nvm install, corepack, host pnpm dev, and Docker Compose backend only", () => {
     const text = readme();
-    expect(text).toMatch(/nvm use/);
-    expect(text).toMatch(/\.nvmrc/);
-    expect(text).toMatch(/pnpm install/);
-    expect(text).toMatch(/pnpm dev/);
-    expect(text).toMatch(/docker compose up -d --wait/);
-    expect(text).toMatch(/do not install the Firebase CLI on the host/i);
-    expect(text).toMatch(/no global `firebase-tools`/);
-    expect(text).toMatch(/Emulator Suite runtime/);
+    const start = text.indexOf("## Quick start");
+    const end = text.indexOf("## Architecture overview");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const section = text.slice(start, end);
+    expect(section).toMatch(/nvm install/);
+    expect(section).toMatch(/\.nvmrc/);
+    expect(section).toMatch(/corepack enable/);
+    // Pin the host frontend fence (not the optional-step prose mention of `pnpm dev`).
+    expect(section).toMatch(/```bash\n\s*pnpm install\n\s*pnpm dev\n\s*```/);
+    expect(section).toMatch(/docker compose up -d --wait/);
+    expect(section).toMatch(/pnpm backend:up/);
+    expect(section).toMatch(/pnpm backend:down/);
+    expect(section).toMatch(/pnpm backend:logs/);
+  });
+
+  it("prerequisites keep Docker-only backend and no host Firebase CLI", () => {
+    const text = readme();
+    const start = text.indexOf("## Prerequisites");
+    const end = text.indexOf("## Quick start");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const section = text.slice(start, end);
+    expect(section).toMatch(/do not install the Firebase CLI on the host/i);
+    expect(section).toMatch(/no global `firebase-tools`/);
+    expect(section).toMatch(/Emulator Suite runtime/);
   });
 
   it("documents architecture overview with core stack choices", () => {
@@ -48,7 +85,7 @@ describe("README technical sections (P5a)", () => {
     expect(section).toMatch(/FEATURE_CUSTOMER_PORTAL/);
   });
 
-  it("Stripe 4242 section still points at stripe-cli via Compose", () => {
+  it("Stripe 4242 section uses Compose app+stripe profiles without host pnpm dev", () => {
     const text = readme();
     const start = text.indexOf("### Manual Stripe test payment (4242)");
     const end = text.indexOf("## Known limitations");
@@ -60,5 +97,20 @@ describe("README technical sections (P5a)", () => {
       /docker compose --profile app --profile stripe up/,
     );
     expect(section).toMatch(/pnpm stripe:setup/);
+    expect(section).toMatch(/Skip host `pnpm dev`/);
+  });
+
+  it("every pnpm <script> mentioned in README exists in package.json", () => {
+    const text = readme();
+    const scripts = packageScripts();
+    // Not package.json scripts — Corepack / pnpm builtins / playwright CLI.
+    const allowlist = new Set(["install", "exec"]);
+    for (const name of pnpmScriptNames(text)) {
+      if (allowlist.has(name)) continue;
+      expect(
+        scripts.has(name),
+        `README mentions \`pnpm ${name}\` but package.json has no such script`,
+      ).toBe(true);
+    }
   });
 });

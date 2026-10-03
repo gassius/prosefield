@@ -4,8 +4,8 @@ Local-first writing workspace. Specs live in [`docs/architecture.md`](docs/archi
 
 ## Prerequisites
 
-- **nvm** (recommended) — run `nvm use` at the repo root so the shell matches [`.nvmrc`](.nvmrc)
-- **Node** — exact version from [`.nvmrc`](.nvmrc) (`nvm use`)
+- **nvm** (recommended) — run `nvm install` at the repo root so the shell matches [`.nvmrc`](.nvmrc)
+- **Node** — exact version from [`.nvmrc`](.nvmrc) (`nvm install` reads it and switches)
 - **pnpm** — via Corepack (`corepack enable`)
 - **Docker + Compose** — required for the backend (Auth, Firestore, Emulator UI). The Emulator Suite runtime and `firebase-tools` stay inside the Compose image — **do not install the Firebase CLI on the host**.
 
@@ -13,9 +13,10 @@ Nothing else is needed on the host. Emulators run only inside Docker (no global 
 
 ## Quick start
 
-1. `nvm use` (reads [`.nvmrc`](.nvmrc))
-2. Optional: `cp .env.example .env` and paste a Stripe **test** key (`sk_test_…` or `rk_test_…`) when you need real Stripe CLI / billing work. A Stripe test account is free. `pnpm dev` also starts with built-in local defaults if `.env` is missing.
-3. Frontend on the host (no backend required):
+1. `nvm install` (reads [`.nvmrc`](.nvmrc) and switches to that Node)
+2. `corepack enable`
+3. Optional: `cp .env.example .env` and paste a Stripe **test** key (`sk_test_…` or `rk_test_…`) when you need real Stripe CLI / billing work. A Stripe test account is free. `pnpm dev` also starts with built-in local defaults if `.env` is missing.
+4. Frontend on the host (no backend required):
 
    ```bash
    pnpm install
@@ -24,7 +25,7 @@ Nothing else is needed on the host. Emulators run only inside Docker (no global 
 
    Open http://localhost:3000. Pages render with the backend down; features that need Auth/Firestore degrade until the backend is up.
 
-4. Backend via Docker Compose only — copy `.env.example` to `.env` first (Compose reads Stripe placeholders even when the `stripe` profile is off):
+5. Backend via Docker Compose only — copy `.env.example` to `.env` first (Compose reads Stripe placeholders even when the `stripe` profile is off):
 
    ```bash
    cp -n .env.example .env
@@ -68,14 +69,13 @@ CI never needs real Stripe credentials or network. For a local end-to-end paymen
 
 1. Put your `sk_test_…` or `rk_test_…` in `.env` as `STRIPE_SECRET_KEY` (never commit `.env`).
 2. Run `pnpm stripe:setup` — seeds a Price, writes `STRIPE_PRICE_ID` into `.env`, runs `docker compose run --rm stripe-cli listen --print-secret`, and writes `STRIPE_WEBHOOK_SECRET` into `.env` (updates in place; never prints secret values). Requires Docker. Per [Stripe CLI docs](https://docs.stripe.com/cli/listen), the webhook signing secret does **not** change between `listen --print-secret` and a later `listen --forward-to` with the same API key, so this value matches the long-running `stripe` profile listener.
-3. Start the app on the host (`pnpm dev`) and emulators (`pnpm backend:up`).
-4. Forward webhooks with the Stripe CLI (needs the `app` profile, or point `--forward-to` at `host.docker.internal:3000` if the CLI reaches the host):
+3. Start Next.js **in Docker** with the Stripe CLI forwarder (both own the Compose `app` / `stripe` profiles). Skip host `pnpm dev` — the `app` service also binds `:3000`:
 
    ```bash
    docker compose --profile app --profile stripe up
    ```
 
-5. Register, open `/subscribe`, continue to Checkout, pay with `4242 4242 4242 4242` (any future expiry, any CVC). You should land on `/billing/status`, then `/documents` once the verified webhook (or session-sync fallback) projects `status: active`.
+4. Register, open `/subscribe`, continue to Checkout, pay with `4242 4242 4242 4242` (any future expiry, any CVC). You should land on `/billing/status`, then `/documents` once the verified webhook (or session-sync fallback) projects `status: active`.
 
 `/subscribe` stays **Billing is not configured** until all three of `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET` are set to non-placeholder values. Without them the app still boots: plan display falls back to `PLAN_DISPLAY_*` (€8/month).
 
