@@ -71,6 +71,52 @@ describe("editor toolbar aria-pressed", () => {
       "true",
     );
   });
+
+  it("Heading 2 and Heading 3 buttons wire toggleHeading levels", async () => {
+    const user = userEvent.setup();
+    const toggleHeading = vi.fn(() => chain);
+    const chain = {
+      focus: () => chain,
+      toggleHeading,
+      toggleBold: () => chain,
+      toggleItalic: () => chain,
+      toggleBulletList: () => chain,
+      toggleOrderedList: () => chain,
+      toggleBlockquote: () => chain,
+      undo: () => chain,
+      redo: () => chain,
+      run: vi.fn(),
+    };
+    const editor = {
+      isActive: (name: string, attrs?: { level?: number }) =>
+        name === "heading" && attrs?.level === 2,
+      chain: () => chain,
+      can: () => ({ undo: () => true, redo: () => false }),
+    };
+
+    render(
+      <EditorToolbar
+        editor={editor as never}
+        saveStatus={"unsaved" as SaveStatus}
+        onSave={() => undefined}
+        isMac={false}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Heading 2" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Heading 3" })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+
+    await user.click(screen.getByRole("button", { name: "Heading 2" }));
+    expect(toggleHeading).toHaveBeenCalledWith({ level: 2 });
+    await user.click(screen.getByRole("button", { name: "Heading 3" }));
+    expect(toggleHeading).toHaveBeenCalledWith({ level: 3 });
+  });
 });
 
 describe("document list and empty state", () => {

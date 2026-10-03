@@ -277,4 +277,126 @@ describe("DocumentEditor (real component)", () => {
       expect(screen.getByRole("alert")).toHaveTextContent("Title is required");
     });
   });
+
+  it("save flow with headings sends plain JSON Server Actions accept (bug 869fbe1dm)", async () => {
+    const user = userEvent.setup();
+    const { DocumentEditor } = await import(
+      "@/components/editor/document-editor"
+    );
+    const { documentContentSchema } = await import(
+      "@/features/documents/schemas"
+    );
+
+    render(
+      <DocumentEditor
+        documentId="doc1abcABC1234567890"
+        initialTitle="Draft"
+        initialContent={EMPTY_DOCUMENT_CONTENT}
+        contentAllowed
+        onEditorReady={(editor) => {
+          latestEditor = editor;
+        }}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(latestEditor).toBeTruthy();
+    });
+
+    latestEditor!.commands.setContent({
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "Section" }],
+        },
+        {
+          type: "heading",
+          attrs: { level: 3 },
+          content: [{ type: "text", text: "Subsection" }],
+        },
+      ],
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
+    });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => {
+      expect(saveDocumentAction).toHaveBeenCalled();
+    });
+
+    const payload = saveDocumentAction.mock.calls.at(-1)?.[0] as {
+      content: {
+        content?: Array<{ type?: string; attrs?: { level?: number } }>;
+      };
+    };
+    const headingNodes = (payload.content.content ?? []).filter(
+      (node) => node.type === "heading",
+    );
+    expect(headingNodes).toHaveLength(2);
+    for (const node of headingNodes) {
+      expect(Object.getPrototypeOf(node.attrs ?? null)).toBe(Object.prototype);
+    }
+    expect(headingNodes.map((node) => node.attrs?.level)).toEqual([2, 3]);
+    expect(documentContentSchema.safeParse(payload.content).success).toBe(true);
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent("Saved");
+    });
+  });
+});
+
+/**
+ * Attrs the validator deliberately handles. Any new editor attr must be listed
+ * here and wired in `assertAllowedTiptapJson`, or this suite fails.
+ */
+const KNOWN_ATTRS: Record<string, string[]> = {
+  heading: ["level"],
+  orderedList: ["start", "type"],
+};
+
+describe("schema drift (derived from editor extensions)", () => {
+  it("editor nodes/marks equal the allow-lists", async () => {
+    const { getSchema } = await import("@tiptap/core");
+    const { createProsefieldStarterKit } = await import(
+      "@/features/documents/editor-extensions"
+    );
+    const { ALLOWED_MARK_TYPES, ALLOWED_NODE_TYPES } = await import(
+      "@/features/documents/schemas"
+    );
+
+    const schema = getSchema([createProsefieldStarterKit()]);
+    expect(Object.keys(schema.nodes).sort()).toEqual(
+      [...ALLOWED_NODE_TYPES].sort(),
+    );
+    expect(Object.keys(schema.marks).sort()).toEqual(
+      [...ALLOWED_MARK_TYPES].sort(),
+    );
+  });
+
+  it("every attr the editor can emit is handled by the validator", async () => {
+    const { getSchema } = await import("@tiptap/core");
+    const { createProsefieldStarterKit } = await import(
+      "@/features/documents/editor-extensions"
+    );
+
+    const schema = getSchema([createProsefieldStarterKit()]);
+    for (const [name, type] of Object.entries(schema.nodes)) {
+      expect(Object.keys(type.spec.attrs ?? {}).sort(), name).toEqual(
+        KNOWN_ATTRS[name] ?? [],
+      );
+    }
+    for (const [name, type] of Object.entries(schema.marks)) {
+      expect(Object.keys(type.spec.attrs ?? {}), name).toEqual([]);
+    }
+  });
+
+  it("editor heading levels equal the allowed levels", async () => {
+    const { ALLOWED_HEADING_LEVELS, prosefieldStarterKitOptions } =
+      await import("@/features/documents/schemas");
+    expect([...prosefieldStarterKitOptions.heading.levels]).toEqual([
+      ...ALLOWED_HEADING_LEVELS,
+    ]);
+  });
 });
