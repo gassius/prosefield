@@ -1,15 +1,111 @@
 import { describe, expect, it } from "vitest";
 import {
+  ALLOWED_MARK_TYPES,
+  ALLOWED_NODE_TYPES,
+  assertAllowedLinkHref,
   assertAllowedTiptapJson,
+  assertContentJsonDepth,
+  contentValidationMessage,
   createDocumentInputSchema,
   DOCUMENT_CONTENT_MAX_BYTES,
+  DOCUMENT_CONTENT_MAX_DEPTH,
+  DOCUMENT_LINKS_ENABLED,
   documentContentSchema,
   documentIdSchema,
   documentTitleSchema,
   EMPTY_DOCUMENT_CONTENT,
   serialisedContentSize,
+  type TiptapJson,
 } from "@/features/documents/schemas";
 import * as documentSchemas from "@/features/documents/schemas";
+
+/** Nest `listNesting` bulletList wrappers around a paragraph+text leaf. */
+function nestedBulletListDoc(listNesting: number): TiptapJson {
+  let inner: TiptapJson = {
+    type: "paragraph",
+    content: [{ type: "text", text: "x" }],
+  };
+  for (let i = 0; i < listNesting; i += 1) {
+    inner = {
+      type: "bulletList",
+      content: [{ type: "listItem", content: [inner] }],
+    };
+  }
+  return { type: "doc", content: [inner] };
+}
+
+/** Build a JSON array chain whose innermost container sits at `depth` (root = 0). */
+function nestedArrayChain(depth: number): unknown {
+  let value: unknown = [];
+  for (let i = 0; i < depth; i += 1) {
+    value = [value];
+  }
+  return value;
+}
+
+const REPRESENTATIVE_VALID_DOCUMENT: TiptapJson = {
+  type: "doc",
+  content: [
+    {
+      type: "heading",
+      attrs: { level: 2 },
+      content: [{ type: "text", text: "Chapter", marks: [{ type: "bold" }] }],
+    },
+    {
+      type: "heading",
+      attrs: { level: 3 },
+      content: [
+        { type: "text", text: "Section", marks: [{ type: "italic" }] },
+      ],
+    },
+    {
+      type: "paragraph",
+      content: [
+        { type: "text", text: "Lead-in" },
+        { type: "hardBreak" },
+        { type: "text", text: "continued" },
+      ],
+    },
+    {
+      type: "bulletList",
+      content: [
+        {
+          type: "listItem",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "bullet" }],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      type: "orderedList",
+      attrs: { start: 1, type: null },
+      content: [
+        {
+          type: "listItem",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "first" }],
+            },
+          ],
+        },
+      ],
+    },
+    {
+      type: "blockquote",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "quoted" }],
+        },
+      ],
+    },
+  ],
+};
 
 describe("document allow-list and bounds", () => {
   it("accepts documents with h2 and with h3 (bug 869fbe1dm)", () => {
@@ -193,7 +289,8 @@ describe("document allow-list and bounds", () => {
     expect(documentContentSchema.safeParse(plain).success).toBe(true);
   });
 
-  it("rejects link, underline, codeBlock, and heading level 1", () => {
+  it("rejects link marks while links are disabled", () => {
+    expect(DOCUMENT_LINKS_ENABLED).toBe(false);
     expect(() =>
       assertAllowedTiptapJson({
         type: "doc",
@@ -210,8 +307,114 @@ describe("document allow-list and bounds", () => {
           },
         ],
       }),
-    ).toThrow(/link/);
+    ).toThrow(/link marks are disabled/);
+  });
 
+  it("rejects javascript: href when links are enabled", () => {
+    expect(() =>
+      assertAllowedLinkHref("javascript:alert(1)"),
+    ).toThrow(/scheme/);
+    expect(() =>
+      assertAllowedTiptapJson(
+        {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "x",
+                  marks: [
+                    {
+                      type: "link",
+                      attrs: { href: "javascript:alert(1)" },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        "content",
+        { linksEnabled: true },
+      ),
+    ).toThrow(/scheme/);
+    expect(
+      assertAllowedTiptapJson(
+        {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "x",
+                  marks: [
+                    { type: "link", attrs: { href: "https://example.com" } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+        "content",
+        { linksEnabled: true },
+      ),
+    ).toMatchObject({
+      content: [
+        {
+          content: [
+            {
+              marks: [{ type: "link", attrs: { href: "https://example.com" } }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(assertAllowedLinkHref("mailto:a@b.test")).toBe("mailto:a@b.test");
+    expect(assertAllowedLinkHref("http://example.com")).toBe(
+      "http://example.com",
+    );
+    expect(() => assertAllowedLinkHref("")).toThrow(/required/);
+    expect(() => assertAllowedLinkHref("not a url")).toThrow(/valid URL/);
+    expect(() =>
+      assertAllowedTiptapJson(
+        {
+          type: "text",
+          text: "x",
+          marks: [{ type: "link" }],
+        },
+        "content",
+        { linksEnabled: true },
+      ),
+    ).toThrow(/requires attrs/);
+    expect(() =>
+      assertAllowedTiptapJson(
+        {
+          type: "text",
+          text: "x",
+          marks: [{ type: "link", attrs: "nope" }],
+        },
+        "content",
+        { linksEnabled: true },
+      ),
+    ).toThrow(/link attrs must be an object/);
+    expect(() =>
+      assertAllowedTiptapJson(
+        {
+          type: "text",
+          text: "x",
+          marks: [{ type: "link", attrs: { href: "https://a.test", target: "_blank" } }],
+        },
+        "content",
+        { linksEnabled: true },
+      ),
+    ).toThrow(/unexpected attrs on 'link'/);
+  });
+
+  it("rejects underline, codeBlock, and heading level 1", () => {
     expect(() =>
       assertAllowedTiptapJson({
         type: "doc",
@@ -239,6 +442,106 @@ describe("document allow-list and bounds", () => {
         content: [{ type: "heading", attrs: { level: 1 }, content: [] }],
       }),
     ).toThrow(/heading level/);
+  });
+
+  it("rejects unknown attrs on heading and every other node type", () => {
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "heading",
+        attrs: { level: 2, id: "nope" },
+        content: [],
+      }),
+    ).toThrow(/unexpected attrs on 'heading'/);
+
+    expect(
+      assertAllowedTiptapJson({
+        type: "heading",
+        attrs: { level: 2 },
+        content: [{ type: "text", text: "ok" }],
+      }),
+    ).toMatchObject({ type: "heading", attrs: { level: 2 } });
+
+    for (const type of ALLOWED_NODE_TYPES) {
+      if (type === "heading" || type === "orderedList") {
+        continue;
+      }
+      expect(() =>
+        assertAllowedTiptapJson({
+          type,
+          attrs: { unexpected: true },
+          ...(type === "text" ? { text: "x" } : {}),
+        }),
+      ).toThrow(new RegExp(`unexpected attrs on '${type}'`));
+    }
+
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "orderedList",
+        attrs: { start: 1, weird: true },
+        content: [],
+      }),
+    ).toThrow(/unexpected attrs on 'orderedList'/);
+
+    for (const mark of ALLOWED_MARK_TYPES) {
+      expect(() =>
+        assertAllowedTiptapJson({
+          type: "text",
+          text: "x",
+          marks: [{ type: mark, attrs: { extra: 1 } }],
+        }),
+      ).toThrow(new RegExp(`unexpected attrs on '${mark}'`));
+    }
+  });
+
+  it("enforces documented JSON nesting depth without unbounded recursion", () => {
+    expect(DOCUMENT_CONTENT_MAX_DEPTH).toBe(32);
+
+    // n=7 → deepest text container at depth 32 (root doc = 0).
+    const atLimit = nestedBulletListDoc(7);
+    expect(assertAllowedTiptapJson(atLimit).type).toBe("doc");
+    expect(documentContentSchema.parse(atLimit).type).toBe("doc");
+    expect(() => assertContentJsonDepth(atLimit)).not.toThrow();
+
+    const overLimit = nestedBulletListDoc(8);
+    expect(() => assertAllowedTiptapJson(overLimit)).toThrow(
+      /maximum nesting depth/,
+    );
+    expect(() => documentContentSchema.parse(overLimit)).toThrow(
+      /maximum nesting depth/,
+    );
+
+    expect(() =>
+      assertContentJsonDepth(nestedArrayChain(DOCUMENT_CONTENT_MAX_DEPTH)),
+    ).not.toThrow();
+    expect(() =>
+      assertContentJsonDepth(nestedArrayChain(DOCUMENT_CONTENT_MAX_DEPTH + 1)),
+    ).toThrow(/maximum nesting depth/);
+
+    const veryDeep = nestedArrayChain(10_000);
+    expect(() => assertContentJsonDepth(veryDeep)).toThrow(
+      /maximum nesting depth/,
+    );
+    expect(() => assertAllowedTiptapJson(veryDeep)).toThrow(
+      /maximum nesting depth/,
+    );
+  });
+
+  it("keeps a representative existing valid document valid", () => {
+    const parsed = documentContentSchema.parse(REPRESENTATIVE_VALID_DOCUMENT);
+    expect(parsed).toMatchObject({
+      type: "doc",
+      content: [
+        { type: "heading", attrs: { level: 2 } },
+        { type: "heading", attrs: { level: 3 } },
+        { type: "paragraph" },
+        { type: "bulletList" },
+        { type: "orderedList", attrs: { start: 1 } },
+        { type: "blockquote" },
+      ],
+    });
+    expect(assertAllowedTiptapJson(REPRESENTATIVE_VALID_DOCUMENT).content).toHaveLength(
+      6,
+    );
   });
 
   it("accepts the full allow-list including hardBreak, lists, quote, bold, italic", () => {
@@ -324,7 +627,20 @@ describe("document allow-list and bounds", () => {
         text: "x",
         marks: [{ type: "bold", attrs: { extra: 1 } }],
       }),
-    ).toThrow(/unexpected mark attrs/);
+    ).toThrow(/unexpected attrs on 'bold'/);
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "text",
+        text: "x",
+        marks: [{ type: "italic", attrs: "nope" }],
+      }),
+    ).toThrow(/mark attrs must be an object/);
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "heading",
+        attrs: "nope",
+      }),
+    ).toThrow(/heading attrs must be an object/);
     expect(() =>
       assertAllowedTiptapJson({
         type: "text",
@@ -425,5 +741,10 @@ describe("document allow-list and bounds", () => {
     if (!result.success) {
       expect(result.error.issues[0]?.message).toMatch(/not allowed|disallowed/i);
     }
+  });
+
+  it("contentValidationMessage prefers Error.message and falls back otherwise", () => {
+    expect(contentValidationMessage(new Error("nope"))).toBe("nope");
+    expect(contentValidationMessage("boom")).toMatch(/disallowed/i);
   });
 });

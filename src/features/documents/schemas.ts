@@ -7,6 +7,14 @@ export const DOCUMENT_TITLE_MAX = 120;
 /** Content: serialised Tiptap JSON ≤ 512 KiB (Architecture §8). */
 export const DOCUMENT_CONTENT_MAX_BYTES = 512 * 1024;
 
+/**
+ * Maximum nesting depth of content JSON (objects and arrays).
+ * Root value is depth 0; each nested object/array increments by 1.
+ * Checked iteratively (stack) so over-deep input cannot blow the call stack.
+ * 32 covers deeply nested lists while bounding adversarial payloads.
+ */
+export const DOCUMENT_CONTENT_MAX_DEPTH = 32;
+
 export const DEFAULT_DOCUMENT_TITLE = "Untitled document";
 
 /**
@@ -36,10 +44,43 @@ export const ALLOWED_NODE_TYPES = [
 
 export const ALLOWED_MARK_TYPES = ["bold", "italic"] as const;
 
+/**
+ * Links are disabled in the editor (`prosefieldStarterKitOptions.link: false`).
+ * While false, link marks are rejected. When enabled, only safe href schemes
+ * in {@link ALLOWED_LINK_HREF_SCHEMES} are accepted.
+ */
+export const DOCUMENT_LINKS_ENABLED = false;
+
+/** Allowed `href` schemes if/when {@link DOCUMENT_LINKS_ENABLED} is true. */
+export const ALLOWED_LINK_HREF_SCHEMES = ["http:", "https:", "mailto:"] as const;
+
 export const ALLOWED_HEADING_LEVELS = [2, 3] as const;
 
 /** HTML `ol` type values TipTap's OrderedList may emit (plus null default). */
 export const ALLOWED_ORDERED_LIST_TYPES = ["1", "a", "A", "i", "I"] as const;
+
+/** Attr keys allowed per node type; all others are rejected. */
+export const ALLOWED_NODE_ATTR_KEYS: Readonly<
+  Record<(typeof ALLOWED_NODE_TYPES)[number], readonly string[]>
+> = {
+  doc: [],
+  paragraph: [],
+  heading: ["level"],
+  bulletList: [],
+  orderedList: ["start", "type"],
+  listItem: [],
+  blockquote: [],
+  text: [],
+  hardBreak: [],
+};
+
+/** Attr keys allowed per mark type; all others are rejected. */
+export const ALLOWED_MARK_ATTR_KEYS: Readonly<Record<string, readonly string[]>> =
+  {
+    bold: [],
+    italic: [],
+    link: ["href"],
+  };
 
 export type TiptapJson = {
   type: string;
@@ -47,6 +88,14 @@ export type TiptapJson = {
   attrs?: Record<string, unknown>;
   marks?: Array<{ type: string; attrs?: Record<string, unknown> }>;
   text?: string;
+};
+
+export type AssertTiptapOptions = {
+  /**
+   * Override {@link DOCUMENT_LINKS_ENABLED}. Used in tests to exercise the
+   * safe-href path without enabling links in production.
+   */
+  linksEnabled?: boolean;
 };
 
 /** Empty Tiptap doc: a single paragraph. */
@@ -73,21 +122,164 @@ const allowedNodeSet = new Set<string>(ALLOWED_NODE_TYPES);
 const allowedMarkSet = new Set<string>(ALLOWED_MARK_TYPES);
 const allowedHeadingSet = new Set<number>(ALLOWED_HEADING_LEVELS);
 const allowedOrderedListTypeSet = new Set<string>(ALLOWED_ORDERED_LIST_TYPES);
+const allowedLinkSchemeSet = new Set<string>(ALLOWED_LINK_HREF_SCHEMES);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
+ * Iteratively ensure content JSON nesting stays within
+ * {@link DOCUMENT_CONTENT_MAX_DEPTH}. Root is depth 0.
+ */
+export function assertContentJsonDepth(
+  value: unknown,
+  maxDepth = DOCUMENT_CONTENT_MAX_DEPTH,
+  path = "content",
+): void {
+  const stack: Array<{ value: unknown; depth: number; path: string }> = [
+    { value, depth: 0, path },
+  ];
+
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (current.depth > maxDepth) {
+      throw new Error(
+        `${current.path}: exceeds maximum nesting depth of ${maxDepth}`,
+      );
+    }
+
+    if (Array.isArray(current.value)) {
+      for (let index = current.value.length - 1; index >= 0; index -= 1) {
+        const child = current.value[index];
+        if (child !== null && typeof child === "object") {
+          stack.push({
+            value: child,
+            depth: current.depth + 1,
+            path: `${current.path}[${index}]`,
+          });
+        }
+      }
+      continue;
+    }
+
+    if (isPlainObject(current.value)) {
+      const keys = Object.keys(current.value);
+      for (let index = keys.length - 1; index >= 0; index -= 1) {
+        const key = keys[index]!;
+        const child = current.value[key];
+        if (child !== null && typeof child === "object") {
+          stack.push({
+            value: child,
+            depth: current.depth + 1,
+            path: `${current.path}.${key}`,
+          });
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Validate a link `href` when links are enabled. Only http, https, and mailto
+ * schemes are accepted; `javascript:` and others are rejected.
+ */
+export function assertAllowedLinkHref(
+  href: unknown,
+  path = "href",
+): string {
+  if (typeof href !== "string" || href.trim() === "") {
+    throw new Error(`${path}: link href is required`);
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(href);
+  } catch {
+    throw new Error(`${path}: link href is not a valid URL`);
+  }
+
+  const scheme = parsed.protocol.toLowerCase();
+  if (!allowedLinkSchemeSet.has(scheme)) {
+    throw new Error(`${path}: link href scheme '${scheme}' is not allowed`);
+  }
+
+  return href;
+}
+
+function assertNoUnexpectedAttrKeys(
+  attrs: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  path: string,
+  label: string,
+): void {
+  const allowed = new Set(allowedKeys);
+  for (const key of Object.keys(attrs)) {
+    if (!allowed.has(key)) {
+      throw new Error(`${path}: unexpected attrs on '${label}'`);
+    }
+  }
+}
+
+function assertAllowedMark(
+  mark: unknown,
+  path: string,
+  linksEnabled: boolean,
+): { type: string; attrs?: Record<string, unknown> } {
+  if (!isPlainObject(mark) || typeof mark.type !== "string") {
+    throw new Error(`${path}: invalid mark`);
+  }
+
+  if (mark.type === "link") {
+    if (!linksEnabled) {
+      throw new Error(`${path}: link marks are disabled`);
+    }
+    if (mark.attrs === undefined) {
+      throw new Error(`${path}: link mark requires attrs.href`);
+    }
+    if (!isPlainObject(mark.attrs)) {
+      throw new Error(`${path}: link attrs must be an object`);
+    }
+    assertNoUnexpectedAttrKeys(
+      mark.attrs,
+      ALLOWED_MARK_ATTR_KEYS.link,
+      path,
+      "link",
+    );
+    const href = assertAllowedLinkHref(mark.attrs.href, `${path}.attrs.href`);
+    return { type: "link", attrs: { href } };
+  }
+
+  if (!allowedMarkSet.has(mark.type)) {
+    throw new Error(`${path}: mark '${mark.type}' is not allowed`);
+  }
+
+  const allowedKeys = ALLOWED_MARK_ATTR_KEYS[mark.type]!;
+  if (mark.attrs !== undefined) {
+    if (!isPlainObject(mark.attrs)) {
+      throw new Error(`${path}: mark attrs must be an object`);
+    }
+    assertNoUnexpectedAttrKeys(mark.attrs, allowedKeys, path, mark.type);
+  }
+
+  return { type: mark.type };
+}
+
+/**
  * Recursively validate + sanitise Tiptap JSON against the allow-list.
- * Unknown nodes/marks are rejected (not silently dropped to empty), so a
- * load of legacy/off-spec JSON cannot become an empty doc that overwrites
- * on the next save — callers must handle the error or refuse to save.
+ * Unknown nodes/marks/attrs are rejected (not silently dropped), so a load of
+ * legacy/off-spec JSON cannot become an empty doc that overwrites on the next
+ * save — callers must handle the error or refuse to save.
  */
 export function assertAllowedTiptapJson(
   value: unknown,
   path = "content",
+  options?: AssertTiptapOptions,
 ): TiptapJson {
+  if (path === "content") {
+    assertContentJsonDepth(value, DOCUMENT_CONTENT_MAX_DEPTH, path);
+  }
+
   if (!isPlainObject(value)) {
     throw new Error(`${path}: expected an object`);
   }
@@ -97,7 +289,17 @@ export function assertAllowedTiptapJson(
     throw new Error(`${path}: node type '${String(type)}' is not allowed`);
   }
 
+  const linksEnabled = options?.linksEnabled ?? DOCUMENT_LINKS_ENABLED;
   const result: TiptapJson = { type };
+  const allowedAttrKeys =
+    ALLOWED_NODE_ATTR_KEYS[type as (typeof ALLOWED_NODE_TYPES)[number]];
+
+  if (value.attrs !== undefined) {
+    if (!isPlainObject(value.attrs)) {
+      throw new Error(`${path}: ${type} attrs must be an object`);
+    }
+    assertNoUnexpectedAttrKeys(value.attrs, allowedAttrKeys, path, type);
+  }
 
   if (type === "heading") {
     const level = isPlainObject(value.attrs) ? value.attrs.level : undefined;
@@ -107,16 +309,8 @@ export function assertAllowedTiptapJson(
     result.attrs = { level };
   } else if (type === "orderedList") {
     // TipTap OrderedList always serialises { start, type } (type default null).
-    if (value.attrs !== undefined) {
-      if (!isPlainObject(value.attrs)) {
-        throw new Error(`${path}: orderedList attrs must be an object`);
-      }
+    if (isPlainObject(value.attrs)) {
       const attrs = value.attrs;
-      for (const key of Object.keys(attrs)) {
-        if (key !== "start" && key !== "type") {
-          throw new Error(`${path}: unexpected attrs on 'orderedList'`);
-        }
-      }
       const start = attrs.start;
       if (
         start !== undefined &&
@@ -146,14 +340,6 @@ export function assertAllowedTiptapJson(
         result.attrs = nextAttrs;
       }
     }
-  } else if (value.attrs !== undefined) {
-    // No other node types may carry attrs on the allow-list.
-    if (
-      isPlainObject(value.attrs) &&
-      Object.keys(value.attrs).length > 0
-    ) {
-      throw new Error(`${path}: unexpected attrs on '${type}'`);
-    }
   }
 
   if (type === "text") {
@@ -165,24 +351,9 @@ export function assertAllowedTiptapJson(
       if (!Array.isArray(value.marks)) {
         throw new Error(`${path}: marks must be an array`);
       }
-      result.marks = value.marks.map((mark, index) => {
-        if (!isPlainObject(mark) || typeof mark.type !== "string") {
-          throw new Error(`${path}.marks[${index}]: invalid mark`);
-        }
-        if (!allowedMarkSet.has(mark.type)) {
-          throw new Error(
-            `${path}.marks[${index}]: mark '${mark.type}' is not allowed`,
-          );
-        }
-        if (
-          mark.attrs !== undefined &&
-          isPlainObject(mark.attrs) &&
-          Object.keys(mark.attrs).length > 0
-        ) {
-          throw new Error(`${path}.marks[${index}]: unexpected mark attrs`);
-        }
-        return { type: mark.type };
-      });
+      result.marks = value.marks.map((mark, index) =>
+        assertAllowedMark(mark, `${path}.marks[${index}]`, linksEnabled),
+      );
     }
     if (value.content !== undefined) {
       throw new Error(`${path}: text nodes cannot have content`);
@@ -202,7 +373,7 @@ export function assertAllowedTiptapJson(
       throw new Error(`${path}: content must be an array`);
     }
     result.content = value.content.map((child, index) =>
-      assertAllowedTiptapJson(child, `${path}.content[${index}]`),
+      assertAllowedTiptapJson(child, `${path}.content[${index}]`, options),
     );
   }
 
@@ -230,6 +401,12 @@ export const documentTitleSchema = z
       ),
   );
 
+export function contentValidationMessage(error: unknown): string {
+  return error instanceof Error
+    ? error.message
+    : "Content contains disallowed nodes or marks";
+}
+
 export const tiptapJsonSchema: z.ZodType<TiptapJson> = z.custom<TiptapJson>(
   (value) => {
     try {
@@ -250,10 +427,7 @@ export const documentContentSchema = z
     } catch (error) {
       ctx.addIssue({
         code: "custom",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Content contains disallowed nodes or marks",
+        message: contentValidationMessage(error),
       });
       return z.NEVER;
     }
