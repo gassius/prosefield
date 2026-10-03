@@ -486,3 +486,57 @@ describe("DocumentEditor (real component)", () => {
     }
   });
 });
+
+/**
+ * Attrs the validator deliberately handles. Any new editor attr must be listed
+ * here and wired in `assertAllowedTiptapJson`, or this suite fails.
+ */
+const KNOWN_ATTRS: Record<string, string[]> = {
+  heading: ["level"],
+  orderedList: ["start", "type"],
+};
+
+describe("schema drift (derived from editor extensions)", () => {
+  it("editor nodes/marks equal the allow-lists", async () => {
+    const { getSchema } = await import("@tiptap/core");
+    const { createProsefieldStarterKit } = await import(
+      "@/features/documents/editor-extensions"
+    );
+    const { ALLOWED_MARK_TYPES, ALLOWED_NODE_TYPES } = await import(
+      "@/features/documents/schemas"
+    );
+
+    const schema = getSchema([createProsefieldStarterKit()]);
+    expect(Object.keys(schema.nodes).sort()).toEqual(
+      [...ALLOWED_NODE_TYPES].sort(),
+    );
+    expect(Object.keys(schema.marks).sort()).toEqual(
+      [...ALLOWED_MARK_TYPES].sort(),
+    );
+  });
+
+  it("every attr the editor can emit is handled by the validator", async () => {
+    const { getSchema } = await import("@tiptap/core");
+    const { createProsefieldStarterKit } = await import(
+      "@/features/documents/editor-extensions"
+    );
+
+    const schema = getSchema([createProsefieldStarterKit()]);
+    for (const [name, type] of Object.entries(schema.nodes)) {
+      expect(Object.keys(type.spec.attrs ?? {}).sort(), name).toEqual(
+        KNOWN_ATTRS[name] ?? [],
+      );
+    }
+    for (const [name, type] of Object.entries(schema.marks)) {
+      expect(Object.keys(type.spec.attrs ?? {}), name).toEqual([]);
+    }
+  });
+
+  it("editor heading levels equal the allowed levels", async () => {
+    const { ALLOWED_HEADING_LEVELS, prosefieldStarterKitOptions } =
+      await import("@/features/documents/schemas");
+    expect([...prosefieldStarterKitOptions.heading.levels]).toEqual([
+      ...ALLOWED_HEADING_LEVELS,
+    ]);
+  });
+});

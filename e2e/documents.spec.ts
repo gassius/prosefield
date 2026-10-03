@@ -145,28 +145,15 @@ test("h2 and h3 headings save and persist after reload (bug 869fbe1dm)", async (
   const editor = page.locator("[contenteditable='true']").first();
   await editor.click();
 
-  // Toolbar toggles need a live selection; paste TipTap-allowed HTML so the
-  // save path is exercised with real h2/h3 nodes (the bug surface).
-  await page.evaluate(() => {
-    const target = document.querySelector(
-      "[contenteditable='true']",
-    ) as HTMLElement | null;
-    if (!target) {
-      throw new Error("editor not found");
-    }
-    const data = new DataTransfer();
-    data.setData(
-      "text/html",
-      "<h2>Section title</h2><h3>Subsection title</h3><p></p>",
-    );
-    target.dispatchEvent(
-      new ClipboardEvent("paste", {
-        clipboardData: data,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-  });
+  // TipTap's toolbar chain calls focus() asynchronously; wait until the
+  // editor is focused again before typing so keystrokes are not dropped.
+  await page.getByRole("button", { name: "Heading 2" }).click();
+  await expect(editor).toBeFocused();
+  await editor.pressSequentially("Section title");
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Heading 3" }).click();
+  await expect(editor).toBeFocused();
+  await editor.pressSequentially("Subsection title");
 
   await expect(
     page.getByRole("heading", { level: 2, name: "Section title" }),
