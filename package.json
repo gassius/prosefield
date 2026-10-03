@@ -20,7 +20,8 @@
     "test:e2e:offline": "playwright test e2e/offline.spec.ts --project=e2e",
     "test:visual": "bash scripts/test-visual.sh",
     "test:visual:update": "UPDATE=1 bash scripts/test-visual.sh",
-    "stripe:seed": "tsx scripts/stripe-seed.ts",
+    "stripe:seed": "tsx --env-file=.env scripts/stripe-seed.ts",
+    "stripe:setup": "tsx --env-file=.env scripts/stripe-setup.ts",
     "backend:up": "bash scripts/require-docker.sh up -d --wait",
     "backend:down": "bash scripts/require-docker.sh down",
     "backend:logs": "bash scripts/require-docker.sh logs -f emulators"

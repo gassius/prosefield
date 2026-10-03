@@ -46,8 +46,9 @@ export const envSchema = z
       .string()
       .trim()
       .min(1)
-      .regex(/^sk_test_[A-Za-z0-9]+$/, {
-        message: "STRIPE_SECRET_KEY must be a Stripe test key (sk_test_…)",
+      .regex(/^(sk_test_|rk_test_)[A-Za-z0-9]+$/, {
+        message:
+          "STRIPE_SECRET_KEY must be a Stripe test key (sk_test_… or rk_test_…)",
       }),
     STRIPE_WEBHOOK_SECRET: z
       .string()

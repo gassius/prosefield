@@ -63,6 +63,23 @@ describe("env schema", () => {
     }
   });
 
+  it("accepts rk_test_ restricted Stripe secret keys", () => {
+    const restricted = ["rk", "test", "example"].join("_");
+    const env = parseEnv({
+      ...validEnv,
+      STRIPE_SECRET_KEY: restricted,
+    });
+    expect(env.STRIPE_SECRET_KEY).toBe(restricted);
+  });
+
+  it("rejects rk_live_ restricted live keys", () => {
+    const result = envSchema.safeParse({
+      ...validEnv,
+      STRIPE_SECRET_KEY: ["rk", "live", "example"].join("_"),
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("rejects a sk_test_ prefix with no key material", () => {
     const result = envSchema.safeParse({
       ...validEnv,
