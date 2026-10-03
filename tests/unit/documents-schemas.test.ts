@@ -74,6 +74,34 @@ describe("document allow-list and bounds", () => {
         content: [{ type: "horizontalRule" }],
       }),
     ).toThrow(/not allowed/);
+    // Heading unknown-key strictness is owned by finding set 4/5 — here unknown
+    // keys are dropped and only level is kept.
+    expect(
+      assertAllowedTiptapJson({
+        type: "doc",
+        content: [
+          {
+            type: "heading",
+            attrs: { level: 2, weird: true },
+            content: [],
+          },
+        ],
+      }),
+    ).toMatchObject({
+      content: [{ type: "heading", attrs: { level: 2 } }],
+    });
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "doc",
+        content: [{ type: "heading", attrs: "nope", content: [] }],
+      }),
+    ).toThrow(/heading level/);
+    expect(() =>
+      assertAllowedTiptapJson({
+        type: "doc",
+        content: [{ type: "heading", content: [] }],
+      }),
+    ).toThrow(/heading level/);
   });
 
   it("accepts TipTap orderedList attrs (start + type null) the editor emits", () => {

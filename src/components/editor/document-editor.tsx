@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useEffectEvent, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useEffectEvent, useState, useTransition } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorToolbar } from "@/components/editor/toolbar";
@@ -34,8 +34,6 @@ type DocumentEditorProps = {
    * allow-list; save is blocked so an emptied editor cannot overwrite storage.
    */
   contentAllowed: boolean;
-  /** Test hook: exposes the live TipTap editor after mount. */
-  onEditorReady?: (editor: import("@tiptap/react").Editor) => void;
 };
 
 export function DocumentEditor({
@@ -43,7 +41,6 @@ export function DocumentEditor({
   initialTitle,
   initialContent,
   contentAllowed,
-  onEditorReady,
 }: DocumentEditorProps) {
   const [title, setTitle] = useState(initialTitle);
   const [savedTitle, setSavedTitle] = useState(initialTitle);
@@ -55,11 +52,6 @@ export function DocumentEditor({
     /Mac|iPhone|iPad|iPod/.test(navigator.platform),
   );
   const [renaming, startRename] = useTransition();
-  const onEditorReadyRef = useRef(onEditorReady);
-
-  useEffect(() => {
-    onEditorReadyRef.current = onEditorReady;
-  }, [onEditorReady]);
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -86,12 +78,6 @@ export function DocumentEditor({
       setSaveStatus((current) => reduceSaveStatus(current, { type: "edit" }));
     },
   });
-
-  useEffect(() => {
-    if (editor) {
-      onEditorReadyRef.current?.(editor);
-    }
-  }, [editor]);
 
   const onBeforeUnload = useEffectEvent((event: BeforeUnloadEvent) => {
     if (isDirtySaveStatus(saveStatus)) {

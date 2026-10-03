@@ -1,7 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Editor } from "@tiptap/react";
 import { EMPTY_DOCUMENT_CONTENT } from "@/features/documents/schemas";
 
 const saveDocumentAction = vi.fn();
@@ -55,13 +54,62 @@ beforeAll(() => {
       [Symbol.iterator]: function* () {},
     }) as unknown as DOMRectList;
   Element.prototype.getBoundingClientRect = () => emptyRect as DOMRect;
+  document.elementFromPoint = () =>
+    document.querySelector("[contenteditable='true']");
+
+  if (typeof DataTransfer === "undefined") {
+    class DataTransferStub {
+      private data = new Map<string, string>();
+      setData(format: string, value: string) {
+        this.data.set(format, value);
+      }
+      getData(format: string) {
+        return this.data.get(format) ?? "";
+      }
+      get types() {
+        return [...this.data.keys()];
+      }
+      files = [] as unknown as FileList;
+      items = [] as unknown as DataTransferItemList;
+      dropEffect = "none" as DataTransfer["dropEffect"];
+      effectAllowed = "all" as DataTransfer["effectAllowed"];
+      clearData() {
+        this.data.clear();
+      }
+      setDragImage() {}
+    }
+    // jsdom lacks DataTransfer; TipTap paste needs clipboardData.getData.
+    globalThis.DataTransfer = DataTransferStub as unknown as typeof DataTransfer;
+  }
+
+  if (typeof ClipboardEvent === "undefined") {
+    class ClipboardEventStub extends Event {
+      clipboardData: DataTransfer | null;
+      constructor(type: string, init: ClipboardEventInit = {}) {
+        super(type, init);
+        this.clipboardData = init.clipboardData ?? null;
+      }
+    }
+    globalThis.ClipboardEvent =
+      ClipboardEventStub as unknown as typeof ClipboardEvent;
+  }
 });
 
-describe("DocumentEditor (real component)", () => {
-  let latestEditor: Editor | null = null;
+async function waitForEditor() {
+  await waitFor(() => {
+    expect(
+      document.querySelector("[contenteditable='true']"),
+    ).toBeTruthy();
+  });
+  const editable = document.querySelector(
+    "[contenteditable='true']",
+  ) as HTMLElement;
+  editable.focus();
+  return editable;
+}
 
+describe("DocumentEditor (real component)", () => {
   beforeEach(() => {
-    latestEditor = null;
     saveDocumentAction.mockReset();
     renameDocumentAction.mockReset();
     deleteDocumentAction.mockReset();
@@ -95,17 +143,11 @@ describe("DocumentEditor (real component)", () => {
         initialTitle="Draft"
         initialContent={EMPTY_DOCUMENT_CONTENT}
         contentAllowed
-        onEditorReady={(editor) => {
-          latestEditor = editor;
-        }}
       />,
     );
 
-    await waitFor(() => {
-      expect(latestEditor).toBeTruthy();
-    });
-
-    latestEditor!.commands.insertContent("Hello");
+    await waitForEditor();
+    await user.keyboard("Hello");
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
     });
@@ -131,7 +173,8 @@ describe("DocumentEditor (real component)", () => {
       code: "error",
       message: "fail",
     });
-    latestEditor!.commands.insertContent(" more");
+    await waitForEditor();
+    await user.keyboard(" more");
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
     });
@@ -153,15 +196,10 @@ describe("DocumentEditor (real component)", () => {
         initialTitle="Draft"
         initialContent={EMPTY_DOCUMENT_CONTENT}
         contentAllowed
-        onEditorReady={(editor) => {
-          latestEditor = editor;
-        }}
       />,
     );
 
-    await waitFor(() => {
-      expect(latestEditor).toBeTruthy();
-    });
+    await waitForEditor();
 
     const cleanEvent = new Event("beforeunload", {
       cancelable: true,
@@ -173,7 +211,7 @@ describe("DocumentEditor (real component)", () => {
     window.dispatchEvent(cleanEvent);
     expect(cleanEvent.defaultPrevented).toBe(false);
 
-    latestEditor!.commands.insertContent("dirty");
+    await user.keyboard("dirty");
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
     });
@@ -225,7 +263,7 @@ describe("DocumentEditor (real component)", () => {
     expect(saveDocumentAction).not.toHaveBeenCalled();
   });
 
-  it("strips pasted underline, link, and h1 from editor JSON", async () => {
+  it("strips pasted underline, link, and h1 from editor JSON via ClipboardEvent", async () => {
     const { createProsefieldStarterKit } = await import(
       "@/features/documents/editor-extensions"
     );
@@ -234,18 +272,37 @@ describe("DocumentEditor (real component)", () => {
       extensions: [createProsefieldStarterKit()],
       content: EMPTY_DOCUMENT_CONTENT,
     });
-    probe.commands.insertContent(
-      "<h1>Title</h1><p><u>under</u> <a href='https://evil.test'>link</a></p>",
+    // Attach to the DOM so ClipboardEvent paste is handled like a real editor.
+    document.body.appendChild(probe.view.dom);
+    probe.commands.focus("end");
+
+    const html =
+      "<h1>Title</h1><p><u>under</u> <a href='https://evil.test'>link</a></p>";
+    const dt = new DataTransfer();
+    dt.setData("text/html", html);
+    dt.setData("text/plain", "Title\nunder link");
+    const pasted = probe.view.dom.dispatchEvent(
+      new ClipboardEvent("paste", {
+        clipboardData: dt,
+        bubbles: true,
+        cancelable: true,
+      }),
     );
-    const serialised = JSON.stringify(probe.getJSON());
-    expect(serialised).not.toMatch(/"underline"/);
-    expect(serialised).not.toMatch(/"link"/);
-    expect(serialised).not.toMatch(/"level":1/);
-    // Heading 1 is demoted or dropped — must not persist as level 1.
+    expect(pasted).toBe(false);
+
+    await waitFor(() => {
+      const serialised = JSON.stringify(probe.getJSON());
+      // Positive: paste inserted text (empty doc would vacuously pass negatives).
+      expect(serialised).toMatch(/Title|under|link/);
+      expect(serialised).not.toMatch(/"underline"/);
+      expect(serialised).not.toMatch(/"link"/);
+      expect(serialised).not.toMatch(/"level":1/);
+    });
     const levels = JSON.stringify(probe.getJSON()).match(/"level":\d+/g) ?? [];
-    expect(levels.every((entry) => entry === '"level":2' || entry === '"level":3')).toBe(
-      true,
-    );
+    expect(
+      levels.every((entry) => entry === '"level":2' || entry === '"level":3'),
+    ).toBe(true);
+    probe.view.dom.remove();
     probe.destroy();
   });
 
@@ -293,31 +350,15 @@ describe("DocumentEditor (real component)", () => {
         initialTitle="Draft"
         initialContent={EMPTY_DOCUMENT_CONTENT}
         contentAllowed
-        onEditorReady={(editor) => {
-          latestEditor = editor;
-        }}
       />,
     );
 
-    await waitFor(() => {
-      expect(latestEditor).toBeTruthy();
-    });
-
-    latestEditor!.commands.setContent({
-      type: "doc",
-      content: [
-        {
-          type: "heading",
-          attrs: { level: 2 },
-          content: [{ type: "text", text: "Section" }],
-        },
-        {
-          type: "heading",
-          attrs: { level: 3 },
-          content: [{ type: "text", text: "Subsection" }],
-        },
-      ],
-    });
+    await waitForEditor();
+    await user.click(screen.getByRole("button", { name: "Heading 2" }));
+    await user.keyboard("Section");
+    await user.keyboard("{Enter}");
+    await user.click(screen.getByRole("button", { name: "Heading 3" }));
+    await user.keyboard("Subsection");
 
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
@@ -335,6 +376,8 @@ describe("DocumentEditor (real component)", () => {
     const headingNodes = (payload.content.content ?? []).filter(
       (node) => node.type === "heading",
     );
+    // Strict: both H2 and H3 must be present with exact levels (do not loosen).
+    // jsdom may garble H3 text after a toolbar click — assert levels only; E2E covers text.
     expect(headingNodes).toHaveLength(2);
     for (const node of headingNodes) {
       expect(Object.getPrototypeOf(node.attrs ?? null)).toBe(Object.prototype);
@@ -346,15 +389,6 @@ describe("DocumentEditor (real component)", () => {
     });
   });
 });
-
-/**
- * Attrs the validator deliberately handles. Any new editor attr must be listed
- * here and wired in `assertAllowedTiptapJson`, or this suite fails.
- */
-const KNOWN_ATTRS: Record<string, string[]> = {
-  heading: ["level"],
-  orderedList: ["start", "type"],
-};
 
 describe("schema drift (derived from editor extensions)", () => {
   it("editor nodes/marks equal the allow-lists", async () => {
@@ -380,11 +414,14 @@ describe("schema drift (derived from editor extensions)", () => {
     const { createProsefieldStarterKit } = await import(
       "@/features/documents/editor-extensions"
     );
+    const { VALIDATOR_HANDLED_ATTRS } = await import(
+      "@/features/documents/schemas"
+    );
 
     const schema = getSchema([createProsefieldStarterKit()]);
     for (const [name, type] of Object.entries(schema.nodes)) {
       expect(Object.keys(type.spec.attrs ?? {}).sort(), name).toEqual(
-        KNOWN_ATTRS[name] ?? [],
+        [...(VALIDATOR_HANDLED_ATTRS[name] ?? [])].sort(),
       );
     }
     for (const [name, type] of Object.entries(schema.marks)) {
@@ -398,5 +435,110 @@ describe("schema drift (derived from editor extensions)", () => {
     expect([...prosefieldStarterKitOptions.heading.levels]).toEqual([
       ...ALLOWED_HEADING_LEVELS,
     ]);
+  });
+
+  it("each editor node type round-trips through the validator", async () => {
+    const { Editor } = await import("@tiptap/core");
+    const { createProsefieldStarterKit } = await import(
+      "@/features/documents/editor-extensions"
+    );
+    const { assertAllowedTiptapJson, plainTiptapJson } = await import(
+      "@/features/documents/schemas"
+    );
+
+    const editor = new Editor({
+      extensions: [createProsefieldStarterKit()],
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+
+    // paragraph + text (default)
+    expect(() =>
+      assertAllowedTiptapJson(plainTiptapJson(editor.getJSON())),
+    ).not.toThrow();
+
+    editor.commands.setContent({
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "H2", marks: [{ type: "bold" }] }],
+        },
+        {
+          type: "heading",
+          attrs: { level: 3 },
+          content: [{ type: "text", text: "H3", marks: [{ type: "italic" }] }],
+        },
+        {
+          type: "bulletList",
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "bullet" }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "orderedList",
+          attrs: { start: 1, type: null },
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "one" }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "blockquote",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                { type: "text", text: "quote" },
+                { type: "hardBreak" },
+                { type: "text", text: "line" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const json = plainTiptapJson(editor.getJSON());
+    expect(() => assertAllowedTiptapJson(json)).not.toThrow();
+    const types = new Set<string>();
+    function walk(node: { type?: string; content?: unknown[] }) {
+      if (node.type) {
+        types.add(node.type);
+      }
+      for (const child of node.content ?? []) {
+        walk(child as { type?: string; content?: unknown[] });
+      }
+    }
+    walk(json);
+    for (const required of [
+      "doc",
+      "paragraph",
+      "heading",
+      "bulletList",
+      "orderedList",
+      "listItem",
+      "blockquote",
+      "text",
+      "hardBreak",
+    ]) {
+      expect(types.has(required), required).toBe(true);
+    }
+    editor.destroy();
   });
 });

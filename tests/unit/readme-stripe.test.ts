@@ -7,21 +7,20 @@ function readme(): string {
 }
 
 describe("README Stripe manual 4242 flow", () => {
-  it("documents pnpm stripe:setup before pnpm dev and CLI listen/forward", () => {
+  it("documents pnpm stripe:setup before Compose app+stripe (no host pnpm dev)", () => {
     const text = readme();
     const section = text.slice(
       text.indexOf("### Manual Stripe test payment (4242)"),
       text.indexOf("## Scripts"),
     );
     const setupIdx = section.indexOf("pnpm stripe:setup");
-    const devIdx = section.indexOf("pnpm dev");
     const forwardIdx = section.indexOf(
       "docker compose --profile app --profile stripe up",
     );
 
     expect(setupIdx).toBeGreaterThan(-1);
-    expect(devIdx).toBeGreaterThan(setupIdx);
-    expect(forwardIdx).toBeGreaterThan(devIdx);
+    expect(forwardIdx).toBeGreaterThan(setupIdx);
+    expect(section).toMatch(/Skip host `pnpm dev`/);
   });
 
   it("states /subscribe stays not configured until all three Stripe env vars are set", () => {

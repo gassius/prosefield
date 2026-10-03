@@ -29,9 +29,6 @@ type AuthFormProps = {
 };
 
 function readCsrfFromDocument(): string | undefined {
-  if (typeof document === "undefined") {
-    return undefined;
-  }
   const match = document.cookie
     .split("; ")
     .find((row) => row.startsWith(`${CSRF_COOKIE_NAME}=`));

@@ -18,13 +18,26 @@ vi.mock("@/lib/firebase/admin", () => ({
     runTransaction: (fn: (tx: { get: typeof txGet; update: typeof txUpdate }) => Promise<unknown>) =>
       runTransaction(fn),
     collection: () => ({
-      doc: () => ({
-        get: refGet,
-        set: refSet,
-        update: refUpdate,
-        delete: refDelete,
-        id: "newdocid00000000001",
-      }),
+      doc: (documentPath?: string) => {
+        // Mirror Admin SDK: document ids cannot contain `/` or be `.` / `..`.
+        if (
+          typeof documentPath === "string" &&
+          (documentPath.includes("/") ||
+            documentPath === "." ||
+            documentPath === "..")
+        ) {
+          throw new Error(
+            `Value for argument "documentPath" is not a valid resource path: ${documentPath}`,
+          );
+        }
+        return {
+          get: refGet,
+          set: refSet,
+          update: refUpdate,
+          delete: refDelete,
+          id: documentPath ?? "newdocid00000000001",
+        };
+      },
       where: () => ({
         orderBy: () => ({
           get: docsQueryGet,
@@ -508,4 +521,5 @@ describe("documents repository", () => {
     expect(renamedEmptyAfter?.title).toBe("Untitled document");
     expect(refUpdate).not.toHaveBeenCalled();
   });
+
 });

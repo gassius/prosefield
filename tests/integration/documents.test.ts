@@ -313,7 +313,6 @@ describe("documents guard chain (emulators)", () => {
     const still = await getDocumentById(created.data.id);
     expect(still?.title).toBe("Keep me");
     expect(still?.ownerId).toBe(ownerUid);
-    void otherUid;
   });
 
   it("nonexistent save/rename/delete → not_found", async () => {
@@ -430,10 +429,12 @@ describe("documents guard chain (emulators)", () => {
     const { createDocumentAction, saveDocumentAction } = await import(
       "@/features/documents/actions"
     );
-    const {
-      getDocumentById,
-      __unsafeSetDocumentContentForTests,
-    } = await import("@/features/documents/repository");
+    const { getDocumentById } = await import(
+      "@/features/documents/repository"
+    );
+    const { unsafeSetDocumentContent } = await import(
+      "../helpers/documents-admin"
+    );
 
     const created = await createDocumentAction({ title: "Corruptible" });
     expect(created.ok).toBe(true);
@@ -445,7 +446,7 @@ describe("documents guard chain (emulators)", () => {
       type: "doc",
       content: [{ type: "codeBlock", content: [] }],
     });
-    await __unsafeSetDocumentContentForTests({
+    await unsafeSetDocumentContent({
       documentId: created.data.id,
       contentJson: evil,
     });

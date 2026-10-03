@@ -41,6 +41,17 @@ export const ALLOWED_HEADING_LEVELS = [2, 3] as const;
 /** HTML `ol` type values TipTap's OrderedList may emit (plus null default). */
 export const ALLOWED_ORDERED_LIST_TYPES = ["1", "a", "A", "i", "I"] as const;
 
+/**
+ * Attr keys `assertAllowedTiptapJson` deliberately handles.
+ * Drift tests compare TipTap `getSchema` attrs against this map.
+ */
+export const VALIDATOR_HANDLED_ATTRS: Readonly<
+  Record<string, readonly string[]>
+> = {
+  heading: ["level"],
+  orderedList: ["start", "type"],
+};
+
 export type TiptapJson = {
   type: string;
   content?: TiptapJson[];
@@ -98,8 +109,11 @@ export function assertAllowedTiptapJson(
   }
 
   const result: TiptapJson = { type };
+  const handledAttrs = VALIDATOR_HANDLED_ATTRS[type];
 
   if (type === "heading") {
+    // Heading attr strictness (unknown keys) belongs to finding set 4/5 —
+    // keep only level validation + copy here so unknown keys are dropped.
     const level = isPlainObject(value.attrs) ? value.attrs.level : undefined;
     if (typeof level !== "number" || !allowedHeadingSet.has(level)) {
       throw new Error(`${path}: heading level must be 2 or 3`);
@@ -113,7 +127,7 @@ export function assertAllowedTiptapJson(
       }
       const attrs = value.attrs;
       for (const key of Object.keys(attrs)) {
-        if (key !== "start" && key !== "type") {
+        if (!handledAttrs?.includes(key)) {
           throw new Error(`${path}: unexpected attrs on 'orderedList'`);
         }
       }
@@ -136,10 +150,10 @@ export function assertAllowedTiptapJson(
         throw new Error(`${path}: orderedList type is not allowed`);
       }
       const nextAttrs: Record<string, unknown> = {};
-      if (typeof start === "number") {
+      if (typeof start === "number" && handledAttrs?.includes("start")) {
         nextAttrs.start = start;
       }
-      if (typeof listType === "string") {
+      if (typeof listType === "string" && handledAttrs?.includes("type")) {
         nextAttrs.type = listType;
       }
       if (Object.keys(nextAttrs).length > 0) {

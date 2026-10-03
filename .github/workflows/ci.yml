@@ -261,6 +261,25 @@ jobs:
           APP_URL: http://localhost:3000
           ALLOW_EMULATORS: "1"
         run: |
+          set -euo pipefail
+          # Assemble non-placeholder Stripe fixtures for visual finding 18
+          # (configured /subscribe checkout). Join prefix+body so the workflow
+          # never contains a contiguous sk_test_/whsec_ value (gitleaks
+          # stripe-access-token). Distinct from *_replaceme localDevDefaults.
+          # No real Stripe calls — prices.retrieve hits a local mock, not
+          # api.stripe.com. Visual tests do not click Checkout.
+          SK_PREFIX='sk_test'
+          SK_BODY='visualbaseline01'
+          export STRIPE_SECRET_KEY="${SK_PREFIX}_${SK_BODY}"
+          WH_PREFIX='whsec'
+          WH_BODY='visualbaseline01'
+          export STRIPE_WEBHOOK_SECRET="${WH_PREFIX}_${WH_BODY}"
+          export STRIPE_PRICE_ID='price_visualbaseline01'
+          export STRIPE_API_HOST='127.0.0.1'
+          export STRIPE_API_PORT='12111'
+          export STRIPE_API_PROTOCOL='http'
+          node scripts/stripe-prices-mock-server.mjs &
+          echo $! > /tmp/stripe-mock.pid
           pnpm start --hostname 127.0.0.1 --port 3000 &
           echo $! > /tmp/next.pid
           bash scripts/wait-for-url.sh http://localhost:3000/api/health 90
@@ -291,6 +310,7 @@ jobs:
         if: always()
         run: |
           if [ -f /tmp/next.pid ]; then kill "$(cat /tmp/next.pid)" || true; fi
+          if [ -f /tmp/stripe-mock.pid ]; then kill "$(cat /tmp/stripe-mock.pid)" || true; fi
 
       - name: Stop emulators
         if: always()

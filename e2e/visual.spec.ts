@@ -79,7 +79,15 @@ test.describe("visual regression", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await registerViaUi(page, email, "password-123");
     await expectSignedIn(page, email);
-    await page.addStyleTag({ content: FREEZE_CSS });
+    // Force the not-configured banner so this baseline stays distinct from
+    // logged-in-subscribe-configured.png when CI runs with real-shaped keys.
+    await preparePage(page, "/subscribe?error=not_configured", {
+      width: 1440,
+      height: 900,
+    });
+    await expect(
+      page.getByText("Billing is not configured", { exact: false }),
+    ).toBeVisible();
     await expect(page).toHaveScreenshot("logged-in-subscribe.png", {
       fullPage: true,
       mask: [page.getByText(email), page.locator("time")],
@@ -104,6 +112,69 @@ test.describe("visual regression", () => {
       page.getByText("Confirming your payment with Stripe…"),
     ).toBeVisible();
     await expect(page).toHaveScreenshot("billing-status-pending.png", {
+      fullPage: true,
+      mask: [page.getByText(email), page.locator("time")],
+    });
+  });
+
+  test("billing status failed", async ({ page }) => {
+    await resetEmulators();
+    const email = uniqueEmail("visual-billing-failed");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await registerViaUi(page, email, "password-123");
+    await expectSignedIn(page, email);
+    const uid = await lookupUidByEmail(email);
+    await seedSubscriptionProjection(uid, "unpaid");
+    await preparePage(page, "/billing/status", { width: 1440, height: 900 });
+    await expect(
+      page.getByRole("heading", { name: "Payment didn't go through" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Try again" }),
+    ).toBeVisible();
+    await expect(page).toHaveScreenshot("billing-status-failed.png", {
+      fullPage: true,
+      mask: [page.getByText(email), page.locator("time")],
+    });
+  });
+
+  test("logged-in subscribe configured checkout button", async ({ page }) => {
+    // Requires non-placeholder Stripe env on the Next server (see CI visual job).
+    await resetEmulators();
+    const email = uniqueEmail("visual-subscribe-configured");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await registerViaUi(page, email, "password-123");
+    await expectSignedIn(page, email);
+    await preparePage(page, "/subscribe", { width: 1440, height: 900 });
+    await expect(
+      page.getByRole("heading", { name: "Subscribe to start writing" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Continue to secure checkout" }),
+    ).toBeVisible();
+    await expect(page).toHaveScreenshot("logged-in-subscribe-configured.png", {
+      fullPage: true,
+      mask: [page.getByText(email), page.locator("time")],
+    });
+  });
+
+  test("documents upgrade gate", async ({ page }) => {
+    await resetEmulators();
+    const email = uniqueEmail("visual-docs-upgrade");
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await registerViaUi(page, email, "password-123");
+    await expectSignedIn(page, email);
+    await preparePage(page, "/documents", { width: 1440, height: 900 });
+    await expect(
+      page.getByRole("heading", { name: "Subscribe to start writing" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Continue to secure checkout" }),
+    ).toBeVisible();
+    await expect(page).toHaveScreenshot("documents-upgrade-gate.png", {
       fullPage: true,
       mask: [page.getByText(email), page.locator("time")],
     });

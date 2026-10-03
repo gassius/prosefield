@@ -43,16 +43,18 @@ export default defineConfig({
         "src/components/ui/accordion.tsx",
         "src/components/ui/sheet.tsx",
         "src/instrumentation.ts",
+        "src/proxy.ts",
       ],
       // Client Firebase bootstrap is browser-only; covered indirectly by E2E.
       exclude: ["src/lib/firebase/client.ts"],
       thresholds: {
-        // Ratcheted to measured Component+coverage values minus a small margin.
-        // Must stay ≥ main (98.66% lines / 94.86% branches) and only go up.
-        lines: 99,
-        functions: 99,
-        branches: 94.9,
-        statements: 99,
+        // Ratcheted to measured Component+coverage on main (PR #21 / 92149a7):
+        // ~99.65% lines/statements, ~98.26% branches, 100% functions.
+        // Only go up; never lower.
+        lines: 99.6,
+        functions: 100,
+        branches: 98.2,
+        statements: 99.6,
         "src/features/auth/{account-state,auth-time,constants,csrf,map-auth-error,next}.ts":
           highBar,
         "src/lib/env.ts": highBar,
@@ -94,10 +96,10 @@ export default defineConfig({
           statements: 95,
         },
         "src/lib/stripe/**": {
-          lines: 80,
-          functions: 80,
-          branches: 70,
-          statements: 80,
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
         },
       },
     },
