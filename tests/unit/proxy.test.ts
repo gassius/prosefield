@@ -33,6 +33,12 @@ describe("proxy CSRF cookie Secure / x-forwarded-proto", () => {
       headers: { "x-forwarded-proto": " http , https" },
     });
     expect(csrfSecure(httpFirst)).toBe(false);
+
+    // Leading space on the first hop — bites if `.trim()` is dropped.
+    const trimmedHttps = new NextRequest("http://app.example/", {
+      headers: { "x-forwarded-proto": " https , http" },
+    });
+    expect(csrfSecure(trimmedHttps)).toBe(true);
   });
 
   it("uses request protocol when forwarded header is absent", () => {

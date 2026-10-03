@@ -5,16 +5,19 @@ import { describe, expect, it } from "vitest";
 /**
  * Finding 7: null-prototype TipTap attrs become Server Action temporary
  * references ($T) under real encodeReply/decodeReply. plainTiptapJson fixes it.
+ *
+ * The fixture imports the production helper from schemas.ts — an identity
+ * swap for plainTiptapJson makes this test fail.
  */
 describe("Server Action encode/decode transport (null-prototype attrs)", () => {
   it("plainTiptapJson survives encodeReply/decodeReply; raw null-proto attrs do not", () => {
     const script = path.resolve(
       __dirname,
-      "fixtures/rsc-attrs-roundtrip.cjs",
+      "fixtures/rsc-attrs-roundtrip.mts",
     );
     const out = execFileSync(
       process.execPath,
-      ["--conditions", "react-server", script],
+      ["--import", "tsx", "--conditions", "react-server", script],
       {
         cwd: path.resolve(__dirname, "../.."),
         encoding: "utf8",
@@ -26,8 +29,10 @@ describe("Server Action encode/decode transport (null-prototype attrs)", () => {
       plainAttrsType: string;
       plainLevel: number | null;
       plainSchemaOk: boolean;
+      usedProductionPlainHelper: boolean;
     };
 
+    expect(result.usedProductionPlainHelper).toBe(true);
     expect(result.rawAttrsType).toBe("function");
     expect(result.rawSchemaOk).toBe(false);
     expect(result.plainAttrsType).toBe("object");

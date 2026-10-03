@@ -376,15 +376,13 @@ describe("DocumentEditor (real component)", () => {
     const headingNodes = (payload.content.content ?? []).filter(
       (node) => node.type === "heading",
     );
-    expect(headingNodes.length).toBeGreaterThanOrEqual(1);
+    // Strict: both H2 and H3 must be present with exact levels (do not loosen).
+    // jsdom may garble H3 text after a toolbar click — assert levels only; E2E covers text.
+    expect(headingNodes).toHaveLength(2);
     for (const node of headingNodes) {
       expect(Object.getPrototypeOf(node.attrs ?? null)).toBe(Object.prototype);
     }
-    expect(
-      headingNodes.every(
-        (node) => node.attrs?.level === 2 || node.attrs?.level === 3,
-      ),
-    ).toBe(true);
+    expect(headingNodes.map((node) => node.attrs?.level)).toEqual([2, 3]);
     expect(documentContentSchema.safeParse(payload.content).success).toBe(true);
     await waitFor(() => {
       expect(screen.getByRole("status")).toHaveTextContent("Saved");

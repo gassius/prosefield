@@ -208,6 +208,8 @@ test("numbered list saves and persists after reload", async ({ page }) => {
 
 test("invalid documentId path returns 404", async ({ page }) => {
   await registerActiveSubscriber(page);
-  const response = await page.goto("/documents/a%2Fb");
+  // Encoded ".." — Firestore rejects this path segment. Without
+  // documentIdSchema.safeParse → notFound(), the page would 500.
+  const response = await page.goto("/documents/%2E%2E");
   expect(response?.status()).toBe(404);
 });

@@ -109,8 +109,21 @@ export function assertAllowedTiptapJson(
   }
 
   const result: TiptapJson = { type };
+  const handledAttrs = VALIDATOR_HANDLED_ATTRS[type];
 
   if (type === "heading") {
+    // Keys + copy come from VALIDATOR_HANDLED_ATTRS so drift tests and
+    // assertAllowedTiptapJson cannot diverge.
+    if (value.attrs !== undefined) {
+      if (!isPlainObject(value.attrs)) {
+        throw new Error(`${path}: heading attrs must be an object`);
+      }
+      for (const key of Object.keys(value.attrs)) {
+        if (!handledAttrs?.includes(key)) {
+          throw new Error(`${path}: unexpected attrs on 'heading'`);
+        }
+      }
+    }
     const level = isPlainObject(value.attrs) ? value.attrs.level : undefined;
     if (typeof level !== "number" || !allowedHeadingSet.has(level)) {
       throw new Error(`${path}: heading level must be 2 or 3`);
@@ -124,7 +137,7 @@ export function assertAllowedTiptapJson(
       }
       const attrs = value.attrs;
       for (const key of Object.keys(attrs)) {
-        if (key !== "start" && key !== "type") {
+        if (!handledAttrs?.includes(key)) {
           throw new Error(`${path}: unexpected attrs on 'orderedList'`);
         }
       }
@@ -147,10 +160,10 @@ export function assertAllowedTiptapJson(
         throw new Error(`${path}: orderedList type is not allowed`);
       }
       const nextAttrs: Record<string, unknown> = {};
-      if (typeof start === "number") {
+      if (typeof start === "number" && handledAttrs?.includes("start")) {
         nextAttrs.start = start;
       }
-      if (typeof listType === "string") {
+      if (typeof listType === "string" && handledAttrs?.includes("type")) {
         nextAttrs.type = listType;
       }
       if (Object.keys(nextAttrs).length > 0) {
