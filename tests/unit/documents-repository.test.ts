@@ -360,6 +360,35 @@ describe("documents repository", () => {
     // empty data → ownerId undefined !== "u1"
     expect(updatedEmptyData).toBeNull();
     expect(refUpdate).not.toHaveBeenCalled();
+
+    // Transaction wrote, but post-commit re-read finds the doc gone.
+    txGet.mockResolvedValueOnce(ownedSnap());
+    refGet.mockResolvedValueOnce({ exists: false });
+    expect(
+      await updateDocumentContent({
+        documentId: "d1",
+        ownerId: "u1",
+        content: EMPTY_DOCUMENT_CONTENT,
+      }),
+    ).toBeNull();
+    expect(txUpdate).toHaveBeenCalled();
+    expect(refUpdate).not.toHaveBeenCalled();
+
+    // Post-commit snap exists but data() is undefined → empty fallback record.
+    txGet.mockResolvedValueOnce(ownedSnap());
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => undefined,
+    });
+    const emptyAfter = await updateDocumentContent({
+      documentId: "d1",
+      ownerId: "u1",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(emptyAfter?.id).toBe("d1");
+    expect(emptyAfter?.title).toBe("Untitled document");
+    expect(refUpdate).not.toHaveBeenCalled();
   });
 
   it("renameDocument uses tx.get/tx.update with ownership inside the transaction", async () => {
@@ -435,6 +464,18 @@ describe("documents repository", () => {
     expect(renamedSparse?.updatedAt.toISOString()).toBe(
       "2026-07-01T08:30:00.000Z",
     );
+    expect(refUpdate).not.toHaveBeenCalled();
+
+    // Transaction wrote, but post-commit re-read finds the doc gone.
+    txGet.mockResolvedValueOnce(ownedSnap());
+    refGet.mockResolvedValueOnce({ exists: false });
+    expect(
+      await renameDocument({
+        documentId: "d1",
+        ownerId: "u1",
+        title: "Gone",
+      }),
+    ).toBeNull();
     expect(refUpdate).not.toHaveBeenCalled();
   });
 });

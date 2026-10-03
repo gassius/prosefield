@@ -126,6 +126,24 @@ describe("session helpers (mocked admin)", () => {
     expect(createSessionCookie).not.toHaveBeenCalled();
   });
 
+  it("rejects accounts without the claim when creationTime is unparseable", async () => {
+    verifyIdToken.mockResolvedValue({
+      uid: "broken",
+      email: "broken@example.com",
+      auth_time: recentAuthTime(),
+    });
+    getUser.mockResolvedValue({
+      metadata: { creationTime: "not-a-date" },
+    });
+    const { createSessionCookieFromIdToken } = await import(
+      "@/features/auth/session"
+    );
+    await expect(createSessionCookieFromIdToken("tok")).rejects.toMatchObject({
+      code: "unauthorized",
+    });
+    expect(createSessionCookie).not.toHaveBeenCalled();
+  });
+
   it("returns null from getOptionalSession when verification fails", async () => {
     const {
       setSessionCookie,
