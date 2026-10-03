@@ -19,11 +19,23 @@ import {
 } from "@/features/documents/schemas";
 import * as documentSchemas from "@/features/documents/schemas";
 
-/** Nest `listNesting` bulletList wrappers around a paragraph+text leaf. */
-function nestedBulletListDoc(listNesting: number): TiptapJson {
+/**
+ * Nest `listNesting` bulletList wrappers around a paragraph+text leaf.
+ * TipTap node depth of the deepest text is `2 * listNesting + 2`
+ * (doc=0 → listNesting×(bulletList+listItem) → paragraph → text).
+ */
+function nestedBulletListDoc(
+  listNesting: number,
+  marks?: Array<{ type: string }>,
+): TiptapJson {
+  const textNode: TiptapJson = {
+    type: "text",
+    text: "x",
+    ...(marks && marks.length > 0 ? { marks } : {}),
+  };
   let inner: TiptapJson = {
     type: "paragraph",
-    content: [{ type: "text", text: "x" }],
+    content: [textNode],
   };
   for (let i = 0; i < listNesting; i += 1) {
     inner = {
@@ -34,78 +46,33 @@ function nestedBulletListDoc(listNesting: number): TiptapJson {
   return { type: "doc", content: [inner] };
 }
 
-/** Build a JSON array chain whose innermost container sits at `depth` (root = 0). */
-function nestedArrayChain(depth: number): unknown {
-  let value: unknown = [];
-  for (let i = 0; i < depth; i += 1) {
-    value = [value];
+/**
+ * Nest `blockquoteNesting` blockquotes around a paragraph+text leaf.
+ * TipTap node depth of the deepest text is `blockquoteNesting + 2`.
+ */
+function nestedBlockquoteDoc(
+  blockquoteNesting: number,
+  marks?: Array<{ type: string }>,
+): TiptapJson {
+  const textNode: TiptapJson = {
+    type: "text",
+    text: "x",
+    ...(marks && marks.length > 0 ? { marks } : {}),
+  };
+  let inner: TiptapJson = {
+    type: "paragraph",
+    content: [textNode],
+  };
+  for (let i = 0; i < blockquoteNesting; i += 1) {
+    inner = { type: "blockquote", content: [inner] };
   }
-  return value;
+  return { type: "doc", content: [inner] };
 }
 
-const REPRESENTATIVE_VALID_DOCUMENT: TiptapJson = {
-  type: "doc",
-  content: [
-    {
-      type: "heading",
-      attrs: { level: 2 },
-      content: [{ type: "text", text: "Chapter", marks: [{ type: "bold" }] }],
-    },
-    {
-      type: "heading",
-      attrs: { level: 3 },
-      content: [
-        { type: "text", text: "Section", marks: [{ type: "italic" }] },
-      ],
-    },
-    {
-      type: "paragraph",
-      content: [
-        { type: "text", text: "Lead-in" },
-        { type: "hardBreak" },
-        { type: "text", text: "continued" },
-      ],
-    },
-    {
-      type: "bulletList",
-      content: [
-        {
-          type: "listItem",
-          content: [
-            {
-              type: "paragraph",
-              content: [{ type: "text", text: "bullet" }],
-            },
-          ],
-        },
-      ],
-    },
-    {
-      type: "orderedList",
-      attrs: { start: 1, type: null },
-      content: [
-        {
-          type: "listItem",
-          content: [
-            {
-              type: "paragraph",
-              content: [{ type: "text", text: "first" }],
-            },
-          ],
-        },
-      ],
-    },
-    {
-      type: "blockquote",
-      content: [
-        {
-          type: "paragraph",
-          content: [{ type: "text", text: "quoted" }],
-        },
-      ],
-    },
-  ],
-};
+/** List nesting whose deepest text sits exactly at DOCUMENT_CONTENT_MAX_DEPTH. */
+const LIST_NESTING_AT_DEPTH_LIMIT = (DOCUMENT_CONTENT_MAX_DEPTH - 2) / 2;
+/** Blockquote nesting whose deepest text sits exactly at DOCUMENT_CONTENT_MAX_DEPTH. */
+const BLOCKQUOTE_NESTING_AT_DEPTH_LIMIT = DOCUMENT_CONTENT_MAX_DEPTH - 2;
 
 describe("document allow-list and bounds", () => {
   it("accepts documents with h2 and with h3 (bug 869fbe1dm)", () => {
@@ -314,6 +281,37 @@ describe("document allow-list and bounds", () => {
     expect(() =>
       assertAllowedLinkHref("javascript:alert(1)"),
     ).toThrow(/scheme/);
+    // Case / whitespace / embedded-newline variants — kills a raw
+    // `href.startsWith("javascript:")` blacklist mutation (M20).
+    for (const href of [
+      " JaVaScRiPt:alert(1)",
+      "\tjavascript:alert(1)",
+      "java\nscript:alert(1)",
+      "JAVASCRIPT:alert(1)",
+    ]) {
+      expect(() => assertAllowedLinkHref(href), href).toThrow(/scheme/);
+      expect(() =>
+        assertAllowedTiptapJson(
+          {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "x",
+                    marks: [{ type: "link", attrs: { href } }],
+                  },
+                ],
+              },
+            ],
+          },
+          "root",
+          { linksEnabled: true },
+        ),
+      ).toThrow(/scheme/);
+    }
     expect(() =>
       assertAllowedTiptapJson(
         {
@@ -362,11 +360,15 @@ describe("document allow-list and bounds", () => {
         "content",
         { linksEnabled: true },
       ),
-    ).toMatchObject({
+    ).toEqual({
+      type: "doc",
       content: [
         {
+          type: "paragraph",
           content: [
             {
+              type: "text",
+              text: "x",
               marks: [{ type: "link", attrs: { href: "https://example.com" } }],
             },
           ],
@@ -459,7 +461,11 @@ describe("document allow-list and bounds", () => {
         attrs: { level: 2 },
         content: [{ type: "text", text: "ok" }],
       }),
-    ).toMatchObject({ type: "heading", attrs: { level: 2 } });
+    ).toEqual({
+      type: "heading",
+      attrs: { level: 2 },
+      content: [{ type: "text", text: "ok" }],
+    });
 
     for (const type of ALLOWED_NODE_TYPES) {
       if (type === "heading" || type === "orderedList") {
@@ -493,16 +499,24 @@ describe("document allow-list and bounds", () => {
     }
   });
 
-  it("enforces documented JSON nesting depth without unbounded recursion", () => {
-    expect(DOCUMENT_CONTENT_MAX_DEPTH).toBe(32);
+  it("enforces documented TipTap node nesting depth without unbounded recursion", () => {
+    expect(DOCUMENT_CONTENT_MAX_DEPTH).toBe(64);
+    expect(LIST_NESTING_AT_DEPTH_LIMIT).toBe(31);
+    expect(BLOCKQUOTE_NESTING_AT_DEPTH_LIMIT).toBe(62);
 
-    // n=7 → deepest text container at depth 32 (root doc = 0).
-    const atLimit = nestedBulletListDoc(7);
-    expect(assertAllowedTiptapJson(atLimit).type).toBe("doc");
-    expect(documentContentSchema.parse(atLimit).type).toBe("doc");
+    // Deepest text at node depth 64; bold/italic marks must not consume depth.
+    const atLimit = nestedBulletListDoc(LIST_NESTING_AT_DEPTH_LIMIT, [
+      { type: "bold" },
+      { type: "italic" },
+    ]);
+    expect(assertAllowedTiptapJson(atLimit)).toEqual(atLimit);
+    expect(documentContentSchema.parse(atLimit)).toEqual(atLimit);
     expect(() => assertContentJsonDepth(atLimit)).not.toThrow();
 
-    const overLimit = nestedBulletListDoc(8);
+    const overLimit = nestedBulletListDoc(LIST_NESTING_AT_DEPTH_LIMIT + 1, [
+      { type: "bold" },
+      { type: "italic" },
+    ]);
     expect(() => assertAllowedTiptapJson(overLimit)).toThrow(
       /maximum nesting depth/,
     );
@@ -510,38 +524,36 @@ describe("document allow-list and bounds", () => {
       /maximum nesting depth/,
     );
 
+    const bqAtLimit = nestedBlockquoteDoc(BLOCKQUOTE_NESTING_AT_DEPTH_LIMIT, [
+      { type: "bold" },
+    ]);
+    expect(assertAllowedTiptapJson(bqAtLimit).type).toBe("doc");
+    const bqOver = nestedBlockquoteDoc(BLOCKQUOTE_NESTING_AT_DEPTH_LIMIT + 1);
+    expect(() => assertAllowedTiptapJson(bqOver)).toThrow(
+      /maximum nesting depth/,
+    );
+
+    // Depth runs at the public entry regardless of the root path label.
     expect(() =>
-      assertContentJsonDepth(nestedArrayChain(DOCUMENT_CONTENT_MAX_DEPTH)),
-    ).not.toThrow();
-    expect(() =>
-      assertContentJsonDepth(nestedArrayChain(DOCUMENT_CONTENT_MAX_DEPTH + 1)),
+      assertAllowedTiptapJson(overLimit, "customRoot"),
     ).toThrow(/maximum nesting depth/);
 
-    const veryDeep = nestedArrayChain(10_000);
+    // 10k-level node-shaped TipTap doc through the save-path schema — clean
+    // issue, not a RangeError from unbounded recursion.
+    const veryDeep = nestedBlockquoteDoc(10_000);
     expect(() => assertContentJsonDepth(veryDeep)).toThrow(
       /maximum nesting depth/,
     );
     expect(() => assertAllowedTiptapJson(veryDeep)).toThrow(
       /maximum nesting depth/,
     );
-  });
-
-  it("keeps a representative existing valid document valid", () => {
-    const parsed = documentContentSchema.parse(REPRESENTATIVE_VALID_DOCUMENT);
-    expect(parsed).toMatchObject({
-      type: "doc",
-      content: [
-        { type: "heading", attrs: { level: 2 } },
-        { type: "heading", attrs: { level: 3 } },
-        { type: "paragraph" },
-        { type: "bulletList" },
-        { type: "orderedList", attrs: { start: 1 } },
-        { type: "blockquote" },
-      ],
-    });
-    expect(assertAllowedTiptapJson(REPRESENTATIVE_VALID_DOCUMENT).content).toHaveLength(
-      6,
-    );
+    const veryDeepParse = documentContentSchema.safeParse(veryDeep);
+    expect(veryDeepParse.success).toBe(false);
+    if (!veryDeepParse.success) {
+      expect(veryDeepParse.error.issues[0]?.message).toMatch(
+        /maximum nesting depth/,
+      );
+    }
   });
 
   it("accepts the full allow-list including hardBreak, lists, quote, bold, italic", () => {

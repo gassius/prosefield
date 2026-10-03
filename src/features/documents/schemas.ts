@@ -8,12 +8,20 @@ export const DOCUMENT_TITLE_MAX = 120;
 export const DOCUMENT_CONTENT_MAX_BYTES = 512 * 1024;
 
 /**
- * Maximum nesting depth of content JSON (objects and arrays).
- * Root value is depth 0; each nested object/array increments by 1.
+ * Maximum TipTap *node* nesting depth (not raw JSON containers).
+ *
+ * Root `doc` is depth 0; each child in a node's `content` array is depth+1.
+ * Marks and attrs are not counted — they are bounded by the allow-lists
+ * ({@link ALLOWED_MARK_ATTR_KEYS}, {@link ALLOWED_NODE_ATTR_KEYS}).
  * Checked iteratively (stack) so over-deep input cannot blow the call stack.
- * 32 covers deeply nested lists while bounding adversarial payloads.
+ *
+ * Choice (a): count TipTap node nesting, not JSON object/array containers.
+ * Every list level is two nodes (`bulletList`/`orderedList` + `listItem`), then
+ * `paragraph` + `text`, so depth 64 ≈ 31 nested list levels. Bold/italic on the
+ * deepest text do not consume depth. Cap is well above realistic editor nesting
+ * while still bounding adversarial payloads.
  */
-export const DOCUMENT_CONTENT_MAX_DEPTH = 32;
+export const DOCUMENT_CONTENT_MAX_DEPTH = 64;
 
 export const DEFAULT_DOCUMENT_TITLE = "Untitled document";
 
@@ -129,17 +137,21 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Iteratively ensure content JSON nesting stays within
- * {@link DOCUMENT_CONTENT_MAX_DEPTH}. Root is depth 0.
+ * Iteratively ensure TipTap node nesting stays within
+ * {@link DOCUMENT_CONTENT_MAX_DEPTH}. Root node is depth 0.
+ * Only `content` children increment depth; marks/attrs are ignored here.
  */
 export function assertContentJsonDepth(
   value: unknown,
   maxDepth = DOCUMENT_CONTENT_MAX_DEPTH,
   path = "content",
 ): void {
-  const stack: Array<{ value: unknown; depth: number; path: string }> = [
-    { value, depth: 0, path },
-  ];
+  if (!isPlainObject(value)) {
+    return;
+  }
+
+  const stack: Array<{ value: Record<string, unknown>; depth: number; path: string }> =
+    [{ value, depth: 0, path }];
 
   while (stack.length > 0) {
     const current = stack.pop()!;
@@ -149,32 +161,18 @@ export function assertContentJsonDepth(
       );
     }
 
-    if (Array.isArray(current.value)) {
-      for (let index = current.value.length - 1; index >= 0; index -= 1) {
-        const child = current.value[index];
-        if (child !== null && typeof child === "object") {
-          stack.push({
-            value: child,
-            depth: current.depth + 1,
-            path: `${current.path}[${index}]`,
-          });
-        }
-      }
+    const content = current.value.content;
+    if (!Array.isArray(content)) {
       continue;
     }
-
-    if (isPlainObject(current.value)) {
-      const keys = Object.keys(current.value);
-      for (let index = keys.length - 1; index >= 0; index -= 1) {
-        const key = keys[index]!;
-        const child = current.value[key];
-        if (child !== null && typeof child === "object") {
-          stack.push({
-            value: child,
-            depth: current.depth + 1,
-            path: `${current.path}.${key}`,
-          });
-        }
+    for (let index = content.length - 1; index >= 0; index -= 1) {
+      const child = content[index];
+      if (isPlainObject(child)) {
+        stack.push({
+          value: child,
+          depth: current.depth + 1,
+          path: `${current.path}.content[${index}]`,
+        });
       }
     }
   }
@@ -199,7 +197,7 @@ export function assertAllowedLinkHref(
     throw new Error(`${path}: link href is not a valid URL`);
   }
 
-  const scheme = parsed.protocol.toLowerCase();
+  const scheme = parsed.protocol;
   if (!allowedLinkSchemeSet.has(scheme)) {
     throw new Error(`${path}: link href scheme '${scheme}' is not allowed`);
   }
@@ -270,16 +268,24 @@ function assertAllowedMark(
  * Unknown nodes/marks/attrs are rejected (not silently dropped), so a load of
  * legacy/off-spec JSON cannot become an empty doc that overwrites on the next
  * save — callers must handle the error or refuse to save.
+ *
+ * Depth is checked once at this public entry (not via `path === "content"`),
+ * then validation walks the tree. Callers may pass any root path label.
  */
 export function assertAllowedTiptapJson(
   value: unknown,
   path = "content",
   options?: AssertTiptapOptions,
 ): TiptapJson {
-  if (path === "content") {
-    assertContentJsonDepth(value, DOCUMENT_CONTENT_MAX_DEPTH, path);
-  }
+  assertContentJsonDepth(value, DOCUMENT_CONTENT_MAX_DEPTH, path);
+  return validateAllowedTiptapJson(value, path, options);
+}
 
+function validateAllowedTiptapJson(
+  value: unknown,
+  path: string,
+  options?: AssertTiptapOptions,
+): TiptapJson {
   if (!isPlainObject(value)) {
     throw new Error(`${path}: expected an object`);
   }
@@ -373,7 +379,7 @@ export function assertAllowedTiptapJson(
       throw new Error(`${path}: content must be an array`);
     }
     result.content = value.content.map((child, index) =>
-      assertAllowedTiptapJson(child, `${path}.content[${index}]`, options),
+      validateAllowedTiptapJson(child, `${path}.content[${index}]`, options),
     );
   }
 
