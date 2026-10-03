@@ -14,7 +14,7 @@ Nothing else is needed on the host. Emulators run only inside Docker (no global 
 ## Quick start
 
 1. `nvm use`
-2. Optional: `cp .env.example .env` and paste a Stripe **test** key (`sk_test_…` only) when you need real Stripe CLI / billing work. A Stripe test account is free. `pnpm dev` also starts with built-in local defaults if `.env` is missing.
+2. Optional: `cp .env.example .env` and paste a Stripe **test** key (`sk_test_…` or `rk_test_…`) when you need real Stripe CLI / billing work. A Stripe test account is free. `pnpm dev` also starts with built-in local defaults if `.env` is missing.
 3. Frontend (no backend required):
 
    ```bash
@@ -51,15 +51,10 @@ Auth/Firestore emulator state lives in the Docker named volume `emulator-data`, 
 
 CI never needs real Stripe credentials or network. For a local end-to-end payment with Carlos's **test-mode** keys:
 
-1. Put your `sk_test_…` in `.env` as `STRIPE_SECRET_KEY` (never commit `.env`).
-2. Seed a Price: `pnpm stripe:seed` — paste the printed `STRIPE_PRICE_ID` into `.env`.
-3. Print a webhook secret with the Stripe CLI in Docker, then paste it as `STRIPE_WEBHOOK_SECRET`:
-
-   ```bash
-   docker compose run --rm stripe-cli listen --print-secret
-   ```
-
-4. Start the app on the host (`pnpm dev`) and emulators (`pnpm backend:up`). Forward webhooks (needs the `app` profile, or point `--forward-to` at `host.docker.internal:3000` if the CLI reaches the host):
+1. Put your `sk_test_…` or `rk_test_…` in `.env` as `STRIPE_SECRET_KEY` (never commit `.env`).
+2. Run `pnpm stripe:setup` — seeds a Price, writes `STRIPE_PRICE_ID` into `.env`, runs `docker compose run --rm stripe-cli listen --print-secret`, and writes `STRIPE_WEBHOOK_SECRET` into `.env` (updates in place; never prints secret values). Requires Docker. Per [Stripe CLI docs](https://docs.stripe.com/cli/listen), the webhook signing secret does **not** change between `listen --print-secret` and a later `listen --forward-to` with the same API key, so this value matches the long-running `stripe` profile listener.
+3. Start the app on the host (`pnpm dev`) and emulators (`pnpm backend:up`).
+4. Forward webhooks with the Stripe CLI (needs the `app` profile, or point `--forward-to` at `host.docker.internal:3000` if the CLI reaches the host):
 
    ```bash
    docker compose --profile app --profile stripe up
@@ -67,15 +62,15 @@ CI never needs real Stripe credentials or network. For a local end-to-end paymen
 
 5. Register, open `/subscribe`, continue to Checkout, pay with `4242 4242 4242 4242` (any future expiry, any CVC). You should land on `/billing/status`, then `/documents` once the verified webhook (or session-sync fallback) projects `status: active`.
 
-Without Stripe keys the app still boots: plan display falls back to `PLAN_DISPLAY_*` (€8/month), and `/subscribe` shows a clear **Billing is not configured** message instead of crashing.
+`/subscribe` stays **Billing is not configured** until all three of `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET` are set to non-placeholder values. Without them the app still boots: plan display falls back to `PLAN_DISPLAY_*` (€8/month).
 
-Stripe webhook secret (CLI):
+Compose maps `STRIPE_SECRET_KEY` from `.env` to the CLI's `STRIPE_API_KEY`. For a webhook secret alone (without re-seeding):
 
 ```bash
 docker compose run --rm stripe-cli listen --print-secret
 ```
 
-Compose maps `STRIPE_SECRET_KEY` from `.env` to the CLI's `STRIPE_API_KEY`. Put the printed value in `.env` as `STRIPE_WEBHOOK_SECRET`, then start with the `stripe` profile.
+(`pnpm stripe:seed` / `pnpm stripe:setup` use `tsx --env-file-if-exists=.env`, so exporting `STRIPE_SECRET_KEY=…` without a `.env` file still works.)
 
 ## Scripts
 
@@ -90,7 +85,8 @@ Compose maps `STRIPE_SECRET_KEY` from `.env` to the CLI's `STRIPE_API_KEY`. Put 
 | `pnpm test:e2e:offline` | Landing page only, backend down (host-only frontend rule) |
 | `pnpm test:visual` | Visual regression inside the official Playwright Docker image |
 | `pnpm test:visual:update` | Regenerate visual baselines (commit the diff; review deliberately) |
-| `pnpm stripe:seed` | Create test Product + monthly Price; print `STRIPE_PRICE_ID` |
+| `pnpm stripe:setup` | Seed Price + webhook secret into `.env` (loads `.env`; Docker required) |
+| `pnpm stripe:seed` | Create test Product + monthly Price; print `STRIPE_PRICE_ID` (loads `.env`) |
 | `pnpm backend:up` | `docker compose up -d --wait` (requires Docker) |
 | `pnpm backend:down` | `docker compose down` |
 | `pnpm backend:logs` | Follow emulator logs |

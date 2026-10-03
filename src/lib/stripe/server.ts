@@ -6,7 +6,7 @@ import { getEnv } from "@/lib/env";
 let cached: Stripe | undefined;
 
 /**
- * Server-only Stripe client (test mode keys only — enforced by env.ts).
+ * Server-only Stripe client (test mode sk_test_/rk_test_ keys — enforced by env.ts).
  */
 export function getStripe(): Stripe {
   if (!cached) {
