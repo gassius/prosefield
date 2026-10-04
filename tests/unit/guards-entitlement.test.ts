@@ -127,6 +127,23 @@ describe("guards entitlement wiring (active only)", () => {
     await expect(getAccountState()).resolves.toMatchObject({
       kind: "subscriber",
       email: "",
+      displayName: null,
+    });
+  });
+
+  it("reads displayName from the session name claim when present", async () => {
+    getOptionalSession.mockResolvedValue({
+      uid: "u1",
+      email: "a@example.com",
+      name: "  Ada Lovelace  ",
+      auth_time: Math.floor(Date.now() / 1000),
+    });
+    firestoreGet.mockResolvedValue({ exists: false });
+    const { getAccountState } = await import("@/features/auth/guards");
+    await expect(getAccountState()).resolves.toMatchObject({
+      kind: "logged_in",
+      displayName: "Ada Lovelace",
+      email: "a@example.com",
     });
   });
 

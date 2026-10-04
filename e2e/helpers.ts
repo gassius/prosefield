@@ -74,11 +74,32 @@ export async function loginViaUi(
 }
 
 export async function expectSignedIn(page: Page, email: string): Promise<void> {
-  await expect(page.getByText(email)).toBeVisible({ timeout: 20_000 });
+  // Accessible name is `${label}, Account menu` (WCAG 2.5.3 Label in Name).
+  const escaped = email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  await expect(
+    page.getByRole("button", { name: new RegExp(escaped) }),
+  ).toBeVisible({ timeout: 20_000 });
 }
 
 export async function expectSignedOut(page: Page): Promise<void> {
   await expect(page.getByRole("link", { name: "Sign in" }).first()).toBeVisible();
+}
+
+/** Open the account dropdown and choose Sign out (desktop / sm+). */
+export async function signOutViaUi(page: Page): Promise<void> {
+  const trigger = page.getByRole("button", { name: /Account menu/i }).first();
+  await expect(trigger).toBeVisible({ timeout: 20_000 });
+  await trigger.click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
+}
+
+/** Open the mobile Sheet, then the account menu, then Sign out. */
+export async function signOutViaMobileSheet(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Open menu" }).click();
+  const sheet = page.getByRole("dialog");
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("button", { name: /Account menu/i }).click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
 }
 
 export async function expectNoSessionCookie(page: Page): Promise<void> {

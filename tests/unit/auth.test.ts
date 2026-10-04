@@ -42,6 +42,7 @@ describe("ctaDestinationForState", () => {
         kind: "logged_in",
         uid: "u1",
         email: "a@b.c",
+        displayName: null,
         subscriptionActive: false,
       }),
     ).toBe("/subscribe");
@@ -50,9 +51,45 @@ describe("ctaDestinationForState", () => {
         kind: "subscriber",
         uid: "u1",
         email: "a@b.c",
+        displayName: null,
         subscriptionActive: true,
       }),
     ).toBe("/documents");
+  });
+});
+
+describe("accountDisplayLabel", () => {
+  it("prefers display name, then email", async () => {
+    const { accountDisplayLabel } = await import(
+      "@/features/auth/account-state"
+    );
+    expect(
+      accountDisplayLabel({
+        kind: "logged_in",
+        uid: "u1",
+        email: "a@b.c",
+        displayName: "Ada",
+        subscriptionActive: false,
+      }),
+    ).toBe("Ada");
+    expect(
+      accountDisplayLabel({
+        kind: "subscriber",
+        uid: "u1",
+        email: "a@b.c",
+        displayName: "  ",
+        subscriptionActive: true,
+      }),
+    ).toBe("a@b.c");
+    expect(
+      accountDisplayLabel({
+        kind: "logged_in",
+        uid: "u1",
+        email: "  ",
+        displayName: null,
+        subscriptionActive: false,
+      }),
+    ).toBe("");
   });
 });
 

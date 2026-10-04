@@ -6,6 +6,7 @@ import {
   loginViaUi,
   registerViaUi,
   resetEmulators,
+  signOutViaUi,
   uniqueEmail,
 } from "./helpers";
 
@@ -62,7 +63,7 @@ test("register with an existing email shows a generic error", async ({ page }) =
 
   await page.goto("/register");
   // Already signed in redirects away — sign out first.
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await signOutViaUi(page);
   await expectSignedOut(page);
 
   await registerViaUi(page, email, "password-123");
@@ -77,7 +78,7 @@ test("login succeeds; wrong password and unknown account show errors", async ({
 }) => {
   const email = uniqueEmail("login");
   await registerViaUi(page, email, "password-123");
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await signOutViaUi(page);
   await expectSignedOut(page);
 
   await loginViaUi(page, email, "wrong-password");
@@ -109,7 +110,7 @@ test("logout clears the session and protected routes redirect to login", async (
   await registerViaUi(page, email, "password-123");
   await expect(page).toHaveURL(/\/subscribe/);
 
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await signOutViaUi(page);
   await expect(page).toHaveURL("/");
   await expectSignedOut(page);
 

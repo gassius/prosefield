@@ -55,12 +55,14 @@ describe("DocumentPage documentId gate (finding 14)", () => {
       kind: "subscriber",
       uid: "owner-1",
       email: "owner@example.com",
+      displayName: null,
       subscriptionActive: true,
     });
     getAccountState.mockResolvedValue({
       kind: "subscriber",
       uid: "owner-1",
       email: "owner@example.com",
+      displayName: null,
       subscriptionActive: true,
     });
   });
