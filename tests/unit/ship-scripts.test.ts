@@ -357,24 +357,30 @@ describe("stop.sh executable behaviour", () => {
     const stubDir = mkdtempSync(path.join(tmpdir(), "pf-stop-compose-"));
     junk.push(stubDir);
     const marker = path.join(stubDir, "compose-down.marker");
+    // Match both `compose down` and `compose --env-file … down` (no .env in CI).
     writeStub(
       stubDir,
       "docker",
       `if [[ "\${1:-}" == "info" ]]; then exit 0; fi
-       if [[ "\${1:-}" == "compose" && "\${2:-}" == "down" ]]; then
-         echo down >'${marker}'
+       if [[ "\${1:-}" == "compose" ]]; then
+         for arg in "\$@"; do
+           if [[ "\$arg" == "down" ]]; then
+             echo down >'${marker}'
+             exit 0
+           fi
+         done
          exit 0
        fi
        exit 0`,
     );
+    const env = {
+      ...process.env,
+      PATH: `${stubDir}:${process.env.PATH ?? ""}`,
+      PROSEFIELD_DEV_PID_FILE: path.join(stubDir, "missing.pid"),
+    } as NodeJS.ProcessEnv;
+    delete env.PROSEFIELD_STOP_SKIP_COMPOSE;
     const out = execFileSync("bash", [stopSh], {
-      env: {
-        ...process.env,
-        PATH: `${stubDir}:${process.env.PATH ?? ""}`,
-        PROSEFIELD_DEV_PID_FILE: path.join(stubDir, "missing.pid"),
-        // Explicitly unset skip
-        PROSEFIELD_STOP_SKIP_COMPOSE: "",
-      },
+      env,
       encoding: "utf8",
     });
     expect(out).toMatch(/Stopped Docker Compose services/);
