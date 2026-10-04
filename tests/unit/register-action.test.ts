@@ -41,6 +41,25 @@ describe("registerAction (server entry point)", () => {
     expect(createUser).not.toHaveBeenCalled();
   });
 
+  it("rejects 123456 before Firebase and creates no user", async () => {
+    const { registerAction } = await import("@/features/auth/register");
+    const short = "123456";
+    expect(short).toHaveLength(6);
+
+    const result = await registerAction({
+      email: "six-char@example.com",
+      password: short,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      field: "password",
+      message: siteCopy.auth.passwordHint,
+    });
+    expect(createUser).not.toHaveBeenCalled();
+    expect(setCustomUserClaims).not.toHaveBeenCalled();
+  });
+
   it("accepts an 8-character password and stamps pf_pw before return", async () => {
     createUser.mockResolvedValue({ uid: "uid-1" });
     const { registerAction } = await import("@/features/auth/register");

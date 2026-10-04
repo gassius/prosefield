@@ -16,8 +16,8 @@ describe("mapAuthError", () => {
       field: "password",
       message: siteCopy.auth.passwordHint,
     });
-    expect(siteCopy.auth.passwordHint.toLowerCase()).toContain("8");
-    expect(PASSWORD_MIN_LENGTH).toBeGreaterThanOrEqual(8);
+    expect(siteCopy.auth.passwordHint).toContain(String(PASSWORD_MIN_LENGTH));
+    expect(PASSWORD_MIN_LENGTH).toBe(8);
   });
 
   it("maps duplicate email to the generic summary (no account enumeration)", () => {

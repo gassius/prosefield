@@ -61,6 +61,26 @@ describe("registerAction (emulators)", () => {
     });
   });
 
+  it("rejects 123456 and creates no Auth user", async () => {
+    const { registerAction } = await import("@/features/auth/register");
+    const { getAdminAuth } = await import("@/lib/firebase/admin");
+    const { siteCopy } = await import("@/content/site");
+    const email = `six-char-${randomUUID()}@example.com`;
+    const short = "123456";
+    expect(short).toHaveLength(6);
+
+    const result = await registerAction({ email, password: short });
+    expect(result).toEqual({
+      ok: false,
+      field: "password",
+      message: siteCopy.auth.passwordHint,
+    });
+
+    await expect(getAdminAuth().getUserByEmail(email)).rejects.toMatchObject({
+      code: "auth/user-not-found",
+    });
+  });
+
   it("accepts an 8-character password and stamps pf_pw on the Auth user", async () => {
     const { registerAction } = await import("@/features/auth/register");
     const { getAdminAuth } = await import("@/lib/firebase/admin");

@@ -225,7 +225,7 @@ export function AuthForm({ mode, nextPath }: AuthFormProps) {
           aria-describedby={
             passwordError ? `${passwordId}-error` : `${passwordId}-hint`
           }
-          minLength={PASSWORD_MIN_LENGTH}
+          minLength={mode === "register" ? PASSWORD_MIN_LENGTH : undefined}
           required
         />
         {passwordError ? (

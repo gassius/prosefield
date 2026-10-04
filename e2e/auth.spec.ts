@@ -32,9 +32,25 @@ test("register rejects a 7-character password before creating an account", async
 }) => {
   await page.goto("/register");
   await page.getByLabel("Email").fill(uniqueEmail("short-pw"));
-  await page.getByLabel("Password").fill("abcdefg");
+  const password = page.getByLabel("Password");
+  await password.fill("abcdefg");
   await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByText("Use at least 8 characters.")).toBeVisible();
+  await expect(password).toHaveAttribute("aria-invalid", "true");
+  await expect(password).toHaveAttribute("aria-describedby", /-error$/);
+  await expect(page).toHaveURL(/\/register/);
+  await expectNoSessionCookie(page);
+});
+
+test("register rejects 123456, stays on the page, and shows the hint error", async ({
+  page,
+}) => {
+  await page.goto("/register");
+  await page.getByLabel("Email").fill(uniqueEmail("firebase-default-pw"));
+  const password = page.getByLabel("Password");
+  await password.fill("123456");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(password).toHaveAttribute("aria-invalid", "true");
+  await expect(password).toHaveAttribute("aria-describedby", /-error$/);
   await expect(page).toHaveURL(/\/register/);
   await expectNoSessionCookie(page);
 });
