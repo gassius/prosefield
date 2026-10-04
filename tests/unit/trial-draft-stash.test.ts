@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   DOCUMENT_CONTENT_MAX_DEPTH,
   EMPTY_DOCUMENT_CONTENT,
+  type TiptapJson,
 } from "@/features/documents/schemas";
 import {
   clearAllTrialDrafts,
@@ -15,8 +16,8 @@ import {
   validateTrialDraft,
 } from "@/features/documents/trial-draft-stash";
 
-function nestBlockquotes(depth: number) {
-  let node: Record<string, unknown> = {
+function nestBlockquotes(depth: number): TiptapJson {
+  let node: TiptapJson = {
     type: "paragraph",
     content: [{ type: "text", text: "deep" }],
   };
@@ -109,6 +110,19 @@ describe("trial draft stash (uid-scoped sessionStorage)", () => {
     expect(readTrialDraft("uid-b")?.title).toBe("Untitled document");
   });
 
+  it("validateTrialDraft normalises empty input and rejects bad shapes", () => {
+    // null / non-objects coerce to {} → schema defaults.
+    expect(validateTrialDraft(null)).toEqual({
+      title: "Untitled document",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(validateTrialDraft({ title: 1 })).toBeNull();
+    expect(validateTrialDraft({ title: "Ok", content: EMPTY_DOCUMENT_CONTENT })).toEqual({
+      title: "Ok",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+  });
+
   it("rejects oversize titles and too-deep content via #25 schema", () => {
     const longTitle = "x".repeat(121);
     expect(
@@ -159,5 +173,36 @@ describe("trial draft stash (uid-scoped sessionStorage)", () => {
     clearTrialDraftsNotForUid("uid-keep");
     expect(readTrialDraft("uid-keep")?.title).toBe("Keep");
     expect(readTrialDraft("uid-drop")).toBeNull();
+  });
+
+  it("clearTrialDraftsNotForUid with empty uid clears all drafts", () => {
+    stashTrialDraft("uid-a", {
+      title: "A",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    clearTrialDraftsNotForUid("");
+    expect(readTrialDraft("uid-a")).toBeNull();
+  });
+
+  it("stash/read/clear no-op when sessionStorage is unavailable", () => {
+    const original = globalThis.sessionStorage;
+    Object.defineProperty(globalThis, "sessionStorage", {
+      configurable: true,
+      value: undefined,
+    });
+    expect(
+      stashTrialDraft("uid-a", {
+        title: "Nope",
+        content: EMPTY_DOCUMENT_CONTENT,
+      }),
+    ).toEqual({ ok: false, reason: "unavailable" });
+    expect(readTrialDraft("uid-a")).toBeNull();
+    expect(() => clearTrialDraft("uid-a")).not.toThrow();
+    expect(() => clearAllTrialDrafts()).not.toThrow();
+    expect(() => clearTrialDraftsNotForUid("uid-a")).not.toThrow();
+    Object.defineProperty(globalThis, "sessionStorage", {
+      configurable: true,
+      value: original,
+    });
   });
 });

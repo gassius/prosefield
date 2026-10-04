@@ -10,7 +10,7 @@ const assign = vi.fn();
 const persistStashedTrialDraft = vi.fn();
 
 const stashBehavior = vi.hoisted(() => ({
-  mode: "real" as "real" | "invalid",
+  mode: "real" as "real" | "invalid" | "unavailable",
 }));
 
 vi.mock("next/navigation", () => ({
@@ -33,6 +33,9 @@ vi.mock("@/features/documents/trial-draft-stash", async () => {
     ) => {
       if (stashBehavior.mode === "invalid") {
         return { ok: false, reason: "invalid" as const };
+      }
+      if (stashBehavior.mode === "unavailable") {
+        return { ok: false, reason: "unavailable" as const };
       }
       return actual.stashTrialDraft(...args);
     },
@@ -344,6 +347,23 @@ describe("TrialEditor locks and leave guard", () => {
     expect(screen.queryByTestId("trial-leave-modal")).toBeNull();
   });
 
+  it("closes the leave modal via Cancel (onOpenChange)", async () => {
+    const user = userEvent.setup();
+    renderTrial();
+    await waitForEditor();
+    const title = screen.getByLabelText("Document title");
+    await user.clear(title);
+    await user.type(title, "Cancel leave");
+    await user.tab();
+    await user.click(screen.getByRole("link", { name: "Pricing" }));
+    expect(await screen.findByTestId("trial-leave-modal")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByTestId("trial-leave-modal")).toBeNull();
+    });
+    expect(push).not.toHaveBeenCalled();
+  });
+
   it("leave-anyway discards stash, navigates, and does not re-arm beforeunload", async () => {
     stashTrialDraft("uid-trial", {
       title: "Discard me",
@@ -369,6 +389,156 @@ describe("TrialEditor locks and leave guard", () => {
     clearTrialDraft("uid-trial");
   });
 
+  it("commits title on Enter and restores blank titles to Untitled", async () => {
+    const user = userEvent.setup();
+    renderTrial();
+    await waitForEditor();
+    const title = screen.getByLabelText("Document title");
+    await user.clear(title);
+    await user.type(title, "Enter title");
+    await user.keyboard("{Enter}");
+    expect(title).toHaveValue("Enter title");
+    await user.clear(title);
+    await user.tab();
+    expect(title).toHaveValue("Untitled document");
+    expect(screen.getByText(siteCopy.documents.unsaved)).toBeVisible();
+  });
+
+  it("ignores hash, mailto, and self trial links while dirty", async () => {
+    const user = userEvent.setup();
+    renderTrial();
+    await waitForEditor();
+    const title = screen.getByLabelText("Document title");
+    await user.clear(title);
+    await user.type(title, "Stay put");
+    await user.tab();
+
+    const hash = document.createElement("a");
+    hash.setAttribute("href", "#faq");
+    hash.textContent = "Hash";
+    document.body.appendChild(hash);
+    await user.click(hash);
+    expect(screen.queryByTestId("trial-leave-modal")).toBeNull();
+
+    const mail = document.createElement("a");
+    mail.setAttribute("href", "mailto:hi@example.com");
+    mail.textContent = "Mail";
+    document.body.appendChild(mail);
+    await user.click(mail);
+    expect(screen.queryByTestId("trial-leave-modal")).toBeNull();
+
+    const self = document.createElement("a");
+    self.setAttribute("href", "/documents/trial");
+    self.textContent = "Self";
+    document.body.appendChild(self);
+    await user.click(self);
+    expect(screen.queryByTestId("trial-leave-modal")).toBeNull();
+
+    // Non-Element target is ignored by the leave interceptor.
+    document.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+
+    hash.remove();
+    mail.remove();
+    self.remove();
+  });
+
+  it("no-ops title commit when the committed title is unchanged", async () => {
+    const user = userEvent.setup();
+    renderTrial();
+    await waitForEditor();
+    const title = screen.getByLabelText("Document title");
+    await user.clear(title);
+    await user.type(title, "Same");
+    await user.tab();
+    expect(screen.getByText(siteCopy.documents.unsaved)).toBeVisible();
+    await user.click(title);
+    await user.tab();
+    expect(title).toHaveValue("Same");
+  });
+
+  it("loads an initialDraft prop when provided", async () => {
+    const { TrialEditor } = await import("@/components/documents/trial-editor");
+    const { UnsavedLeaveGuardProvider } = await import(
+      "@/components/documents/unsaved-leave-guard"
+    );
+    const { cleanup } = await import("@testing-library/react");
+    cleanup();
+    render(
+      <UnsavedLeaveGuardProvider>
+        <TrialEditor
+          uid="uid-trial"
+          initialDraft={{
+            title: "From prop",
+            content: EMPTY_DOCUMENT_CONTENT,
+          }}
+        />
+      </UnsavedLeaveGuardProvider>,
+    );
+    await waitForEditor();
+    expect(screen.getByLabelText("Document title")).toHaveValue("From prop");
+  });
+
+  it("works without a leave-guard provider (optional chaining)", async () => {
+    const { TrialEditor } = await import("@/components/documents/trial-editor");
+    const { cleanup } = await import("@testing-library/react");
+    cleanup();
+    render(
+      <TrialEditor
+        uid="uid-trial"
+        initialDraft={{
+          title: "No guard",
+          content: EMPTY_DOCUMENT_CONTENT,
+        }}
+      />,
+    );
+    await waitForEditor();
+    expect(screen.getByLabelText("Document title")).toHaveValue("No guard");
+    // Dirty navigation with no provider must not throw.
+    const link = document.createElement("a");
+    link.setAttribute("href", "/#pricing");
+    link.textContent = "Go";
+    document.body.appendChild(link);
+    const user = userEvent.setup();
+    await user.click(link);
+    expect(screen.queryByTestId("trial-leave-modal")).toBeNull();
+    link.remove();
+  });
+
+  it("stashes Untitled when the title input is cleared but not committed", async () => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, assign, origin: "http://localhost:3000" },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ url: "https://checkout.stripe.com/c/pay/cs" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderTrial();
+    await waitForEditor();
+    const title = screen.getByLabelText("Document title");
+    await user.clear(title);
+    // Do not blur — exercise title.trim() || DEFAULT in currentDraft.
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const modal = await screen.findByTestId("trial-subscribe-modal");
+    await user.click(
+      within(modal).getByRole("button", {
+        name: "Continue to secure checkout",
+      }),
+    );
+    await waitFor(() => {
+      expect(readTrialDraft("uid-trial")?.title).toBe("Untitled document");
+      expect(assign).toHaveBeenCalled();
+    });
+  });
+
   it("blocks checkout and shows an error when stash validation fails", async () => {
     Object.defineProperty(window, "location", {
       configurable: true,
@@ -392,6 +562,26 @@ describe("TrialEditor locks and leave guard", () => {
       siteCopy.documents.trialDraftInvalid,
     );
     expect(assign).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("blocks checkout when sessionStorage stash is unavailable", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    stashBehavior.mode = "unavailable";
+    const user = userEvent.setup();
+    renderTrial();
+    await waitForEditor();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const modal = await screen.findByTestId("trial-subscribe-modal");
+    await user.click(
+      within(modal).getByRole("button", {
+        name: "Continue to secure checkout",
+      }),
+    );
+    expect(await screen.findByTestId("trial-draft-error")).toHaveTextContent(
+      siteCopy.subscribe.checkoutError,
+    );
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

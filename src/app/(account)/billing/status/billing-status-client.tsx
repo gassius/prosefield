@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useEffectEvent, useCallback } from "react";
+import { useEffect, useState, useEffectEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { siteCopy } from "@/content/site";
 import { pollBillingStatus } from "@/features/billing/actions";
@@ -56,12 +56,12 @@ export function BillingStatusClient(props: {
   );
   const [retrying, setRetrying] = useState(false);
 
-  const runPersist = useCallback(async () => {
+  const runPersist = useEffectEvent(async () => {
     const outcome = await tryPersistActive(router, props.uid);
     if (outcome === "persist_failed") {
       setPhase("persist_failed");
     }
-  }, [props.uid, router]);
+  });
 
   const onPollResult = useEffectEvent(
     async (status: "pending" | "active" | "failed") => {
@@ -78,8 +78,11 @@ export function BillingStatusClient(props: {
 
   useEffect(() => {
     if (props.initialView === "active") {
-      void runPersist();
-      return;
+      // Defer so setPhase from persist isn't sync-in-effect (react-hooks/set-state-in-effect).
+      const timeoutId = window.setTimeout(() => {
+        void runPersist();
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
     }
     if (props.initialView === "failed") {
       return;
@@ -125,7 +128,7 @@ export function BillingStatusClient(props: {
         clearTimeout(timeoutId);
       }
     };
-  }, [props.initialView, runPersist]);
+  }, [props.initialView]);
 
   const onRetryPersist = async () => {
     setRetrying(true);

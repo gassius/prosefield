@@ -3,20 +3,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const redirect = vi.fn((path: string) => {
   throw new Error(`NEXT_REDIRECT:${path}`);
 });
-const requireSessionOrRedirect = vi.fn();
+const requireSessionOrRedirect = vi.fn<(path?: string) => Promise<unknown>>();
 const getAccountState = vi.fn();
-const ctaDestinationForState = vi.fn(() => "/subscribe");
+const ctaDestinationForState = vi.fn<(state?: unknown) => string>(
+  () => "/subscribe",
+);
 
 vi.mock("next/navigation", () => ({
   redirect: (path: string) => redirect(path),
 }));
 
 vi.mock("@/features/auth/guards", () => ({
-  requireSessionOrRedirect: (...args: unknown[]) =>
-    requireSessionOrRedirect(...args),
+  requireSessionOrRedirect: (path?: string) => requireSessionOrRedirect(path),
   getAccountState: () => getAccountState(),
-  ctaDestinationForState: (...args: unknown[]) =>
-    ctaDestinationForState(...args),
+  ctaDestinationForState: (state?: unknown) => ctaDestinationForState(state),
 }));
 
 vi.mock("@/components/documents/trial-workspace", () => ({

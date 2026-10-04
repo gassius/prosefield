@@ -1,4 +1,4 @@
-import { createElement, useEffect } from "react";
+import { useEffect } from "react";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,39 +18,20 @@ function GuardControls({
   useEffect(() => {
     guard?.setDirty(dirty);
   }, [dirty, guard]);
-  return createElement(
-    "div",
-    null,
-    createElement(
-      "button",
-      {
-        type: "button",
-        onClick: () => guard?.requestLeave(action),
-      },
-      "request-leave",
-    ),
-    createElement(
-      "button",
-      {
-        type: "button",
-        onClick: () => guard?.confirmLeaveAnyway(),
-      },
-      "confirm-leave",
-    ),
-    createElement(
-      "button",
-      {
-        type: "button",
-        onClick: () => guard?.cancelLeave(),
-      },
-      "cancel-leave",
-    ),
-    createElement("span", { "data-testid": "dirty" }, String(guard?.isDirty)),
-    createElement(
-      "span",
-      { "data-testid": "modal" },
-      String(guard?.leaveModalOpen),
-    ),
+  return (
+    <div>
+      <button type="button" onClick={() => guard?.requestLeave(action)}>
+        request-leave
+      </button>
+      <button type="button" onClick={() => guard?.confirmLeaveAnyway()}>
+        confirm-leave
+      </button>
+      <button type="button" onClick={() => guard?.cancelLeave()}>
+        cancel-leave
+      </button>
+      <span data-testid="dirty">{String(guard?.isDirty)}</span>
+      <span data-testid="modal">{String(guard?.leaveModalOpen)}</span>
+    </div>
   );
 }
 
@@ -63,11 +44,9 @@ describe("UnsavedLeaveGuardProvider", () => {
     const user = userEvent.setup();
     const action = vi.fn();
     render(
-      createElement(
-        UnsavedLeaveGuardProvider,
-        null,
-        createElement(GuardControls, { dirty: false, action }),
-      ),
+      <UnsavedLeaveGuardProvider>
+        <GuardControls dirty={false} action={action} />
+      </UnsavedLeaveGuardProvider>,
     );
     await waitFor(() => {
       expect(screen.getByTestId("dirty")).toHaveTextContent("false");
@@ -82,11 +61,9 @@ describe("UnsavedLeaveGuardProvider", () => {
     const action = vi.fn();
     const onDiscard = vi.fn();
     render(
-      createElement(
-        UnsavedLeaveGuardProvider,
-        { onDiscard },
-        createElement(GuardControls, { dirty: true, action }),
-      ),
+      <UnsavedLeaveGuardProvider onDiscard={onDiscard}>
+        <GuardControls dirty action={action} />
+      </UnsavedLeaveGuardProvider>,
     );
     await waitFor(() => {
       expect(screen.getByTestId("dirty")).toHaveTextContent("true");
@@ -113,6 +90,31 @@ describe("UnsavedLeaveGuardProvider", () => {
     expect(action).toHaveBeenCalledTimes(1);
   });
 
+  it("setLeaveModalOpen(true) opens the modal without a pending action", async () => {
+    const user = userEvent.setup();
+    function OpenOnly() {
+      const guard = useUnsavedLeaveGuard();
+      return (
+        <div>
+          <button
+            type="button"
+            onClick={() => guard?.setLeaveModalOpen(true)}
+          >
+            open-modal
+          </button>
+          <span data-testid="modal-open">{String(guard?.leaveModalOpen)}</span>
+        </div>
+      );
+    }
+    render(
+      <UnsavedLeaveGuardProvider>
+        <OpenOnly />
+      </UnsavedLeaveGuardProvider>,
+    );
+    await user.click(screen.getByRole("button", { name: "open-modal" }));
+    expect(screen.getByTestId("modal-open")).toHaveTextContent("true");
+  });
+
   it("setLeaveModalOpen(false) cancels a pending leave", async () => {
     const user = userEvent.setup();
     function CancelViaProp() {
@@ -120,33 +122,29 @@ describe("UnsavedLeaveGuardProvider", () => {
       useEffect(() => {
         guard?.setDirty(true);
       }, [guard]);
-      return createElement(
-        "button",
-        {
-          type: "button",
-          onClick: () => {
+      return (
+        <button
+          type="button"
+          onClick={() => {
             guard?.requestLeave(() => undefined);
             guard?.setLeaveModalOpen(false);
-          },
-        },
-        "request-and-cancel",
+          }}
+        >
+          request-and-cancel
+        </button>
       );
     }
     function ModalFlag() {
       const guard = useUnsavedLeaveGuard();
-      return createElement(
-        "span",
-        { "data-testid": "modal-flag" },
-        String(guard?.leaveModalOpen),
+      return (
+        <span data-testid="modal-flag">{String(guard?.leaveModalOpen)}</span>
       );
     }
     render(
-      createElement(
-        UnsavedLeaveGuardProvider,
-        null,
-        createElement(CancelViaProp),
-        createElement(ModalFlag),
-      ),
+      <UnsavedLeaveGuardProvider>
+        <CancelViaProp />
+        <ModalFlag />
+      </UnsavedLeaveGuardProvider>,
     );
     await user.click(screen.getByRole("button", { name: "request-and-cancel" }));
     expect(screen.getByTestId("modal-flag")).toHaveTextContent("false");

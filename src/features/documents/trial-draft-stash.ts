@@ -1,7 +1,5 @@
 import {
   createDocumentInputSchema,
-  DEFAULT_DOCUMENT_TITLE,
-  EMPTY_DOCUMENT_CONTENT,
   type TiptapJson,
 } from "@/features/documents/schemas";
 
@@ -54,9 +52,10 @@ export function validateTrialDraft(
   if (!parsed.success) {
     return null;
   }
+  // Schema already defaults blank/missing title+content (#25).
   return {
-    title: parsed.data.title.trim() || DEFAULT_DOCUMENT_TITLE,
-    content: parsed.data.content ?? EMPTY_DOCUMENT_CONTENT,
+    title: parsed.data.title,
+    content: parsed.data.content,
   };
 }
 

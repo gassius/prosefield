@@ -123,12 +123,13 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
   }, [saveStatus]);
 
   const currentDraft = useCallback((): TrialDraft => {
-    const content = editor
-      ? plainTiptapJson(editor.getJSON())
-      : EMPTY_DOCUMENT_CONTENT;
+    const trimmed = title.trim() || DEFAULT_DOCUMENT_TITLE;
+    if (!editor) {
+      return { title: trimmed, content: EMPTY_DOCUMENT_CONTENT };
+    }
     return {
-      title: title.trim() || DEFAULT_DOCUMENT_TITLE,
-      content,
+      title: trimmed,
+      content: plainTiptapJson(editor.getJSON()),
     };
   }, [editor, title]);
 
