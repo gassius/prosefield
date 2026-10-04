@@ -142,6 +142,11 @@ test.describe("transport security headers", () => {
     );
     expect(subscribeNonce).not.toBe(notFoundNonce);
 
+    const trial = await page.goto("/documents/trial");
+    const trialNonce = await assertCspClean(page, trial, consoleViolations);
+    expect(trialNonce).not.toBe(subscribeNonce);
+    await expect(page.getByLabel("Document title")).toBeVisible();
+
     const uid = await lookupUidByEmail(email, password);
     await seedSubscriptionProjection(uid, "active");
     await page.goto("/documents");
@@ -151,7 +156,7 @@ test.describe("transport security headers", () => {
     const editorUrl = page.url();
     const editor = await page.goto(editorUrl);
     const editorNonce = await assertCspClean(page, editor, consoleViolations);
-    expect(editorNonce).not.toBe(subscribeNonce);
+    expect(editorNonce).not.toBe(trialNonce);
     await expect(page.locator(".ProseMirror, [contenteditable='true']").first()).toBeVisible();
   });
 });

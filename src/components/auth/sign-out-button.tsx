@@ -6,8 +6,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useUnsavedLeaveGuard } from "@/components/documents/unsaved-leave-guard";
 import { siteCopy } from "@/content/site";
+import { clearClientSessionState } from "@/features/auth/clear-client-session-state";
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "@/features/auth/constants";
-import { clearTrialDraft } from "@/features/documents/trial-draft-stash";
 
 type SignOutFailureLog = {
   event: "sign_out_failed";
@@ -28,11 +28,15 @@ function logSignOutFailure(detail: SignOutFailureLog): void {
 
 type SignOutButtonProps = {
   className?: string;
-  /** When set, clears the uid-scoped trial draft stash after a successful sign-out. */
-  trialUid?: string;
 };
 
-export function SignOutButton({ className, trialUid }: SignOutButtonProps) {
+/**
+ * Sign-out control. After a successful DELETE /api/session, always runs
+ * {@link clearClientSessionState} (trial-draft stash hygiene) so every surface
+ * clears — not only the trial header. Designed to plug into #29's shared
+ * `use-sign-out` hook later without a `trialUid` prop.
+ */
+export function SignOutButton({ className }: SignOutButtonProps) {
   const router = useRouter();
   const leaveGuard = useUnsavedLeaveGuard();
   const [pending, setPending] = useState(false);
@@ -64,9 +68,7 @@ export function SignOutButton({ className, trialUid }: SignOutButtonProps) {
         setError(siteCopy.auth.signOutError);
         return;
       }
-      if (trialUid) {
-        clearTrialDraft(trialUid);
-      }
+      clearClientSessionState();
       router.replace("/");
       router.refresh();
     } catch {

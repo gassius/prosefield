@@ -34,7 +34,7 @@ function DirtySignOutHarness({
       onReady?.(() => guard.confirmLeaveAnyway());
     }
   }, [guard, onReady]);
-  return createElement(SignOutButton, { trialUid: "uid-leave" });
+  return createElement(SignOutButton);
 }
 
 const CSRF_VALUE = "test-csrf-secret-token";
@@ -209,11 +209,15 @@ describe("SignOutButton failure handling", () => {
     assertNoSecretsInLogs(consoleError);
   });
 
-  it("clears the uid-scoped trial draft stash after a successful sign-out", async () => {
+  it("clears every trial draft stash after a successful sign-out (no trialUid prop)", async () => {
     const user = userEvent.setup();
     sessionStorage.clear();
     stashTrialDraft("uid-signout", {
       title: "Clear on sign out",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    stashTrialDraft("uid-other", {
+      title: "Also clear",
       content: EMPTY_DOCUMENT_CONTENT,
     });
     expect(readTrialDraft("uid-signout")).not.toBeNull();
@@ -222,12 +226,14 @@ describe("SignOutButton failure handling", () => {
       vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })),
     );
 
-    render(createElement(SignOutButton, { trialUid: "uid-signout" }));
+    // No trialUid — clearing must be unconditional (subscribe/billing/landing/documents).
+    render(createElement(SignOutButton));
     await user.click(screen.getByRole("button", { name: siteCopy.header.signOut }));
     await waitFor(() => {
       expect(replace).toHaveBeenCalledWith("/");
     });
     expect(readTrialDraft("uid-signout")).toBeNull();
+    expect(readTrialDraft("uid-other")).toBeNull();
     sessionStorage.clear();
   });
 });

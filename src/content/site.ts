@@ -222,6 +222,14 @@ export const siteCopy = {
       "You have unsaved writing in the trial editor. Subscribe to keep it, or leave and discard it.",
     trialLeaveAnyway: "Leave anyway",
     trialSubscribeCta: "Continue to secure checkout",
+    /** Shown instead of green "Saved" — the trial doc was never persisted. */
+    trialNotSaved: "Not saved — subscribe to keep",
+    trialDraftInvalid:
+      "This draft is too large or uses unsupported formatting. Shorten it or remove formatting before checkout.",
+    trialPersistFailedTitle: "We couldn’t save your draft",
+    trialPersistFailedBody:
+      "Your subscription is active, but saving the draft failed. Retry to keep your writing.",
+    trialPersistRetry: "Retry saving draft",
     listHeading: "Documents",
     newDocument: "New document",
     emptyTitle: "Your first page is waiting.",

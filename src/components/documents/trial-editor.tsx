@@ -5,11 +5,12 @@ import {
   useEffect,
   useEffectEvent,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import Placeholder from "@tiptap/extension-placeholder";
-import { FileText, Plus } from "lucide-react";
+import { AlertCircle, FileText, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { EditorToolbar } from "@/components/editor/toolbar";
 import { SaveStatusIndicator } from "@/components/editor/save-status";
@@ -47,6 +48,8 @@ type TrialEditorProps = {
 export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
   const router = useRouter();
   const leaveGuard = useUnsavedLeaveGuard();
+  /** Disarms beforeunload after stash-for-checkout or Leave anyway (no second prompt). */
+  const allowUnloadRef = useRef(false);
   const starting = useMemo(() => {
     if (initialDraft) {
       return initialDraft;
@@ -58,6 +61,8 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
   }, [initialDraft, uid]);
 
   const [title, setTitle] = useState(starting.title);
+  /** Last committed title — blur no-ops when onChange already updated `title`. */
+  const committedTitleRef = useRef(starting.title);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>(
     starting.title !== DEFAULT_DOCUMENT_TITLE ||
       JSON.stringify(starting.content) !== JSON.stringify(EMPTY_DOCUMENT_CONTENT)
@@ -65,6 +70,7 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
       : "saved",
   );
   const [subscribeOpen, setSubscribeOpen] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
   const [isMac] = useState(
     () =>
       typeof navigator !== "undefined" &&
@@ -89,6 +95,7 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
       },
     },
     onUpdate: () => {
+      allowUnloadRef.current = false;
       setSaveStatus((current) => reduceSaveStatus(current, { type: "edit" }));
     },
   });
@@ -100,6 +107,9 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
   }, [dirty, leaveGuard]);
 
   const onBeforeUnload = useEffectEvent((event: BeforeUnloadEvent) => {
+    if (allowUnloadRef.current) {
+      return;
+    }
     if (isDirtySaveStatus(saveStatus)) {
       event.preventDefault();
       event.returnValue = "";
@@ -122,13 +132,34 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
     };
   }, [editor, title]);
 
+  /**
+   * Validate + stash before Stripe redirect. On success, disarm the leave
+   * guard so `location.assign` never triggers a native "Leave site?" dialog.
+   */
   const stashCurrent = useCallback(async () => {
-    stashTrialDraft(uid, currentDraft());
-  }, [currentDraft, uid]);
+    const result = stashTrialDraft(uid, currentDraft());
+    if (!result.ok) {
+      setDraftError(
+        result.reason === "invalid"
+          ? siteCopy.documents.trialDraftInvalid
+          : siteCopy.subscribe.checkoutError,
+      );
+      throw new Error(`trial_stash_${result.reason}`);
+    }
+    setDraftError(null);
+    allowUnloadRef.current = true;
+    leaveGuard?.setDirty(false);
+  }, [currentDraft, leaveGuard, uid]);
 
   const openSubscribeModal = useCallback(() => {
     setSubscribeOpen(true);
   }, []);
+
+  const onLeaveAnyway = useCallback(() => {
+    // Avoid a second native beforeunload prompt after Leave anyway navigates.
+    allowUnloadRef.current = true;
+    leaveGuard?.confirmLeaveAnyway();
+  }, [leaveGuard]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -176,16 +207,13 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
   }, [leaveGuard, router]);
 
   function commitTitle(nextTitle: string) {
-    const trimmed = nextTitle.trim();
-    if (!trimmed) {
-      setTitle(DEFAULT_DOCUMENT_TITLE);
-      setSaveStatus((current) => reduceSaveStatus(current, { type: "edit" }));
-      return;
-    }
-    if (trimmed === title) {
-      return;
-    }
+    const trimmed = nextTitle.trim() || DEFAULT_DOCUMENT_TITLE;
     setTitle(trimmed);
+    if (trimmed === committedTitleRef.current) {
+      return;
+    }
+    committedTitleRef.current = trimmed;
+    allowUnloadRef.current = false;
     setSaveStatus((current) => reduceSaveStatus(current, { type: "edit" }));
   }
 
@@ -249,15 +277,28 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
                   )}
                 />
               </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={openSubscribeModal}
-                data-testid="trial-delete-document"
-              >
-                {siteCopy.documents.deleteConfirm}
-              </Button>
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  className="md:hidden"
+                  onClick={openSubscribeModal}
+                  data-testid="trial-new-document-mobile"
+                >
+                  <Plus className="size-4" aria-hidden />
+                  {siteCopy.documents.newDocument}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={openSubscribeModal}
+                  data-testid="trial-delete-document"
+                >
+                  {siteCopy.documents.deleteConfirm}
+                </Button>
+              </div>
             </div>
 
             <EditorToolbar
@@ -269,8 +310,33 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
             />
 
             <div className="mt-2 flex items-center justify-between gap-3">
-              <SaveStatusIndicator status={saveStatus} />
+              {dirty ? (
+                <SaveStatusIndicator status="unsaved" />
+              ) : (
+                <div
+                  className="text-muted-foreground flex items-center gap-2 text-sm"
+                  role="status"
+                  data-save-status="trial-not-saved"
+                >
+                  <span
+                    className="bg-muted-foreground/40 size-2.5 shrink-0 rounded-full"
+                    aria-hidden
+                  />
+                  <span>{siteCopy.documents.trialNotSaved}</span>
+                </div>
+              )}
             </div>
+
+            {draftError ? (
+              <p
+                role="alert"
+                className="bg-destructive-soft text-destructive mt-2 flex items-start gap-2 rounded-md px-3 py-2 text-sm"
+                data-testid="trial-draft-error"
+              >
+                <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                <span>{draftError}</span>
+              </p>
+            ) : null}
 
             <div className="mt-4 min-h-0 flex-1">
               <EditorContent editor={editor} />
@@ -288,7 +354,7 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
         open={leaveGuard?.leaveModalOpen ?? false}
         onOpenChange={(open) => leaveGuard?.setLeaveModalOpen(open)}
         onBeforeCheckout={stashCurrent}
-        onLeaveAnyway={() => leaveGuard?.confirmLeaveAnyway()}
+        onLeaveAnyway={onLeaveAnyway}
       />
     </>
   );

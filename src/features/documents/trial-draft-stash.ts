@@ -1,4 +1,5 @@
 import {
+  createDocumentInputSchema,
   DEFAULT_DOCUMENT_TITLE,
   EMPTY_DOCUMENT_CONTENT,
   type TiptapJson,
@@ -7,6 +8,7 @@ import {
 /**
  * Client-only trial draft stash (sessionStorage), keyed by Firebase uid.
  * Survives the same-tab Stripe Checkout round trip. Never log contents.
+ * Validates with the document schema (#25) on stash and restore.
  */
 
 export type TrialDraft = {
@@ -14,35 +16,66 @@ export type TrialDraft = {
   content: TiptapJson;
 };
 
+export type StashTrialDraftResult =
+  | { ok: true; draft: TrialDraft }
+  | { ok: false; reason: "invalid" | "unavailable" };
+
 const KEY_PREFIX = "prosefield:trial-draft:";
 
 export function trialDraftStorageKey(uid: string): string {
   return `${KEY_PREFIX}${uid}`;
 }
 
+export function isTrialDraftStorageKey(key: string): boolean {
+  return key.startsWith(KEY_PREFIX);
+}
+
 function canUseSessionStorage(): boolean {
   return typeof window !== "undefined" && typeof sessionStorage !== "undefined";
 }
 
-function isTiptapJson(value: unknown): value is TiptapJson {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "type" in value &&
-    typeof (value as { type: unknown }).type === "string"
-  );
+/**
+ * Validate title+content with the same schema createDocumentAction uses.
+ * Returns a normalised draft or null (never throws; never logs content).
+ * Blank titles are coerced to the default so optional().default applies.
+ */
+export function validateTrialDraft(
+  draft: unknown,
+): TrialDraft | null {
+  const raw =
+    draft && typeof draft === "object"
+      ? (draft as Record<string, unknown>)
+      : {};
+  const title =
+    typeof raw.title === "string" && raw.title.trim() === ""
+      ? undefined
+      : raw.title;
+  const parsed = createDocumentInputSchema.safeParse({ ...raw, title });
+  if (!parsed.success) {
+    return null;
+  }
+  return {
+    title: parsed.data.title.trim() || DEFAULT_DOCUMENT_TITLE,
+    content: parsed.data.content ?? EMPTY_DOCUMENT_CONTENT,
+  };
 }
 
-export function stashTrialDraft(uid: string, draft: TrialDraft): void {
+export function stashTrialDraft(
+  uid: string,
+  draft: TrialDraft,
+): StashTrialDraftResult {
   if (!canUseSessionStorage() || !uid) {
-    return;
+    return { ok: false, reason: "unavailable" };
   }
-  const title = draft.title.trim() || DEFAULT_DOCUMENT_TITLE;
-  const content = draft.content ?? EMPTY_DOCUMENT_CONTENT;
+  const validated = validateTrialDraft(draft);
+  if (!validated) {
+    return { ok: false, reason: "invalid" };
+  }
   sessionStorage.setItem(
     trialDraftStorageKey(uid),
-    JSON.stringify({ title, content } satisfies TrialDraft),
+    JSON.stringify(validated satisfies TrialDraft),
   );
+  return { ok: true, draft: validated };
 }
 
 export function readTrialDraft(uid: string): TrialDraft | null {
@@ -55,21 +88,15 @@ export function readTrialDraft(uid: string): TrialDraft | null {
   }
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (
-      typeof parsed !== "object" ||
-      parsed === null ||
-      typeof (parsed as { title?: unknown }).title !== "string" ||
-      !isTiptapJson((parsed as { content?: unknown }).content)
-    ) {
+    const validated = validateTrialDraft(parsed);
+    if (!validated) {
+      // Discard tampered / oversize / too-deep stash.
+      sessionStorage.removeItem(trialDraftStorageKey(uid));
       return null;
     }
-    const title =
-      (parsed as TrialDraft).title.trim() || DEFAULT_DOCUMENT_TITLE;
-    return {
-      title,
-      content: (parsed as TrialDraft).content,
-    };
+    return validated;
   } catch {
+    sessionStorage.removeItem(trialDraftStorageKey(uid));
     return null;
   }
 }
@@ -79,6 +106,45 @@ export function clearTrialDraft(uid: string): void {
     return;
   }
   sessionStorage.removeItem(trialDraftStorageKey(uid));
+}
+
+/** Clear every uid-scoped trial draft key (sign-out / shared-device hygiene). */
+export function clearAllTrialDrafts(): void {
+  if (!canUseSessionStorage()) {
+    return;
+  }
+  const keys: string[] = [];
+  for (let i = 0; i < sessionStorage.length; i += 1) {
+    const key = sessionStorage.key(i);
+    if (key && isTrialDraftStorageKey(key)) {
+      keys.push(key);
+    }
+  }
+  for (const key of keys) {
+    sessionStorage.removeItem(key);
+  }
+}
+
+/**
+ * After login/session exchange: drop stashes that belong to a different uid
+ * (session expiry → new login, or shared-device hygiene).
+ */
+export function clearTrialDraftsNotForUid(uid: string): void {
+  if (!canUseSessionStorage() || !uid) {
+    clearAllTrialDrafts();
+    return;
+  }
+  const keep = trialDraftStorageKey(uid);
+  const keys: string[] = [];
+  for (let i = 0; i < sessionStorage.length; i += 1) {
+    const key = sessionStorage.key(i);
+    if (key && isTrialDraftStorageKey(key) && key !== keep) {
+      keys.push(key);
+    }
+  }
+  for (const key of keys) {
+    sessionStorage.removeItem(key);
+  }
 }
 
 export function hasTrialDraft(uid: string): boolean {

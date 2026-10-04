@@ -131,7 +131,7 @@ describe("documents guard chain (emulators)", () => {
     }
   });
 
-  it("trial (signed-in, unsubscribed) cannot create, save, or delete", async () => {
+  it("trial (signed-in, unsubscribed) cannot create, save, rename, or delete", async () => {
     // Conversion funnel: UI is client-only; server must still reject writes.
     const email = `docs-trial-${randomUUID()}@example.com`;
     await establishSession(email);
@@ -139,6 +139,7 @@ describe("documents guard chain (emulators)", () => {
     const {
       createDocumentAction,
       saveDocumentAction,
+      renameDocumentAction,
       deleteDocumentAction,
     } = await import("@/features/documents/actions");
 
@@ -158,6 +159,15 @@ describe("documents guard chain (emulators)", () => {
     expect(saved.ok).toBe(false);
     if (!saved.ok) {
       expect(saved.code).toBe("forbidden");
+    }
+
+    const renamed = await renameDocumentAction({
+      documentId: "abcABC1234567890wxyz",
+      title: "Trial rename",
+    });
+    expect(renamed.ok).toBe(false);
+    if (!renamed.ok) {
+      expect(renamed.code).toBe("forbidden");
     }
 
     const deleted = await deleteDocumentAction({

@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -74,7 +74,7 @@ describe("AuthForm", () => {
     registerAction.mockResolvedValue({ ok: true });
     getIdToken.mockResolvedValue("id-token");
     signIn.mockResolvedValue({
-      user: { getIdToken },
+      user: { uid: "uid-new", getIdToken },
     });
     signOut.mockResolvedValue(undefined);
 
@@ -204,7 +204,7 @@ describe("AuthForm", () => {
     const user = userEvent.setup();
     getIdToken.mockResolvedValue("id-token");
     signIn.mockResolvedValue({
-      user: { getIdToken },
+      user: { uid: "uid-short", getIdToken },
     });
     signOut.mockResolvedValue(undefined);
 
@@ -219,5 +219,45 @@ describe("AuthForm", () => {
     expect(registerAction).not.toHaveBeenCalled();
     expect(passwordInput).not.toHaveAttribute("aria-invalid");
     expect(passwordInput.getAttribute("aria-describedby")).not.toMatch(/-error$/);
+  });
+
+  it("clears trial drafts for other uids after a successful login session exchange", async () => {
+    const user = userEvent.setup();
+    const {
+      stashTrialDraft,
+      readTrialDraft,
+      trialDraftStorageKey,
+    } = await import("@/features/documents/trial-draft-stash");
+    const { EMPTY_DOCUMENT_CONTENT } = await import(
+      "@/features/documents/schemas"
+    );
+    sessionStorage.clear();
+    stashTrialDraft("uid-old", {
+      title: "Old user draft",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    stashTrialDraft("uid-login", {
+      title: "Keep me",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(sessionStorage.getItem(trialDraftStorageKey("uid-old"))).toBeTruthy();
+
+    getIdToken.mockResolvedValue("id-token");
+    signIn.mockResolvedValue({
+      user: { uid: "uid-login", getIdToken },
+    });
+    signOut.mockResolvedValue(undefined);
+
+    render(createElement(AuthForm, { mode: "login", nextPath: "/subscribe" }));
+    await user.type(screen.getByLabelText(siteCopy.auth.emailLabel), "keep@example.com");
+    await user.type(screen.getByLabelText(siteCopy.auth.passwordLabel), "password-123");
+    await user.click(screen.getByRole("button", { name: siteCopy.auth.loginSubmit }));
+
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith("/subscribe");
+    });
+    expect(readTrialDraft("uid-old")).toBeNull();
+    expect(readTrialDraft("uid-login")?.title).toBe("Keep me");
+    sessionStorage.clear();
   });
 });

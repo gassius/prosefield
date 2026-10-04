@@ -1,13 +1,30 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { EMPTY_DOCUMENT_CONTENT } from "@/features/documents/schemas";
 import {
+  DOCUMENT_CONTENT_MAX_DEPTH,
+  EMPTY_DOCUMENT_CONTENT,
+} from "@/features/documents/schemas";
+import {
+  clearAllTrialDrafts,
   clearTrialDraft,
+  clearTrialDraftsNotForUid,
   hasTrialDraft,
   readTrialDraft,
   stashTrialDraft,
   trialDraftStorageKey,
+  validateTrialDraft,
 } from "@/features/documents/trial-draft-stash";
+
+function nestBlockquotes(depth: number) {
+  let node: Record<string, unknown> = {
+    type: "paragraph",
+    content: [{ type: "text", text: "deep" }],
+  };
+  for (let i = 0; i < depth; i += 1) {
+    node = { type: "blockquote", content: [node] };
+  }
+  return { type: "doc", content: [node] };
+}
 
 describe("trial draft stash (uid-scoped sessionStorage)", () => {
   beforeEach(() => {
@@ -33,7 +50,8 @@ describe("trial draft stash (uid-scoped sessionStorage)", () => {
         },
       ],
     };
-    stashTrialDraft("uid-a", { title: "My draft", content });
+    const result = stashTrialDraft("uid-a", { title: "My draft", content });
+    expect(result.ok).toBe(true);
     stashTrialDraft("uid-b", {
       title: "Other",
       content: EMPTY_DOCUMENT_CONTENT,
@@ -68,7 +86,9 @@ describe("trial draft stash (uid-scoped sessionStorage)", () => {
   });
 
   it("no-ops for empty uid", () => {
-    stashTrialDraft("", { title: "Nope", content: EMPTY_DOCUMENT_CONTENT });
+    expect(
+      stashTrialDraft("", { title: "Nope", content: EMPTY_DOCUMENT_CONTENT }),
+    ).toEqual({ ok: false, reason: "unavailable" });
     expect(sessionStorage.length).toBe(0);
     expect(readTrialDraft("")).toBeNull();
     clearTrialDraft("");
@@ -87,5 +107,57 @@ describe("trial draft stash (uid-scoped sessionStorage)", () => {
       JSON.stringify({ title: "   ", content: EMPTY_DOCUMENT_CONTENT }),
     );
     expect(readTrialDraft("uid-b")?.title).toBe("Untitled document");
+  });
+
+  it("rejects oversize titles and too-deep content via #25 schema", () => {
+    const longTitle = "x".repeat(121);
+    expect(
+      stashTrialDraft("uid-a", {
+        title: longTitle,
+        content: EMPTY_DOCUMENT_CONTENT,
+      }),
+    ).toEqual({ ok: false, reason: "invalid" });
+    expect(readTrialDraft("uid-a")).toBeNull();
+
+    const tooDeep = nestBlockquotes(DOCUMENT_CONTENT_MAX_DEPTH + 1);
+    expect(
+      stashTrialDraft("uid-b", { title: "Deep", content: tooDeep }),
+    ).toEqual({ ok: false, reason: "invalid" });
+    expect(validateTrialDraft({ title: "Deep", content: tooDeep })).toBeNull();
+
+    sessionStorage.setItem(
+      trialDraftStorageKey("uid-c"),
+      JSON.stringify({ title: "Tampered", content: tooDeep }),
+    );
+    expect(readTrialDraft("uid-c")).toBeNull();
+    expect(sessionStorage.getItem(trialDraftStorageKey("uid-c"))).toBeNull();
+  });
+
+  it("clearAllTrialDrafts removes every trial key", () => {
+    stashTrialDraft("uid-a", {
+      title: "A",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    stashTrialDraft("uid-b", {
+      title: "B",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    clearAllTrialDrafts();
+    expect(readTrialDraft("uid-a")).toBeNull();
+    expect(readTrialDraft("uid-b")).toBeNull();
+  });
+
+  it("clearTrialDraftsNotForUid keeps only the active uid stash", () => {
+    stashTrialDraft("uid-keep", {
+      title: "Keep",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    stashTrialDraft("uid-drop", {
+      title: "Drop",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    clearTrialDraftsNotForUid("uid-keep");
+    expect(readTrialDraft("uid-keep")?.title).toBe("Keep");
+    expect(readTrialDraft("uid-drop")).toBeNull();
   });
 });

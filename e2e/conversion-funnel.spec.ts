@@ -54,6 +54,11 @@ test("checkout success keeps the same draft saved and enables editor functions",
     });
   });
 
+  // B1: any native dialog (including beforeunload "Leave site?") fails the test.
+  page.on("dialog", (dialog) => {
+    throw new Error(`Unexpected dialog during checkout: ${dialog.type()} ${dialog.message()}`);
+  });
+
   await page
     .getByTestId("trial-subscribe-modal")
     .getByRole("button", { name: "Continue to secure checkout" })
@@ -74,6 +79,18 @@ test("checkout success keeps the same draft saved and enables editor functions",
   await expect(page.getByText("Saved", { exact: true })).toBeVisible({
     timeout: 10_000,
   });
+});
+
+test("subscriber visiting /documents/trial is redirected to /documents", async ({
+  page,
+}) => {
+  const email = uniqueEmail("funnel-sub-redirect");
+  await registerViaUi(page, email, "password-123");
+  await expectSignedIn(page, email);
+  const uid = await lookupUidByEmail(email);
+  await seedSubscriptionProjection(uid, "active");
+  await page.goto("/documents/trial");
+  await expect(page).toHaveURL(/\/documents$/);
 });
 
 test("checkout cancel keeps the draft in the trial editor", async ({ page }) => {
