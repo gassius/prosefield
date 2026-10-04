@@ -122,6 +122,27 @@ describe("session-sync coverage", () => {
     expect(upsertSubscriptionProjection).toHaveBeenCalledWith(
       expect.objectContaining({ eventCreated: 1_700_000_050 }),
     );
+
+    // Non-number session.created must not be forwarded as eventCreated.
+    retrieveSession.mockResolvedValue({
+      client_reference_id: "uid_1",
+      status: "complete",
+      payment_status: "paid",
+      subscription: "sub_obj",
+      created: "not-a-number",
+    });
+    retrieveSubscription.mockResolvedValue(sub);
+    listSubscriptions.mockResolvedValue({ data: [sub] });
+    upsertSubscriptionProjection.mockClear();
+    expect(
+      await syncFromCheckoutSession({
+        uid: "uid_1",
+        sessionId: "cs_test_x",
+      }),
+    ).toEqual({ synced: true });
+    expect(upsertSubscriptionProjection).toHaveBeenCalledWith(
+      expect.objectContaining({ eventCreated: null }),
+    );
   });
 
   it("syncFromCheckoutSession returns not_configured for placeholders", async () => {
