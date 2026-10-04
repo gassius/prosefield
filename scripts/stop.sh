@@ -101,7 +101,9 @@ else
 fi
 
 
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+if [[ "${PROSEFIELD_STOP_SKIP_COMPOSE:-}" == "1" ]]; then
+  echo "Skipped compose down (PROSEFIELD_STOP_SKIP_COMPOSE=1)."
+elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   # Compose interpolates profiled service env even on `down`; use .env.example when missing.
   if [[ -f "$ROOT/.env" ]]; then
     docker compose down
@@ -112,3 +114,4 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
 else
   echo "Docker not available — skipped compose down."
 fi
+

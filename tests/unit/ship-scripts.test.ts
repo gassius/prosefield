@@ -311,13 +311,19 @@ describe("check.sh executable behaviour (stubbed PATH)", () => {
 });
 
 describe("stop.sh executable behaviour", () => {
+  /** Avoid `docker compose down` tearing down CI/local emulators during unit runs. */
+  const stopEnv = (): NodeJS.ProcessEnv => ({
+    ...process.env,
+    PROSEFIELD_STOP_SKIP_COMPOSE: "1",
+  });
+
   it("drops stale pid file without signalling", () => {
     const dir = mkdtempSync(path.join(tmpdir(), "pf-stop-stale-"));
     junk.push(dir);
     const pidFile = path.join(dir, "dev.pid");
     writeFileSync(pidFile, "999999");
     const out = execFileSync("bash", [stopSh], {
-      env: { ...process.env, PROSEFIELD_DEV_PID_FILE: pidFile },
+      env: { ...stopEnv(), PROSEFIELD_DEV_PID_FILE: pidFile },
       encoding: "utf8",
     });
     expect(out).toMatch(/Stale pid file/);
@@ -332,7 +338,7 @@ describe("stop.sh executable behaviour", () => {
     writeFileSync(pidFile, String(victim.pid));
     try {
       const out = execFileSync("bash", [stopSh], {
-        env: { ...process.env, PROSEFIELD_DEV_PID_FILE: pidFile },
+        env: { ...stopEnv(), PROSEFIELD_DEV_PID_FILE: pidFile },
         encoding: "utf8",
       });
       expect(out).toMatch(/not this repo's frontend|mismatch/);
@@ -345,6 +351,34 @@ describe("stop.sh executable behaviour", () => {
         // already gone
       }
     }
+  });
+
+  it("invokes compose down when skip flag is unset (stubbed docker)", () => {
+    const stubDir = mkdtempSync(path.join(tmpdir(), "pf-stop-compose-"));
+    junk.push(stubDir);
+    const marker = path.join(stubDir, "compose-down.marker");
+    writeStub(
+      stubDir,
+      "docker",
+      `if [[ "\${1:-}" == "info" ]]; then exit 0; fi
+       if [[ "\${1:-}" == "compose" && "\${2:-}" == "down" ]]; then
+         echo down >'${marker}'
+         exit 0
+       fi
+       exit 0`,
+    );
+    const out = execFileSync("bash", [stopSh], {
+      env: {
+        ...process.env,
+        PATH: `${stubDir}:${process.env.PATH ?? ""}`,
+        PROSEFIELD_DEV_PID_FILE: path.join(stubDir, "missing.pid"),
+        // Explicitly unset skip
+        PROSEFIELD_STOP_SKIP_COMPOSE: "",
+      },
+      encoding: "utf8",
+    });
+    expect(out).toMatch(/Stopped Docker Compose services/);
+    expect(existsSync(marker)).toBe(true);
   });
 
   it("stops the whole verified process group (leader + child)", () => {
@@ -384,7 +418,7 @@ describe("stop.sh executable behaviour", () => {
 
     try {
       const out = execFileSync("bash", [stopSh], {
-        env: { ...process.env, PROSEFIELD_DEV_PID_FILE: pidFile },
+        env: { ...stopEnv(), PROSEFIELD_DEV_PID_FILE: pidFile },
         encoding: "utf8",
       });
       expect(out).toMatch(/Stopped frontend process group/);
