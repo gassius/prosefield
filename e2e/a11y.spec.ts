@@ -119,10 +119,12 @@ test.describe("accessibility smoke", () => {
   for (const width of [375, 768, 1280] as const) {
     test(`trial subscribe and leave modals ${width}px`, async ({ page }) => {
       await resetEmulators();
-      await page.setViewportSize({ width, height: 900 });
       const email = uniqueEmail(`a11y-trial-${width}`);
+      // Desktop register first (email is hidden in the mobile header chrome).
+      await page.setViewportSize({ width: 1280, height: 900 });
       await registerViaUi(page, email, "password-123");
       await expectSignedIn(page, email);
+      await page.setViewportSize({ width, height: 900 });
       await page.goto("/documents/trial");
       await expect(page.getByLabel("Document title")).toBeVisible();
       await expectNoSeriousOrCritical(page);
@@ -133,10 +135,17 @@ test.describe("accessibility smoke", () => {
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("trial-subscribe-modal")).toHaveCount(0);
 
-      const title = page.getByLabel("Document title");
-      await title.fill("A11y leave draft");
-      await title.blur();
-      await page.getByRole("link", { name: "Pricing" }).first().click();
+      const editable = page.locator("[contenteditable='true']");
+      await editable.click();
+      await page.keyboard.type("A11y leave draft body");
+      await expect(page.getByText("Unsaved changes")).toBeVisible();
+      // Pricing is in the desktop nav; open the mobile menu at 375.
+      if (width < 640) {
+        await page.getByRole("button", { name: "Open menu" }).click();
+        await page.getByRole("link", { name: "Pricing" }).click();
+      } else {
+        await page.getByRole("link", { name: "Pricing" }).first().click();
+      }
       await expect(page.getByTestId("trial-leave-modal")).toBeVisible();
       await expectNoSeriousOrCritical(page);
       await page.keyboard.press("Escape");

@@ -230,7 +230,9 @@ test.describe("visual regression", () => {
       await resetEmulators();
       const email = uniqueEmail(`visual-trial-${width}`);
       await page.emulateMedia({ reducedMotion: "reduce" });
-      await page.setViewportSize({ width, height: 900 });
+      // Register at desktop so the header email is visible for expectSignedIn;
+      // then resize for the baseline (375 hides desktop account chrome).
+      await page.setViewportSize({ width: 1280, height: 900 });
       await registerViaUi(page, email, "password-123");
       await expectSignedIn(page, email);
       await preparePage(page, "/documents/trial", { width, height: 900 });

@@ -66,4 +66,12 @@ describe("trial draft stash (uid-scoped sessionStorage)", () => {
     stashTrialDraft("uid-a", { title: "   ", content: EMPTY_DOCUMENT_CONTENT });
     expect(readTrialDraft("uid-a")?.title).toBe("Untitled document");
   });
+
+  it("no-ops for empty uid", () => {
+    stashTrialDraft("", { title: "Nope", content: EMPTY_DOCUMENT_CONTENT });
+    expect(sessionStorage.length).toBe(0);
+    expect(readTrialDraft("")).toBeNull();
+    clearTrialDraft("");
+    expect(hasTrialDraft("")).toBe(false);
+  });
 });
