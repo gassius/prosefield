@@ -74,4 +74,30 @@ describe("AccountMenu", () => {
     );
     expect(replace).not.toHaveBeenCalled();
   });
+
+  it("decodes CSRF cookie values that contain '='", async () => {
+    const user = userEvent.setup();
+    document.cookie = `csrf_token=${encodeURIComponent("a=b=c")}`;
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(createElement(AccountMenu, { label: "writer@example.com" }));
+    await user.click(
+      screen.getByRole("button", { name: siteCopy.header.accountMenu }),
+    );
+    await user.click(
+      screen.getByRole("menuitem", { name: siteCopy.header.signOut }),
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/session",
+        expect.objectContaining({
+          headers: expect.objectContaining({ "x-csrf-token": "a=b=c" }),
+        }),
+      );
+    });
+  });
 });

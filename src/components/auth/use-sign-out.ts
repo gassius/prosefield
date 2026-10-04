@@ -32,39 +32,46 @@ export function useSignOut() {
   async function signOut(): Promise<boolean> {
     setPending(true);
     setError(null);
+
+    const token = readCsrfFromDocument();
+    if (!token) {
+      logSignOutFailure({ event: "sign_out_failed", reason: "csrf" });
+      setError(siteCopy.auth.signOutError);
+      setPending(false);
+      return false;
+    }
+
+    let response: Response;
     try {
-      const token = readCsrfFromDocument();
-      if (!token) {
-        logSignOutFailure({ event: "sign_out_failed", reason: "csrf" });
-        setError(siteCopy.auth.signOutError);
-        return false;
-      }
-      const response = await fetch("/api/session", {
+      response = await fetch("/api/session", {
         method: "DELETE",
         credentials: "same-origin",
         headers: {
           [CSRF_HEADER_NAME]: token,
         },
       });
-      if (!response.ok) {
-        logSignOutFailure({
-          event: "sign_out_failed",
-          reason: "http",
-          status: response.status,
-        });
-        setError(siteCopy.auth.signOutError);
-        return false;
-      }
-      router.replace("/");
-      router.refresh();
-      return true;
     } catch {
       logSignOutFailure({ event: "sign_out_failed", reason: "network" });
       setError(siteCopy.auth.signOutError);
-      return false;
-    } finally {
       setPending(false);
+      return false;
     }
+
+    if (!response.ok) {
+      logSignOutFailure({
+        event: "sign_out_failed",
+        reason: "http",
+        status: response.status,
+      });
+      setError(siteCopy.auth.signOutError);
+      setPending(false);
+      return false;
+    }
+
+    router.replace("/");
+    router.refresh();
+    setPending(false);
+    return true;
   }
 
   return { signOut, pending, error };
