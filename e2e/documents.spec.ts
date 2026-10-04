@@ -7,6 +7,7 @@ import {
   registerViaUi,
   resetEmulators,
   seedSubscriptionProjection,
+  signOutViaUi,
   uniqueEmail,
 } from "./helpers";
 
@@ -88,7 +89,7 @@ test("persistence across logout and login", async ({ page }) => {
   await expect(page.getByRole("status")).toHaveText("Saved");
   const url = page.url();
 
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await signOutViaUi(page);
   await expect(page.getByRole("link", { name: "Sign in" }).first()).toBeVisible();
 
   await loginViaUi(page, email, password);
@@ -135,7 +136,7 @@ test("foreign document URL returns 404", async ({ page }) => {
   await expect(page).toHaveURL(/\/documents\/[^/]+/);
   const ownerUrl = page.url();
 
-  await page.getByRole("button", { name: "Sign out" }).click();
+  await signOutViaUi(page);
   await expect(page.getByRole("link", { name: "Sign in" }).first()).toBeVisible();
 
   const otherEmail = uniqueEmail("docs-intruder");

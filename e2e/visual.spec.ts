@@ -39,6 +39,8 @@ async function preparePage(
 }
 
 const LANDING_VISUAL_WIDTHS = [375, 768, 1024, 1440] as const;
+/** Ticket 869fbkcv9 header-state baselines (plus repo desktop widths elsewhere). */
+const HEADER_VISUAL_WIDTHS = [375, 768, 1280] as const;
 
 test.describe("visual regression", () => {
   for (const width of LANDING_VISUAL_WIDTHS) {
@@ -157,6 +159,108 @@ test.describe("visual regression", () => {
     await expect(page).toHaveScreenshot("logged-in-subscribe-configured.png", {
       fullPage: true,
       mask: [page.getByText(email), page.locator("time")],
+    });
+  });
+
+  for (const width of HEADER_VISUAL_WIDTHS) {
+    test(`header logged-in landing ${width}`, async ({ page }) => {
+      await resetEmulators();
+      // Fixed email so the account trigger is visible (not masked) for truncation.
+      const email = `header-li-${width}@example.com`;
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await registerViaUi(page, email, "password-123");
+      await expectSignedIn(page, email);
+      await preparePage(page, "/", { width, height: 900 });
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      await expect(page).toHaveScreenshot(`header-logged-in-landing-${width}.png`, {
+        fullPage: false,
+        mask: [page.locator("time")],
+      });
+    });
+
+    test(`header subscriber landing ${width}`, async ({ page }) => {
+      await resetEmulators();
+      const email = `header-sub-${width}@example.com`;
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await registerViaUi(page, email, "password-123");
+      await expectSignedIn(page, email);
+      const uid = await lookupUidByEmail(email);
+      await seedSubscriptionProjection(uid, "active");
+      await preparePage(page, "/", { width, height: 900 });
+      if (width >= 640) {
+        await expect(
+          page.getByRole("link", { name: "Open the Editor" }).first(),
+        ).toBeVisible({ timeout: 20_000 });
+      } else {
+        await page.getByRole("button", { name: "Open menu" }).click();
+        await expect(
+          page.getByRole("link", { name: "Open the Editor" }).first(),
+        ).toBeVisible({ timeout: 20_000 });
+        await page.keyboard.press("Escape");
+      }
+      await expect(page).toHaveScreenshot(`header-subscriber-landing-${width}.png`, {
+        fullPage: false,
+        mask: [page.locator("time")],
+      });
+    });
+
+    test(`header subscriber editor ${width}`, async ({ page }) => {
+      await resetEmulators();
+      const email = `header-ed-${width}@example.com`;
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await registerViaUi(page, email, "password-123");
+      await expectSignedIn(page, email);
+      const uid = await lookupUidByEmail(email);
+      await seedSubscriptionProjection(uid, "active");
+      await preparePage(page, "/documents", { width, height: 900 });
+      await expect(
+        page.getByRole("heading", { name: "Your first page is waiting." }),
+      ).toBeVisible();
+      await expect(page).toHaveScreenshot(`header-subscriber-editor-${width}.png`, {
+        fullPage: false,
+        mask: [page.locator("time")],
+      });
+    });
+  }
+
+  test("header account menu open at 1280", async ({ page }) => {
+    await resetEmulators();
+    const email = "ada.writer.menu@example.com";
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await registerViaUi(page, email, "password-123");
+    await expectSignedIn(page, email);
+    await preparePage(page, "/", { width: 1280, height: 900 });
+    await page.getByRole("button", { name: new RegExp(email) }).click();
+    await expect(page.getByRole("menu")).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "Sign out" })).toBeVisible();
+    await expect(page).toHaveScreenshot("header-account-menu-open-1280.png", {
+      fullPage: false,
+      mask: [page.locator("time")],
+    });
+  });
+
+  test("header sheet with account trigger at 375", async ({ page }) => {
+    await resetEmulators();
+    // Long fixed email exercises max-w truncate on the account trigger.
+    const email = "very.long.account.name.for.truncation@example.com";
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await registerViaUi(page, email, "password-123");
+    await expectSignedIn(page, email);
+    await preparePage(page, "/", { width: 375, height: 900 });
+    await page.getByRole("button", { name: "Open menu" }).click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet).toBeVisible();
+    await expect(
+      sheet.getByRole("button", { name: new RegExp(email) }),
+    ).toBeVisible();
+    await expect(page).toHaveScreenshot("header-sheet-account-375.png", {
+      fullPage: false,
+      mask: [page.locator("time")],
     });
   });
 
