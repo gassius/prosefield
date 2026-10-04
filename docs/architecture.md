@@ -356,7 +356,7 @@ All implementation runs through the **Prosefield Cursor Project** (coordinator `
 | P2 Billing | 2 h | `getPlan`, `stripe:seed`, checkout, webhook, projection, session-sync fallback, billing status page, upgrade gate | Unit and integration tests pass, and a manual 4242 flow unlocks access |
 | P3 Documents | 2 h | Repository, actions, list, empty state, Tiptap editor (restricted formats), save states, rename, delete dialog | Guard-chain integration tests pass, and CRUD persists |
 | P4 Landing | 1.5 h | All marketing sections from `content/site.ts`, inert preview, logo SVG and favicon, responsive pass | Playwright plus axe at four widths green |
-| P5 Ship docs | 1 h | Playwright happy path, README (architecture, tradeoffs, Stripe flow, limitations, AI usage and manual verification, credits), write-up (three questions), demo recording, time log | A fresh-machine run under 15 min is measured and recorded |
+| P5 Ship docs | 1 h | Playwright happy path, README (architecture, tradeoffs, Stripe flow, limitations, AI usage and manual verification, credits), write-up (three questions), demo recording | A fresh-machine run under 15 min is measured and recorded |
 | P6 Optional | ≤ 1.5 h | Customer Portal (flag on) + Firebase App Hosting deploy | Smoke test on the deployed URL |
 
 The total for P0–P5 is about 9 h, inside the 6–10 h estimate, leaving about 3 h of buffer under the 12 h cap for review rounds and P6.
@@ -394,7 +394,7 @@ The total for P0–P5 is about 9 h, inside the 6–10 h estimate, leaving about 
 6. **Art Direction v1.1 alignment:** tokens, fonts, en-GB, light-only, restricted editor formats, save-state, billing-pending, upgrade-gate, delete and auth-error patterns, a11y rules, and axe in the acceptance tests.
 7. **Security additions:** `next` allow-list, `__session` cookie name, recent-auth check, revocation on logout, 404 for foreign docs, gitleaks for the public repo, live-key rejection, payload bounds sized to Firestore limits.
 8. **Phased delivery plan** sized to the time budget, run through the Prosefield Cursor Project with docs committed under `docs/`.
-9. Deliverables added to the definition of done: write-up, demo, time log, AI-usage section, credits.
+9. Deliverables added to the definition of done: write-up, demo, AI-usage section, credits.
 
 ## 18. Definition of done (first release)
 - Landing communicates the product and the configured price, per Art Direction v1.1, at four widths.
@@ -404,7 +404,7 @@ The total for P0–P5 is about 9 h, inside the 6–10 h estimate, leaving about 
 - A subscriber can create, edit, save, rename and delete; documents persist across logout and login.
 - `docker compose` quick start works on a fresh machine in under 15 min (measured).
 - Unit, emulator integration and Playwright + axe suites pass in CI. No secrets are in the repo or its history.
-- README, write-up, demo and time log are delivered.
+- README, write-up and demo are delivered.
 - Optional: Firebase App Hosting serves the full flow.
 
 ## 19. Open items (non-blocking)

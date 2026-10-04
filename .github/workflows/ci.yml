@@ -556,11 +556,11 @@ jobs:
             return 1
           }
 
-          # Returns: parents\tcommitter_login\tauthor_login\tverified (true/false)
+          # Returns: parents\tcommitter_login\tauthor_login\tauthor_email\tverified (true/false)
           github_commit_meta() {
             local sha="$1"
             gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}" \
-              --jq '[(.parents|length), (.committer.login // ""), (.author.login // ""), (.commit.verification.verified|tostring)] | @tsv'
+              --jq '[(.parents|length), (.committer.login // ""), (.author.login // ""), (.commit.author.email // ""), (.commit.verification.verified|tostring)] | @tsv'
           }
 
           has_agent_lines() {
@@ -576,9 +576,10 @@ jobs:
             msg=$(git log -1 --format='%B' "$sha")
 
             meta=$(github_commit_meta "$sha")
-            IFS=$'\t' read -r api_parents committer_login author_login verified <<<"$meta"
+            IFS=$'\t' read -r api_parents committer_login author_login author_email verified <<<"$meta"
             verified=${verified:-false}
             api_parents=${api_parents:-0}
+            author_email=${author_email:-}
 
             # Exemptions only when the message has no Agent* lines (agents can't forge web-flow / verified gassius).
             if ! has_agent_lines "$msg"; then
@@ -596,6 +597,13 @@ jobs:
                 && [ "$committer_login" = "web-flow" ] \
                 && [ "$author_login" = "gassius" ]; then
                 echo "skip: ${sha} (Carlos, verified web-flow author gassius)"
+                continue
+              fi
+              # Carlos manual pushes: GitHub author login gassius + author email.
+              if COMMIT_MESSAGE="$msg" \
+                bash scripts/commit-trailer-carlos-exempt.sh \
+                  "$author_login" "$author_email" "$sha"
+              then
                 continue
               fi
             fi
@@ -649,7 +657,7 @@ jobs:
               else
                 echo "  (empty)"
               fi
-              echo "GitHub meta: parents=${api_parents} committer=${committer_login} author=${author_login} verified=${verified}"
+              echo "GitHub meta: parents=${api_parents} committer=${committer_login} author=${author_login} email=${author_email} verified=${verified}"
               echo
             else
               echo "ok: ${sha} Agent=${agent} Agent-Ticket=${ticket}"

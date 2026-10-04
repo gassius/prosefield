@@ -1,16 +1,19 @@
 # Prosefield
 
-A local-first writing workspace: register, subscribe, and keep pages with less friction.
+A writing workspace: register, subscribe, and keep pages with less friction.
 
-## Demo
+## Let your agent set up and run this project (locally)
 
-Regenerate with `pnpm demo:gifs` while the app and emulators are already running (Docker + ffmpeg; prefer a production `pnpm build && pnpm start` so the Next.js dev indicator is absent).
+Paste this into any coding agent (or point it at the raw file):
 
-![Landing](docs/demo/01-landing.gif)
+```text
+Follow https://raw.githubusercontent.com/gassius/prosefield/main/AGENT_SETUP.md
+end to end. Stop and ask me before any system-wide install.
+```
 
-![Try the editor, register, and pay (mocked)](docs/demo/02-try-register-pay.gif)
+Full prompt: [`AGENT_SETUP.md`](AGENT_SETUP.md).
 
-![Create, edit, save, rename, delete](docs/demo/03-document-crud.gif)
+---
 
 ## Quick start
 
@@ -43,18 +46,18 @@ Open http://localhost:3000. Stop with `bash scripts/stop.sh`.
 
 After sign-up, `/subscribe` shows **Billing is not configured** when using default `.env.example` placeholders (no real Stripe keys). Use **Try the editor** for a trial draft, or follow [Manual Stripe test payment (4242)](#manual-stripe-test-payment-4242) for a real test-card unlock. Playwright and the demo GIFs **mock** payment by seeding emulator entitlement — never commit real keys.
 
-## Let your agent set up and run this project
+## Demo
 
-Paste this into any coding agent (or point it at the raw file):
+### Landing
+![Landing](docs/demo/01-landing.gif)
 
-```text
-Follow https://raw.githubusercontent.com/gassius/prosefield/main/AGENT_SETUP.md
-end to end. Stop and ask me before any system-wide install.
-```
+### Try the editor, register, and pay (mocked)
+![Try the editor, register, and pay (mocked)](docs/demo/02-try-register-pay.gif)
 
-Full prompt: [`AGENT_SETUP.md`](AGENT_SETUP.md).
+### Create, edit, save, rename, delete a document
+![Create, edit, save, rename, delete](docs/demo/03-document-crud.gif)
 
----
+Note: Regenerate with `pnpm demo:gifs` while the app and emulators are already running (Docker + ffmpeg; prefer a production `pnpm build && pnpm start` so the Next.js dev indicator is absent).
 
 ## Prerequisites (details)
 
@@ -188,8 +191,6 @@ Agents and AI assistants helped scaffold tests, docs, and repetitive wiring. Gen
 - Architecture v1.0 / delivery system: Engineer Supervisor + GasNet agents on the Prosefield Cursor Project
 - Stack: Next.js, Firebase Auth/Firestore, Stripe, Tiptap, Playwright, Vitest
 
-Time log template (Carlos fills hours): [`docs/time-log.md`](docs/time-log.md).
-
 ## Scripts
 
 | Command | Purpose |
@@ -224,8 +225,6 @@ pnpm test              # Vitest unit project
 pnpm test:component    # RTL + jsdom
 pnpm test:coverage     # unit + component with V8 coverage thresholds
 ```
-
-Landing polish before/after captures used in PR #6 live under [`docs/screenshots/`](docs/screenshots/) ([index](docs/screenshots/README.md)).
 
 ### Integration (Docker emulators)
 

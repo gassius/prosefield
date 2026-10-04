@@ -313,12 +313,66 @@ describe("P5b ship scripts inventory", () => {
     expect(stop).not.toMatch(/grep -Eqi 'dev'/);
   });
 
-  it("docs contracts: AGENT_SETUP WSL home, write-up active-only, time-log template", () => {
+  it("docs contracts: AGENT_SETUP WSL home, write-up active-only", () => {
     expect(read("AGENT_SETUP.md")).toMatch(/STOP/);
     expect(read("AGENT_SETUP.md")).toMatch(/~\//);
     expect(read("docs/write-up.md")).toMatch(/status` is `active`/);
     expect(read("docs/write-up.md")).not.toMatch(/equivalent allowed statuses/i);
-    expect(read("docs/time-log.md")).not.toMatch(/\|\s*\d+(\.\d+)?\s*\|/);
+    expect(existsSync(path.join(root, "docs/time-log.md"))).toBe(false);
+  });
+
+  it("commit-trailer Carlos manual exemption: gassius + email, Agent* lines block it", () => {
+    const script = path.join(root, "scripts/commit-trailer-carlos-exempt.sh");
+    expect(existsSync(script)).toBe(true);
+
+    const run = (login: string, email: string, message: string, sha?: string) => {
+      try {
+        const out = execFileSync(
+          "bash",
+          [script, login, email, ...(sha ? [sha] : [])],
+          {
+            encoding: "utf8",
+            env: { ...process.env, COMMIT_MESSAGE: message },
+          },
+        );
+        return { status: 0, out };
+      } catch (err) {
+        const e = err as { status?: number; stdout?: string; stderr?: string };
+        return {
+          status: e.status ?? 1,
+          out: `${e.stdout ?? ""}${e.stderr ?? ""}`,
+        };
+      }
+    };
+
+    const exempt = run(
+      "gassius",
+      "cgonzalezr@gmail.com",
+      "Chore: Improve README and docs\n",
+      "ae2f48aec64f204259472059c3550e20b139295a",
+    );
+    expect(exempt.status).toBe(0);
+    expect(exempt.out).toMatch(
+      /::notice::Skipping trailer check for ae2f48aec64f204259472059c3550e20b139295a/,
+    );
+
+    expect(
+      run("gassius", "other@example.com", "no trailers\n").status,
+    ).not.toBe(0);
+    expect(
+      run("someone-else", "cgonzalezr@gmail.com", "no trailers\n").status,
+    ).not.toBe(0);
+    expect(
+      run(
+        "gassius",
+        "cgonzalezr@gmail.com",
+        "subject\n\nAgent: GasNet Implementer\nAgent-Ticket: none\nAgent-Run: https://cursor.com/agents/bc-00000000-0000-0000-0000-000000000000\n",
+      ).status,
+    ).not.toBe(0);
+
+    const ci = read(".github/workflows/ci.yml");
+    expect(ci).toMatch(/commit-trailer-carlos-exempt\.sh/);
+    expect(ci).toMatch(/\.commit\.author\.email/);
   });
 });
 

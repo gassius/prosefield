@@ -1,6 +1,4 @@
-# Write-up (draft for Carlos)
-
-Answers to the three take-home questions. Edit freely before submission.
+# Write-up
 
 ## 1. How does your app determine whether a user is an active subscriber?
 
@@ -24,3 +22,5 @@ So access unlocks when Stripe confirms the session, even if the webhook is late 
 **Server-only Firestore + envelope encryption for document title/content.** Browser clients are deny-all for `/documents`; all reads/writes go through Server Actions and the Admin SDK. Before persistence, title and content are envelope-encrypted (AES-256-GCM) with AAD bound to `uid` + `docId`, and the KEK never lives in Firebase (local/CI use a Compose-owned dev provider; production requires KMS).
 
 Why: a single authorisation and crypto boundary is testable, keeps ciphertext worthless if the database is copied across users, and matches the assignment’s demand for server-validated sessions and server-side subscription gating. Trade-off: no offline or real-time client sync — accepted for this scope.
+
+Added in PR [#28](https://github.com/gassius/prosefield/pull/28); the first implementation stored documents unencrypted in Firestore.

@@ -54,7 +54,7 @@ It must print the agent name. `git interpret-trailers --parse` on the commit mes
 **Carve-outs (no trailers required):** CI and humans use the same signals — agents cannot forge them.
 
 - **GitHub merge commits:** PR merges (*Create a merge commit*) and update-branch merges (button or API) when the committer is GitHub `web-flow` **and** the commit signature is verified. An agent that updates the branch via GitHub **must** leave a PR comment starting with `### Agent: <name>` that names the merge SHA.
-- **Carlos's own commits (`gassius`):** only when the commit is signature-verified with committer login `gassius`, or is a verified `web-flow` commit whose author login is `gassius` (web UI). Never treat author name or email alone as proof. A message that contains any `Agent:` / `Agent-*:` line is never exempt — it must parse as a valid trailer block.
+- **Carlos's own commits (`gassius`):** when (a) the commit is signature-verified with committer login `gassius`, or (b) a verified `web-flow` commit whose author login is `gassius` (web UI), or (c) the GitHub author login is `gassius` **and** the commit author email is `cgonzalezr@gmail.com` (manual pushes). Carlos may push manual commits; those skip the trailer requirement under (c). Author display name alone is never enough. A message that contains any `Agent:` / `Agent-*:` line is never exempt — it must parse as a valid trailer block.
 
 Any other merge (for example a local `git merge`) must carry a valid trailer block.
 
