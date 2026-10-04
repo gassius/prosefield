@@ -86,20 +86,16 @@ describe("getPlan", () => {
     expect(plan.checkoutReassurance).toBe("€8/month · Secure checkout");
   });
 
-  it("falls back when isBillingConfigured throws (missing env)", async () => {
-    vi.stubEnv("PLAN_DISPLAY_PRICE", "8");
-    vi.stubEnv("PLAN_DISPLAY_CURRENCY", "EUR");
-    vi.stubEnv("PLAN_DISPLAY_INTERVAL", "month");
-    vi.resetModules();
-    vi.doMock("@/features/billing/configured", () => ({
-      isBillingConfigured: () => {
-        throw new Error("ZodError: missing env");
-      },
-    }));
-    const { getPlan } = await import("@/features/billing/plan");
-    const plan = await getPlan();
-    expect(plan.checkoutReassurance).toBe("€8/month · Secure checkout");
-    expect(retrievePrice).not.toHaveBeenCalled();
+  it("does not wrap isBillingConfigured in a redundant try/catch", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const source = readFileSync(
+      resolve(__dirname, "../../src/features/billing/plan.ts"),
+      "utf8",
+    );
+    // Bite: re-introducing try/catch around isBillingConfigured fails this test.
+    expect(source).toMatch(/if\s*\(\s*!isBillingConfigured\(\)\s*\)/);
+    expect(source).not.toMatch(/try\s*\{\s*if\s*\(\s*!isBillingConfigured/);
   });
 
   it("fetchPlanFromStripe rejects non-recurring prices", async () => {

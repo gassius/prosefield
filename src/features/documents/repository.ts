@@ -145,36 +145,68 @@ export async function createDocument(input: {
 
 export async function updateDocumentContent(input: {
   documentId: string;
+  ownerId: string;
   content: TiptapJson;
 }): Promise<DocumentRecord | null> {
-  const ref = getAdminFirestore().collection("documents").doc(input.documentId);
-  const snap = await ref.get();
-  if (!snap.exists) {
+  const db = getAdminFirestore();
+  const ref = db.collection("documents").doc(input.documentId);
+  const wrote = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      return false;
+    }
+    const existing = snap.data() ?? {};
+    // Ownership must be checked inside the transaction (TOCTOU-safe).
+    if (existing.ownerId !== input.ownerId) {
+      return false;
+    }
+    tx.update(ref, {
+      content: serialiseContent(input.content),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return true;
+  });
+  if (!wrote) {
     return null;
   }
-  await ref.update({
-    content: serialiseContent(input.content),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
-  const updated = await ref.get();
-  return toRecord(ref.id, updated.data() ?? {});
+  // Return the stored server timestamp, not a local Date() stand-in.
+  const after = await ref.get();
+  if (!after.exists) {
+    return null;
+  }
+  return toRecord(after.id, after.data() ?? {});
 }
 
 export async function renameDocument(input: {
   documentId: string;
+  ownerId: string;
   title: string;
 }): Promise<DocumentRecord | null> {
-  const ref = getAdminFirestore().collection("documents").doc(input.documentId);
-  const snap = await ref.get();
-  if (!snap.exists) {
+  const db = getAdminFirestore();
+  const ref = db.collection("documents").doc(input.documentId);
+  const wrote = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      return false;
+    }
+    const existing = snap.data() ?? {};
+    if (existing.ownerId !== input.ownerId) {
+      return false;
+    }
+    tx.update(ref, {
+      title: input.title,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return true;
+  });
+  if (!wrote) {
     return null;
   }
-  await ref.update({
-    title: input.title,
-    updatedAt: FieldValue.serverTimestamp(),
-  });
-  const updated = await ref.get();
-  return toRecord(ref.id, updated.data() ?? {});
+  const after = await ref.get();
+  if (!after.exists) {
+    return null;
+  }
+  return toRecord(after.id, after.data() ?? {});
 }
 
 export async function deleteDocument(documentId: string): Promise<boolean> {

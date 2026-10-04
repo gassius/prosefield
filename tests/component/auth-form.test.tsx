@@ -22,19 +22,22 @@ vi.mock("next/link", () => ({
   }) => createElement("a", { href, ...props }, children),
 }));
 
-const createUser = vi.fn();
 const signIn = vi.fn();
 const signOut = vi.fn();
 const getIdToken = vi.fn();
+const registerAction = vi.fn();
 
 vi.mock("firebase/auth", () => ({
-  createUserWithEmailAndPassword: (...args: unknown[]) => createUser(...args),
   signInWithEmailAndPassword: (...args: unknown[]) => signIn(...args),
   signOut: (...args: unknown[]) => signOut(...args),
 }));
 
 vi.mock("@/lib/firebase/client", () => ({
   getClientAuth: vi.fn(async () => ({})),
+}));
+
+vi.mock("@/features/auth/register", () => ({
+  registerAction: (...args: unknown[]) => registerAction(...args),
 }));
 
 import { AuthForm } from "@/components/auth/auth-form";
@@ -44,10 +47,10 @@ describe("AuthForm", () => {
   beforeEach(() => {
     replace.mockReset();
     refresh.mockReset();
-    createUser.mockReset();
     signIn.mockReset();
     signOut.mockReset();
     getIdToken.mockReset();
+    registerAction.mockReset();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })),
@@ -66,10 +69,11 @@ describe("AuthForm", () => {
     ).toBeInTheDocument();
   });
 
-  it("registers, exchanges the session, and navigates to nextPath", async () => {
+  it("registers via server Action, signs in, exchanges session, and navigates", async () => {
     const user = userEvent.setup();
+    registerAction.mockResolvedValue({ ok: true });
     getIdToken.mockResolvedValue("id-token");
-    createUser.mockResolvedValue({
+    signIn.mockResolvedValue({
       user: { getIdToken },
     });
     signOut.mockResolvedValue(undefined);
@@ -82,7 +86,11 @@ describe("AuthForm", () => {
       screen.getByRole("button", { name: siteCopy.auth.registerSubmit }),
     );
 
-    expect(createUser).toHaveBeenCalled();
+    expect(registerAction).toHaveBeenCalledWith({
+      email: "new@example.com",
+      password: "password-123",
+    });
+    expect(signIn).toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledWith(
       "/api/session",
       expect.objectContaining({
@@ -95,7 +103,10 @@ describe("AuthForm", () => {
 
   it("shows a generic summary error for duplicate email (no enumeration)", async () => {
     const user = userEvent.setup();
-    createUser.mockRejectedValue({ code: "auth/email-already-in-use" });
+    registerAction.mockResolvedValue({
+      ok: false,
+      message: siteCopy.auth.genericError,
+    });
 
     render(createElement(AuthForm, { mode: "register", nextPath: "/subscribe" }));
     await user.type(screen.getByLabelText(siteCopy.auth.emailLabel), "dup@example.com");
@@ -107,6 +118,7 @@ describe("AuthForm", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       siteCopy.auth.genericError,
     );
+    expect(signIn).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
   });
 
@@ -124,17 +136,40 @@ describe("AuthForm", () => {
     );
   });
 
-  it("shows a password field error for weak passwords", async () => {
+  it("shows a password field error when the server Action maps weak-password", async () => {
     const user = userEvent.setup();
-    createUser.mockRejectedValue({ code: "auth/weak-password" });
+    registerAction.mockResolvedValue({
+      ok: false,
+      field: "password",
+      message: siteCopy.auth.passwordHint,
+    });
 
     render(createElement(AuthForm, { mode: "register", nextPath: "/subscribe" }));
     await user.type(screen.getByLabelText(siteCopy.auth.emailLabel), "weak@example.com");
-    await user.type(screen.getByLabelText(siteCopy.auth.passwordLabel), "123");
+    await user.type(screen.getByLabelText(siteCopy.auth.passwordLabel), "12345678");
     await user.click(
       screen.getByRole("button", { name: siteCopy.auth.registerSubmit }),
     );
 
     expect(await screen.findByText(siteCopy.auth.passwordHint)).toBeInTheDocument();
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("rejects a 7-character password before calling the server Action", async () => {
+    const user = userEvent.setup();
+    render(createElement(AuthForm, { mode: "register", nextPath: "/subscribe" }));
+
+    const passwordInput = screen.getByLabelText(siteCopy.auth.passwordLabel);
+    expect(passwordInput).toHaveAttribute("minLength", "8");
+
+    await user.type(screen.getByLabelText(siteCopy.auth.emailLabel), "short@example.com");
+    await user.type(passwordInput, "abcdefg");
+    await user.click(
+      screen.getByRole("button", { name: siteCopy.auth.registerSubmit }),
+    );
+
+    expect(await screen.findByText(siteCopy.auth.passwordHint)).toBeInTheDocument();
+    expect(registerAction).not.toHaveBeenCalled();
+    expect(signIn).not.toHaveBeenCalled();
   });
 });

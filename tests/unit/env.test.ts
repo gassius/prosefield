@@ -197,12 +197,17 @@ describe("env schema", () => {
 
     it("writes defaults into process.env for Admin SDK / NEXT_PUBLIC consumers", () => {
       vi.stubEnv("NODE_ENV", "development");
-      const target: Record<string, string | undefined> = {};
+      const target: Record<string, string | undefined> = {
+        // Whitespace-only counts as blank and is replaced.
+        APP_URL: "   ",
+      };
       applyLocalDevDefaultsToProcessEnv(target as NodeJS.ProcessEnv);
       expect(target.FIREBASE_AUTH_EMULATOR_HOST).toBe("127.0.0.1:9099");
       expect(target.FIRESTORE_EMULATOR_HOST).toBe("127.0.0.1:8080");
       expect(target.NEXT_PUBLIC_FIREBASE_API_KEY).toBe("demo-api-key");
+      expect(target.APP_URL).toBe("http://localhost:3000");
     });
+
 
     it("does not mutate process.env defaults in production", () => {
       vi.stubEnv("NODE_ENV", "production");

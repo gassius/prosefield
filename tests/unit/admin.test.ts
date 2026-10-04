@@ -34,11 +34,13 @@ describe("firebase admin bootstrap", () => {
     vi.clearAllMocks();
     delete process.env.__TEST_AUTH_EMU;
     delete process.env.__TEST_FS_EMU;
+    delete process.env.METADATA_SERVER_DETECTION;
     vi.unstubAllEnvs();
   });
 
   it("initializes without credentials when emulator hosts are set", async () => {
     vi.stubEnv("NODE_ENV", "development");
+    delete process.env.METADATA_SERVER_DETECTION;
     process.env.__TEST_AUTH_EMU = "127.0.0.1:9099";
     getApps.mockReturnValue([]);
     initializeApp.mockReturnValue({ name: "app" });
@@ -49,6 +51,8 @@ describe("firebase admin bootstrap", () => {
       projectId: "demo-prosefield",
     });
     expect(applicationDefault).not.toHaveBeenCalled();
+    // Emulator mode must disable GCP metadata probes (MetadataLookupWarning).
+    expect(process.env.METADATA_SERVER_DETECTION).toBe("none");
   });
 
   it("refuses emulator hosts in production without ALLOW_EMULATORS", async () => {
@@ -64,6 +68,7 @@ describe("firebase admin bootstrap", () => {
 
   it("uses applicationDefault credentials without emulator hosts", async () => {
     vi.stubEnv("NODE_ENV", "production");
+    delete process.env.METADATA_SERVER_DETECTION;
     getApps.mockReturnValue([]);
     initializeApp.mockReturnValue({ name: "prod-app" });
 
@@ -78,6 +83,8 @@ describe("firebase admin bootstrap", () => {
     expect(applicationDefault).toHaveBeenCalled();
     expect(getAdminAuth()).toEqual({ name: "auth" });
     expect(getAdminFirestore()).toEqual({ name: "firestore" });
+    // Production ADC path must not force METADATA_SERVER_DETECTION=none.
+    expect(process.env.METADATA_SERVER_DETECTION).toBeUndefined();
   });
 
   it("reuses an existing admin app", async () => {

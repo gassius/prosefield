@@ -5,7 +5,16 @@
 import { randomUUID } from "node:crypto";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { __getCookieRecord, __resetCookieStore } from "../mocks/next-headers";
-import { SESSION_COOKIE_NAME, SESSION_EXPIRES_IN_MS } from "@/features/auth/constants";
+import {
+  PASSWORD_POLICY_CLAIM,
+  PASSWORD_POLICY_CLAIM_VALUE,
+  SESSION_COOKIE_NAME,
+  SESSION_EXPIRES_IN_MS,
+} from "@/features/auth/constants";
+import {
+  registerAndSignIn,
+  signUpViaIdentityToolkit,
+} from "./helpers/emulator-auth";
 
 const authHost = process.env.FIREBASE_AUTH_EMULATOR_HOST;
 const firestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
@@ -32,28 +41,6 @@ process.env.PLAN_DISPLAY_PRICE ??= "8";
 process.env.PLAN_DISPLAY_CURRENCY ??= "EUR";
 process.env.PLAN_DISPLAY_INTERVAL ??= "month";
 process.env.FEATURE_CUSTOMER_PORTAL ??= "false";
-
-async function signUp(
-  email: string,
-  password: string,
-): Promise<{ idToken: string; localId: string }> {
-  const response = await fetch(
-    `http://${authHost}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=demo-api-key`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        email,
-        password,
-        returnSecureToken: true,
-      }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(`signUp failed: ${response.status} ${await response.text()}`);
-  }
-  return (await response.json()) as { idToken: string; localId: string };
-}
 
 describe("session exchange (emulators)", () => {
   beforeAll(async () => {
@@ -85,12 +72,13 @@ describe("session exchange (emulators)", () => {
     } = await import("@/features/auth/guards");
 
     const email = `user-${randomUUID()}@example.com`;
-    const { idToken, localId } = await signUp(email, "password-123");
+    const { idToken, localId } = await registerAndSignIn(email, "password-123");
 
     const { sessionCookie, decoded } =
       await createSessionCookieFromIdToken(idToken);
     expect(decoded.uid).toBe(localId);
     expect(decoded.email).toBe(email);
+    expect(decoded[PASSWORD_POLICY_CLAIM]).toBe(PASSWORD_POLICY_CLAIM_VALUE);
 
     await upsertUserDocument({ uid: localId, email });
     await upsertUserDocument({ uid: localId, email });
@@ -160,6 +148,58 @@ describe("session exchange (emulators)", () => {
     });
   });
 
+  it("rejects accounts:signUp short-password tokens on POST /api/session (no users/{uid})", async () => {
+    const { POST } = await import("@/app/api/session/route");
+    const { getUserDocument } = await import("@/features/auth/users");
+
+    const email = `bypass-${randomUUID()}@example.com`;
+    const short = "abcdef";
+    expect(short).toHaveLength(6);
+    const { idToken, localId } = await signUpViaIdentityToolkit(email, short);
+
+    const response = await POST(
+      new Request("http://localhost:3000/api/session", {
+        method: "POST",
+        headers: {
+          origin: "http://localhost:3000",
+          "content-type": "application/json",
+          cookie: "csrf_token=tok",
+          "x-csrf-token": "tok",
+        },
+        body: JSON.stringify({ idToken }),
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect(__getCookieRecord(SESSION_COOKIE_NAME)).toBeUndefined();
+    expect(await getUserDocument(localId)).toBeNull();
+  });
+
+  it("accepts registerAction users on POST /api/session", async () => {
+    const { POST } = await import("@/app/api/session/route");
+    const { getUserDocument } = await import("@/features/auth/users");
+
+    const email = `reg-${randomUUID()}@example.com`;
+    const { idToken, localId } = await registerAndSignIn(email, "password-123");
+
+    const response = await POST(
+      new Request("http://localhost:3000/api/session", {
+        method: "POST",
+        headers: {
+          origin: "http://localhost:3000",
+          "content-type": "application/json",
+          cookie: "csrf_token=tok",
+          "x-csrf-token": "tok",
+        },
+        body: JSON.stringify({ idToken }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { ok: boolean; uid: string };
+    expect(body.ok).toBe(true);
+    expect(body.uid).toBe(localId);
+    expect(await getUserDocument(localId)).toMatchObject({ email });
+  });
+
   it("treats firestore outages as not subscribed (marketing still renders)", async () => {
     const {
       createSessionCookieFromIdToken,
@@ -172,7 +212,7 @@ describe("session exchange (emulators)", () => {
     const admin = await import("@/lib/firebase/admin");
 
     const email = `down-${randomUUID()}@example.com`;
-    const { idToken, localId } = await signUp(email, "password-123");
+    const { idToken, localId } = await registerAndSignIn(email, "password-123");
     const { sessionCookie } = await createSessionCookieFromIdToken(idToken);
     await setSessionCookie(sessionCookie);
 
@@ -225,7 +265,7 @@ describe("session exchange (emulators)", () => {
   it("rejects CSRF and Origin failures on POST /api/session", async () => {
     const { POST } = await import("@/app/api/session/route");
     const email = `csrf-${randomUUID()}@example.com`;
-    const { idToken } = await signUp(email, "password-123");
+    const { idToken } = await registerAndSignIn(email, "password-123");
 
     const badOrigin = await POST(
       new Request("http://localhost:3000/api/session", {
@@ -272,7 +312,7 @@ describe("session exchange (emulators)", () => {
   it("exchanges a valid session via POST with cookie attributes and clears via DELETE", async () => {
     const { POST, DELETE } = await import("@/app/api/session/route");
     const email = `api-${randomUUID()}@example.com`;
-    const { idToken } = await signUp(email, "password-123");
+    const { idToken } = await registerAndSignIn(email, "password-123");
 
     const created = await POST(
       new Request("http://localhost:3000/api/session", {
@@ -365,7 +405,7 @@ describe("session exchange (emulators)", () => {
     expect(forged.status).toBe(401);
 
     const email = `stale-${randomUUID()}@example.com`;
-    const { idToken } = await signUp(email, "password-123");
+    const { idToken } = await registerAndSignIn(email, "password-123");
     // Mint once so we know the token is otherwise valid, then force stale auth_time
     // via a mocked clock on isRecentAuthTime path — createSessionCookieFromIdToken
     // rejects when auth_time is older than the recent window.
@@ -418,7 +458,7 @@ describe("session exchange (emulators)", () => {
       await import("@/features/auth/guards");
 
     const email = `guard-${randomUUID()}@example.com`;
-    const { idToken, localId } = await signUp(email, "password-123");
+    const { idToken, localId } = await registerAndSignIn(email, "password-123");
     const { sessionCookie } = await createSessionCookieFromIdToken(idToken);
 
     await setSessionCookie(sessionCookie);

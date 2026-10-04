@@ -56,6 +56,15 @@ test.describe("accessibility smoke", () => {
     await expectNoSeriousOrCritical(page);
   });
 
+  test("not-found has a main landmark", async ({ page }) => {
+    await page.goto("/this-route-does-not-exist");
+    await expect(page.getByRole("main")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Page not found" }),
+    ).toBeVisible();
+    await expectNoSeriousOrCritical(page);
+  });
+
   test("logged-in landing / subscribe", async ({ page }) => {
     await resetEmulators();
     const email = uniqueEmail("a11y");

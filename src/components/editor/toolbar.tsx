@@ -86,10 +86,10 @@ export function EditorToolbar({
       <div
         className="border-border flex flex-wrap items-center gap-1 border-b py-2"
         role="toolbar"
-        aria-label="Formatting"
+        aria-label={siteCopy.documents.toolbarAriaLabel}
       >
         <ToolbarToggle
-          label="Bold"
+          label={siteCopy.documents.toolbarBold}
           pressed={editor?.isActive("bold") ?? false}
           disabled={!editor}
           onClick={() => editor?.chain().focus().toggleBold().run()}
@@ -97,7 +97,7 @@ export function EditorToolbar({
           <Bold className="size-4" aria-hidden />
         </ToolbarToggle>
         <ToolbarToggle
-          label="Italic"
+          label={siteCopy.documents.toolbarItalic}
           pressed={editor?.isActive("italic") ?? false}
           disabled={!editor}
           onClick={() => editor?.chain().focus().toggleItalic().run()}
@@ -105,7 +105,7 @@ export function EditorToolbar({
           <Italic className="size-4" aria-hidden />
         </ToolbarToggle>
         <ToolbarToggle
-          label="Heading 2"
+          label={siteCopy.documents.toolbarHeading2}
           pressed={editor?.isActive("heading", { level: 2 }) ?? false}
           disabled={!editor}
           onClick={() =>
@@ -115,7 +115,7 @@ export function EditorToolbar({
           <Heading2 className="size-4" aria-hidden />
         </ToolbarToggle>
         <ToolbarToggle
-          label="Heading 3"
+          label={siteCopy.documents.toolbarHeading3}
           pressed={editor?.isActive("heading", { level: 3 }) ?? false}
           disabled={!editor}
           onClick={() =>
@@ -125,7 +125,7 @@ export function EditorToolbar({
           <Heading3 className="size-4" aria-hidden />
         </ToolbarToggle>
         <ToolbarToggle
-          label="Bullet list"
+          label={siteCopy.documents.toolbarBulletList}
           pressed={editor?.isActive("bulletList") ?? false}
           disabled={!editor}
           onClick={() => editor?.chain().focus().toggleBulletList().run()}
@@ -133,7 +133,7 @@ export function EditorToolbar({
           <List className="size-4" aria-hidden />
         </ToolbarToggle>
         <ToolbarToggle
-          label="Numbered list"
+          label={siteCopy.documents.toolbarNumberedList}
           pressed={editor?.isActive("orderedList") ?? false}
           disabled={!editor}
           onClick={() => editor?.chain().focus().toggleOrderedList().run()}
@@ -141,7 +141,7 @@ export function EditorToolbar({
           <ListOrdered className="size-4" aria-hidden />
         </ToolbarToggle>
         <ToolbarToggle
-          label="Quote"
+          label={siteCopy.documents.toolbarQuote}
           pressed={editor?.isActive("blockquote") ?? false}
           disabled={!editor}
           onClick={() => editor?.chain().focus().toggleBlockquote().run()}
@@ -149,7 +149,7 @@ export function EditorToolbar({
           <Quote className="size-4" aria-hidden />
         </ToolbarToggle>
         <ToolbarToggle
-          label="Undo"
+          label={siteCopy.documents.toolbarUndo}
           pressed={false}
           disabled={!editor?.can().undo()}
           onClick={() => editor?.chain().focus().undo().run()}
@@ -157,7 +157,7 @@ export function EditorToolbar({
           <Undo2 className="size-4" aria-hidden />
         </ToolbarToggle>
         <ToolbarToggle
-          label="Redo"
+          label={siteCopy.documents.toolbarRedo}
           pressed={false}
           disabled={!editor?.can().redo()}
           onClick={() => editor?.chain().focus().redo().run()}

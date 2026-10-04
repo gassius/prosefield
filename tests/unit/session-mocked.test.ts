@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { __getCookieRecord, __resetCookieStore } from "../mocks/next-headers";
+import {
+  PASSWORD_POLICY_CLAIM,
+  PASSWORD_POLICY_CLAIM_VALUE,
+  PASSWORD_POLICY_GRANDFATHER_BEFORE_MS,
+} from "@/features/auth/constants";
 
 const verifyIdToken = vi.fn();
 const createSessionCookie = vi.fn();
 const verifySessionCookie = vi.fn();
 const revokeRefreshTokens = vi.fn();
+const getUser = vi.fn();
 
 vi.mock("@/lib/firebase/admin", () => ({
   getAdminAuth: () => ({
@@ -12,16 +18,29 @@ vi.mock("@/lib/firebase/admin", () => ({
     createSessionCookie,
     verifySessionCookie,
     revokeRefreshTokens,
+    getUser,
   }),
   getAdminFirestore: () => {
     throw new Error("firestore unused in this suite");
   },
 }));
 
+function recentAuthTime() {
+  return Math.floor(Date.now() / 1000);
+}
+
 describe("session helpers (mocked admin)", () => {
   beforeEach(() => {
     __resetCookieStore();
     vi.clearAllMocks();
+    createSessionCookie.mockResolvedValue("session-cookie");
+  });
+
+  it("keeps the grandfather cutoff fixed to the gate-land instant", () => {
+    // Exact value — mutating the constant must turn this red.
+    expect(PASSWORD_POLICY_GRANDFATHER_BEFORE_MS).toBe(
+      Date.parse("2026-10-03T20:00:00.000Z"),
+    );
   });
 
   it("rejects ID tokens that are not recently authenticated", async () => {
@@ -29,6 +48,7 @@ describe("session helpers (mocked admin)", () => {
       uid: "u1",
       email: "a@example.com",
       auth_time: 1,
+      [PASSWORD_POLICY_CLAIM]: PASSWORD_POLICY_CLAIM_VALUE,
     });
     const { createSessionCookieFromIdToken, SessionError } = await import(
       "@/features/auth/session"
@@ -40,7 +60,88 @@ describe("session helpers (mocked admin)", () => {
       code: "recent_auth_required",
     });
     expect(createSessionCookie).not.toHaveBeenCalled();
+    expect(getUser).not.toHaveBeenCalled();
     expect(verifyIdToken).toHaveBeenCalledWith("tok", true);
+  });
+
+  it("accepts a token with the password-policy claim (post-cutoff)", async () => {
+    verifyIdToken.mockResolvedValue({
+      uid: "u1",
+      email: "a@example.com",
+      auth_time: recentAuthTime(),
+      [PASSWORD_POLICY_CLAIM]: PASSWORD_POLICY_CLAIM_VALUE,
+    });
+    const { createSessionCookieFromIdToken } = await import(
+      "@/features/auth/session"
+    );
+    const result = await createSessionCookieFromIdToken("tok");
+    expect(result.sessionCookie).toBe("session-cookie");
+    expect(result.decoded.uid).toBe("u1");
+    expect(getUser).not.toHaveBeenCalled();
+    expect(createSessionCookie).toHaveBeenCalledWith("tok", expect.any(Object));
+  });
+
+  it("accepts a pre-cutoff account without the claim (grandfather)", async () => {
+    verifyIdToken.mockResolvedValue({
+      uid: "legacy",
+      email: "legacy@example.com",
+      auth_time: recentAuthTime(),
+    });
+    getUser.mockResolvedValue({
+      metadata: {
+        // Fixed historical creation — bites if cutoff is mutated to 0.
+        creationTime: "Fri, 01 Jan 2021 00:00:00 GMT",
+      },
+    });
+    const { createSessionCookieFromIdToken } = await import(
+      "@/features/auth/session"
+    );
+    const result = await createSessionCookieFromIdToken("tok");
+    expect(result.decoded.uid).toBe("legacy");
+    expect(getUser).toHaveBeenCalledWith("legacy");
+    expect(createSessionCookie).toHaveBeenCalled();
+  });
+
+  it("rejects a post-cutoff account without the claim", async () => {
+    verifyIdToken.mockResolvedValue({
+      uid: "new",
+      email: "new@example.com",
+      auth_time: recentAuthTime(),
+    });
+    getUser.mockResolvedValue({
+      metadata: {
+        // Far future vs cutoff — bites if cutoff is widened to MAX / year 2100.
+        creationTime: "Thu, 01 Jan 2099 00:00:00 GMT",
+      },
+    });
+    const { createSessionCookieFromIdToken, SessionError } = await import(
+      "@/features/auth/session"
+    );
+    await expect(createSessionCookieFromIdToken("tok")).rejects.toBeInstanceOf(
+      SessionError,
+    );
+    await expect(createSessionCookieFromIdToken("tok")).rejects.toMatchObject({
+      code: "unauthorized",
+    });
+    expect(createSessionCookie).not.toHaveBeenCalled();
+  });
+
+  it("rejects accounts without the claim when creationTime is unparseable", async () => {
+    verifyIdToken.mockResolvedValue({
+      uid: "broken",
+      email: "broken@example.com",
+      auth_time: recentAuthTime(),
+    });
+    getUser.mockResolvedValue({
+      metadata: { creationTime: "not-a-date" },
+    });
+    const { createSessionCookieFromIdToken } = await import(
+      "@/features/auth/session"
+    );
+    await expect(createSessionCookieFromIdToken("tok")).rejects.toMatchObject({
+      code: "unauthorized",
+    });
+    expect(createSessionCookie).not.toHaveBeenCalled();
   });
 
   it("returns null from getOptionalSession when verification fails", async () => {

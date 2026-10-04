@@ -15,7 +15,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { siteCopy } from "@/content/site";
+import { formatDeleteDocumentTitle, siteCopy } from "@/content/site";
 import { deleteDocumentAction } from "@/features/documents/actions";
 
 type DeleteDocumentDialogProps = {
@@ -67,7 +67,7 @@ export function DeleteDocumentDialog({
       <AlertDialogContent aria-labelledby={titleId}>
         <AlertDialogHeader>
           <AlertDialogTitle id={titleId}>
-            {siteCopy.documents.deleteTitlePrefix} “{title}”?
+            {formatDeleteDocumentTitle(title)}
           </AlertDialogTitle>
           <AlertDialogDescription>
             {siteCopy.documents.deleteBody}

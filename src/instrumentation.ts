@@ -1,10 +1,7 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    const {
-      getEnv,
-      applyLocalDevDefaultsToProcessEnv,
-      localDevDefaults,
-    } = await import("./lib/env");
+    const { applyLocalDevDefaultsToProcessEnv, localDevDefaults } =
+      await import("@/lib/env-defaults");
     const usingDefaults =
       process.env.NODE_ENV !== "production" &&
       Object.keys(localDevDefaults).some((key) => {
@@ -18,6 +15,14 @@ export async function register() {
         "[env] Using built-in local defaults for missing variables. Copy .env.example to .env to customize (required for Stripe CLI / production builds).",
       );
     }
-    getEnv();
+    try {
+      const { assertStartupEnv } = await import("@/lib/startup-env");
+      // Fail closed at startup: refuse to serve when production env is invalid
+      // (e.g. emulator hosts without ALLOW_EMULATORS=1).
+      await assertStartupEnv();
+    } catch (error) {
+      console.error("[env] Startup env validation failed; exiting.", error);
+      process.exit(1);
+    }
   }
 }
