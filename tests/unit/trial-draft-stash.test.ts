@@ -74,4 +74,18 @@ describe("trial draft stash (uid-scoped sessionStorage)", () => {
     clearTrialDraft("");
     expect(hasTrialDraft("")).toBe(false);
   });
+
+  it("defaults missing content and blank stored titles on read", () => {
+    stashTrialDraft("uid-a", {
+      title: "Has content",
+      content: undefined as unknown as typeof EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(readTrialDraft("uid-a")?.content).toEqual(EMPTY_DOCUMENT_CONTENT);
+
+    sessionStorage.setItem(
+      trialDraftStorageKey("uid-b"),
+      JSON.stringify({ title: "   ", content: EMPTY_DOCUMENT_CONTENT }),
+    );
+    expect(readTrialDraft("uid-b")?.title).toBe("Untitled document");
+  });
 });

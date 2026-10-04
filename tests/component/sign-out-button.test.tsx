@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { createElement, useEffect } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
@@ -11,7 +11,24 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { SignOutButton } from "@/components/auth/sign-out-button";
+import {
+  UnsavedLeaveGuardProvider,
+  useUnsavedLeaveGuard,
+} from "@/components/documents/unsaved-leave-guard";
 import { siteCopy } from "@/content/site";
+import {
+  readTrialDraft,
+  stashTrialDraft,
+} from "@/features/documents/trial-draft-stash";
+import { EMPTY_DOCUMENT_CONTENT } from "@/features/documents/schemas";
+
+function DirtySignOutHarness() {
+  const guard = useUnsavedLeaveGuard();
+  useEffect(() => {
+    guard?.setDirty(true);
+  }, [guard]);
+  return createElement(SignOutButton, { trialUid: "uid-leave" });
+}
 
 const CSRF_VALUE = "test-csrf-secret-token";
 const RESPONSE_BODY_SECRET = "forbidden-body-secret";
@@ -183,5 +200,62 @@ describe("SignOutButton failure handling", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(2);
     assertNoSecretsInLogs(consoleError);
+  });
+
+  it("clears the uid-scoped trial draft stash after a successful sign-out", async () => {
+    const user = userEvent.setup();
+    sessionStorage.clear();
+    stashTrialDraft("uid-signout", {
+      title: "Clear on sign out",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(readTrialDraft("uid-signout")).not.toBeNull();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    );
+
+    render(createElement(SignOutButton, { trialUid: "uid-signout" }));
+    await user.click(screen.getByRole("button", { name: siteCopy.header.signOut }));
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith("/");
+    });
+    expect(readTrialDraft("uid-signout")).toBeNull();
+    sessionStorage.clear();
+  });
+});
+
+describe("SignOutButton leave-guard integration", () => {
+  beforeEach(() => {
+    replace.mockReset();
+    refresh.mockReset();
+    document.cookie = `csrf_token=${CSRF_VALUE}`;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("defers sign-out through the leave guard when the trial draft is dirty", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      createElement(
+        UnsavedLeaveGuardProvider,
+        null,
+        createElement(DirtySignOutHarness),
+      ),
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: siteCopy.header.signOut })).toBeEnabled();
+    });
+    await user.click(screen.getByRole("button", { name: siteCopy.header.signOut }));
+    // Leave guard should intercept before fetch.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
   });
 });
