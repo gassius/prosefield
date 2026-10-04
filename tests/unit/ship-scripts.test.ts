@@ -39,11 +39,17 @@ function spawnDevGroupLeader(
       detached: false,
     });
   }
-  return spawn("bash", ["-c", `set -m; ${inner}`], {
-    cwd,
-    stdio: "ignore",
-    detached: false,
-  });
+  // macOS: match start.sh — perl setpgrp so pgid == pid. Bare `set -m` + a
+  // foreground `exec` keeps the parent shell's pgid (not a group leader).
+  return spawn(
+    "perl",
+    ["-e", "setpgrp(0,0); exec @ARGV", "bash", "-c", inner],
+    {
+      cwd,
+      stdio: "ignore",
+      detached: false,
+    },
+  );
 }
 
 function waitForPnpmArgs(pid: number, childPidFile: string): void {
