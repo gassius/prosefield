@@ -459,14 +459,16 @@ describe("documents guard chain (emulators)", () => {
     const loaded = await getDocumentById(created.data.id);
     expect(loaded?.contentAllowed).toBe(false);
 
-    // Even if a client tried to save empty after a bad load, Zod allow-list
-    // still accepts empty — the editor must refuse. Repository still holds evil.
+    // Raw Admin read must not expose the off-spec JSON as plaintext.
     const { getAdminFirestore } = await import("@/lib/firebase/admin");
     const raw = await getAdminFirestore()
       .collection("documents")
       .doc(created.data.id)
       .get();
-    expect(raw.data()?.content).toBe(evil);
+    const rawData = raw.data() ?? {};
+    expect(rawData).toHaveProperty("contentCipher");
+    expect(rawData).not.toHaveProperty("content");
+    expect(JSON.stringify(rawData)).not.toContain("codeBlock");
 
     // Saving allow-listed content as owner still works (repair path).
     const repaired = await saveDocumentAction({
@@ -491,12 +493,16 @@ describe("documents guard chain (emulators)", () => {
       updateDocumentContent,
       renameDocument,
       createDocument,
+      getDocumentById,
     } = await import("@/features/documents/repository");
 
     const db = getAdminFirestore();
 
     // Ownership checked inside the transaction (not only via outer get).
     const again = await createDocument({ ownerId: uid, title: "Again" });
+    const before = await db.collection("documents").doc(again.id).get();
+    const beforeWrapped = before.data()?.wrappedDataKey;
+    expect(beforeWrapped).toEqual(expect.any(String));
     await db.collection("documents").doc(again.id).update({ ownerId: "other-uid" });
     expect(
       await updateDocumentContent({
@@ -513,7 +519,14 @@ describe("documents guard chain (emulators)", () => {
       }),
     ).toBeNull();
     const untouched = await db.collection("documents").doc(again.id).get();
-    expect(untouched.data()?.title).toBe("Again");
+    // Title stays envelope-encrypted — no plaintext title field to clobber.
+    expect(untouched.data()?.title).toBeUndefined();
+    expect(untouched.data()?.titleCipher).toBeDefined();
+    // Refused mutations must not rewrite the ciphertext package.
+    expect(untouched.data()?.wrappedDataKey).toBe(beforeWrapped);
+    expect(untouched.data()?.ownerId).toBe("other-uid");
+    const viaApp = await getDocumentById(again.id);
+    expect(viaApp?.title).not.toBe("Nope");
 
     // Doc deleted before the action runs → not_found (sequential, not a race).
     const owned = await createDocumentAction({ title: "For deleted-doc" });

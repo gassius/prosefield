@@ -215,7 +215,10 @@ describe("session exchange (emulators)", () => {
     const body = (await response.json()) as { ok: boolean; uid: string };
     expect(body.ok).toBe(true);
     expect(body.uid).toBe(localId);
-    expect(await getUserDocument(localId)).toMatchObject({ email });
+    const user = await getUserDocument(localId);
+    expect(user?.stripeCustomerId).toBeNull();
+    expect(user).not.toHaveProperty("email");
+    expect(JSON.stringify(user)).not.toContain(email);
   });
 
   it("treats firestore outages as not subscribed (marketing still renders)", async () => {
