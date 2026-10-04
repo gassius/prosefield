@@ -29,8 +29,14 @@ else
 fi
 
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  docker compose down
+  # Compose interpolates profiled service env even on `down`; use .env.example when missing.
+  if [[ -f "$ROOT/.env" ]]; then
+    docker compose down
+  else
+    docker compose --env-file "$ROOT/.env.example" down
+  fi
   echo "Stopped Docker Compose services."
 else
   echo "Docker not available — skipped compose down."
 fi
+

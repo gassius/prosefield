@@ -40,8 +40,11 @@ describe("P5b ship scripts (bash only, WSL2 for Windows)", () => {
     expect(text).toMatch(/wait-for-url\.sh/);
     expect(text).toMatch(/scripts\/stop\.sh/);
     expect(text).toMatch(/Compose only/);
+    // Only invoke nvm when active Node mismatches .nvmrc (CI may have nvm without that version).
+    expect(text).toMatch(/actual_node.*required_node|required_node.*actual_node/s);
     expect(text).not.toMatch(/firebase emulators:(start|exec)/i);
   });
+
 
   it("AGENT_SETUP.md stops before system installs and covers verify + Stripe mock", () => {
     const text = read("AGENT_SETUP.md");

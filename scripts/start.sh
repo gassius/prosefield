@@ -10,8 +10,16 @@ PID_FILE="${PROSEFIELD_DEV_PID_FILE:-$ROOT/.prosefield-dev.pid}"
 LOG_FILE="${PROSEFIELD_DEV_LOG_FILE:-$ROOT/.prosefield-dev.log}"
 APP_URL="${APP_URL:-http://localhost:3000}"
 
-# Prefer nvm Node from .nvmrc when nvm is available (does not install Node).
-if [[ -z "${PROSEFIELD_SKIP_NVM:-}" ]]; then
+# Prefer nvm Node from .nvmrc when the active Node does not already match.
+# Do not call `nvm use` when Node already matches (CI setup-node / system Node) —
+# runners often have nvm.sh present without the .nvmrc version installed in nvm.
+required_node="$(tr -d '[:space:]' <"$ROOT/.nvmrc")"
+required_node="${required_node#v}"
+actual_node=""
+if command -v node >/dev/null 2>&1; then
+  actual_node="$(node -v 2>/dev/null | tr -d 'v[:space:]')"
+fi
+if [[ -z "${PROSEFIELD_SKIP_NVM:-}" && "$actual_node" != "$required_node" ]]; then
   if [[ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]]; then
     # shellcheck disable=SC1091
     . "${NVM_DIR:-$HOME/.nvm}/nvm.sh"
