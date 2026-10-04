@@ -9,8 +9,14 @@ const runTransaction = vi.fn(
   async (fn: (tx: { get: typeof txGet; set: typeof txSet }) => Promise<unknown>) =>
     fn({ get: txGet, set: txSet }),
 );
+const createUser = vi.fn();
+const setCustomUserClaims = vi.fn();
 
 vi.mock("@/lib/firebase/admin", () => ({
+  getAdminAuth: () => ({
+    createUser: (...args: unknown[]) => createUser(...args),
+    setCustomUserClaims: (...args: unknown[]) => setCustomUserClaims(...args),
+  }),
   getAdminFirestore: () => ({
     runTransaction: (
       fn: (tx: { get: typeof txGet; set: typeof txSet }) => Promise<unknown>,
@@ -31,6 +37,9 @@ describe("passwords never leave Firebase Auth", () => {
     txSet.mockReset();
     txGet.mockReset();
     runTransaction.mockClear();
+    createUser.mockReset();
+    setCustomUserClaims.mockReset();
+    vi.resetModules();
   });
 
   it("upsertUserDocument never writes password or plaintext email", async () => {
@@ -42,8 +51,8 @@ describe("passwords never leave Firebase Auth", () => {
     });
     expect(txSet).toHaveBeenCalled();
     const payload = txSet.mock.calls[0]?.[1] as Record<string, unknown>;
-    expect(payload).not.toHaveProperty("password");
     expect(JSON.stringify(payload)).not.toContain("person@example.com");
+    expect(JSON.stringify(payload)).not.toMatch(/"password"\s*:\s*"/);
     expect(payload.stripeCustomerId).toBeNull();
   });
 
@@ -58,6 +67,40 @@ describe("passwords never leave Firebase Auth", () => {
     expect(source).not.toMatch(/console\.(log|info|debug|error).*password/i);
   });
 
+  it("behavioural: register canary password never hits console or Firestore writes", async () => {
+    const canary = `canary-pw-${Date.now()}-Xy9!`;
+    createUser.mockResolvedValue({ uid: "uid-canary" });
+    setCustomUserClaims.mockResolvedValue(undefined);
+
+    const logSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const logLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const { registerAction } = await import("@/features/auth/register");
+    const result = await registerAction({
+      email: "canary@example.com",
+      password: canary,
+    });
+    expect(result.ok).toBe(true);
+    expect(createUser).toHaveBeenCalledWith({
+      email: "canary@example.com",
+      password: canary,
+    });
+    expect(txSet).not.toHaveBeenCalled();
+
+    for (const spy of [logSpy, infoSpy, warnSpy, logLogSpy]) {
+      for (const args of spy.mock.calls) {
+        expect(JSON.stringify(args)).not.toContain(canary);
+      }
+    }
+
+    logSpy.mockRestore();
+    infoSpy.mockRestore();
+    warnSpy.mockRestore();
+    logLogSpy.mockRestore();
+  });
+
   it("README security section documents Firebase Auth salted scrypt", () => {
     const readme = readFileSync(
       path.resolve(process.cwd(), "README.md"),
@@ -65,7 +108,7 @@ describe("passwords never leave Firebase Auth", () => {
     );
     const start = readme.indexOf("## Security");
     expect(start).toBeGreaterThan(-1);
-    const section = readme.slice(start, start + 2500);
+    const section = readme.slice(start, start + 3500);
     expect(section).toMatch(/salted scrypt/i);
     expect(section).toMatch(/Firebase Auth/);
     expect(section).toMatch(/envelope/i);

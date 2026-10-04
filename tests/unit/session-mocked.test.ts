@@ -207,6 +207,30 @@ describe("session helpers (mocked admin)", () => {
     expect(__getCookieRecord(SESSION_COOKIE_NAME)?.secure).toBe(true);
   });
 
+  it("forces Secure session cookie in production when APP_URL is https", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_URL", "https://app.example");
+    const { setSessionCookie, SESSION_COOKIE_NAME, isSecureCookieRequest } =
+      await import("@/features/auth/session");
+
+    expect(
+      isSecureCookieRequest(
+        new Request("http://app.example/api/session", {
+          headers: { "x-forwarded-proto": "http" },
+        }),
+      ),
+    ).toBe(true);
+
+    await setSessionCookie(
+      "sess-forced",
+      new Request("http://app.example/api/session", {
+        headers: { "x-forwarded-proto": "http" },
+      }),
+    );
+    expect(__getCookieRecord(SESSION_COOKIE_NAME)?.secure).toBe(true);
+    vi.unstubAllEnvs();
+  });
+
   it("revokes refresh tokens for a uid", async () => {
     revokeRefreshTokens.mockResolvedValue(undefined);
     const { revokeUserSessions } = await import("@/features/auth/session");

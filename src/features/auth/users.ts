@@ -57,9 +57,12 @@ export async function upsertUserDocument(input: {
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists) {
+      // Never persist plaintext email alongside (or instead of) emailEnc.
       tx.set(ref, {
         stripeCustomerId: null,
         ...(emailEnc ? { emailEnc } : {}),
+        email: FieldValue.delete(),
+        password: FieldValue.delete(),
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });

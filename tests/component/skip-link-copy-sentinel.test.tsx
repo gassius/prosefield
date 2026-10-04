@@ -25,16 +25,17 @@ vi.mock("@/components/ui/toaster", () => ({
   Toaster: () => null,
 }));
 
+vi.mock("next/server", () => ({
+  connection: async () => undefined,
+}));
+
 describe("RootLayout skip link copy sentinel", () => {
   it("Skip to content label comes from siteCopy.a11y (sentinel)", async () => {
     const RootLayout = (await import("@/app/layout")).default;
-    render(
-      createElement(
-        RootLayout,
-        null,
-        createElement("main", { id: "main-content" }, "body"),
-      ),
-    );
+    const tree = await RootLayout({
+      children: createElement("main", { id: "main-content" }, "body"),
+    });
+    render(tree);
     expect(
       screen.getByRole("link", { name: "SENTINEL-SKIP" }),
     ).toHaveAttribute("href", "#main-content");

@@ -2,7 +2,7 @@ import "server-only";
 
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase/admin";
-import { redactForLog } from "@/lib/crypto/redact";
+import { logError } from "@/lib/logger";
 import { getStripe } from "@/lib/stripe/server";
 
 /**
@@ -96,15 +96,12 @@ async function updateCustomerEmail(
 }
 
 function logCustomerEmailError(error: unknown): void {
-  console.error(
-    "[billing] customer email update failed",
-    redactForLog({
-      code:
-        error && typeof error === "object" && "code" in error
-          ? String((error as { code?: string }).code)
-          : "unknown",
-    }),
-  );
+  logError("[billing] customer email update failed", {
+    code:
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: string }).code)
+        : "unknown",
+  });
 }
 
 export async function lookupUidByStripeCustomerId(

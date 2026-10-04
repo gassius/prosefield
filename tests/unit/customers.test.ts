@@ -128,6 +128,14 @@ describe("customers", () => {
     });
     expect(customersRetrieve).not.toHaveBeenCalled();
     expect(set).toHaveBeenCalled();
+    // P4: Firestore users/{uid} writes must not store email plaintext.
+    for (const call of set.mock.calls) {
+      const payload = call[1] as Record<string, unknown>;
+      expect(JSON.stringify(payload)).not.toContain("a@b.co");
+      if (payload && typeof payload === "object" && "email" in payload) {
+        expect(String(payload.email)).not.toContain("@");
+      }
+    }
   });
 
   it("creates the user doc when missing during customer creation", async () => {

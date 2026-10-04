@@ -205,22 +205,23 @@ Document **title** and **content** are envelope-encrypted **server-side** before
 
 - Per-document random 256-bit data key + **AES-256-GCM**
 - Ciphertext, IV, auth tag, wrapped data key, and key version are stored together
-- AAD binds each field to `uid` + `docId` (ciphertext cannot be copied across users/docs)
-- The key-encryption key (KEK) **never** lives in Firebase. Local/CI use `DOCUMENT_ENCRYPTION_PROVIDER=dev` with `DOCUMENT_ENCRYPTION_KEK` from Compose / `.env`; production uses a Cloud KMS provider behind the same `KeyProvider` interface
-- Existing plaintext docs migrate lazily (idempotent) on the next read or write
+- AAD binds each field to `uid` + `docId` + field + key version (ciphertext cannot be copied across users/docs)
+- The key-encryption key (KEK) **never** lives in Firebase. Local/CI use `DOCUMENT_ENCRYPTION_PROVIDER=dev` with `DOCUMENT_ENCRYPTION_KEK` from Compose / `.env`; production requires `DOCUMENT_ENCRYPTION_PROVIDER=kms` + `GCP_KMS_KEY_NAME` behind the same `KeyProvider` interface (dev provider and the known local filler KEK are rejected at startup)
+- Existing plaintext docs migrate lazily (idempotent) on the next **write** (save/rename/migrate); reads do not rewrite. Migration encrypts the stored content string verbatim and does not bump `updatedAt`
 - Key rotation is supported via `DOCUMENT_ENCRYPTION_KEY_VERSION` (+ optional previous KEK)
+- **Rollback:** keep the current (or previous) KEK / KMS key version available for decrypt; an admin decrypt-to-plaintext script is backlog if a temporary plaintext restore is needed
 
 Cloud KMS keyring/key/IAM and production env wiring are **Firebase Infra** (Carlos approval) — not changed by this app PR.
 
 ### Transport
 
-- HSTS, a strict CSP (includes `upgrade-insecure-requests`), and related headers on every response
-- Session cookie `__session`: **HttpOnly**, **Secure** (when the request is HTTPS), **SameSite=Lax**
+- HSTS and related headers on every response; a **nonce-based** CSP (`script-src 'self' 'nonce-…' 'strict-dynamic'`, plus `upgrade-insecure-requests`) from `src/proxy.ts` (`'unsafe-eval'` only in development; emulator `connect-src` origins only outside production or with `ALLOW_EMULATORS=1`)
+- Session cookie `__session`: **HttpOnly**, **Secure** (forced when production `APP_URL` is https), **SameSite=Lax**
 - `APP_URL` must be `https://` outside local `localhost` / `127.0.0.1`
 
 ### Personal data
 
-Minimal inventory: email and password stay in **Firebase Auth** only (email is not duplicated as plaintext in Firestore). `stripeCustomerId` is an opaque billing reference. Document title/content are envelope-encrypted. Logs use `redactForLog` so emails, passwords, and document bodies are not written to error output.
+Minimal inventory: email and password stay in **Firebase Auth** only (email is not duplicated as plaintext in Firestore). `stripeCustomerId`, `stripeCustomers/{id}.uid`, `subscriptions/{uid}`, and `stripeEvents/{id}` hold billing ids/status/event metadata — not email. Document title/content are envelope-encrypted. Optional `emailEnc` exists behind `retainEncryptedEmail` (no in-app caller today). Server logs go through `logError` / `redactForLog` so emails, passwords, and document bodies are not written to error output.
 
 ### Passwords
 

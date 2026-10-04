@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { redactForLog } from "@/lib/crypto/redact";
 import { PII_INVENTORY } from "@/lib/crypto/pii-inventory";
 
@@ -54,13 +54,32 @@ describe("redactForLog", () => {
     expect(JSON.stringify(redactForLog(deep))).toContain("[REDACTED]");
   });
 
-  it("lists the minimal PII inventory", () => {
+  it("lists the minimal PII inventory including billing collections", () => {
     const fields = PII_INVENTORY.map((row) => row.field);
     expect(fields).toContain("email");
     expect(fields).toContain("password");
     expect(fields).toContain("document.content");
+    expect(fields).toContain("stripeCustomers.uid");
+    expect(fields).toContain("subscriptions");
+    expect(fields).toContain("stripeEvents");
+    expect(fields).toContain("emailEnc");
     expect(
       PII_INVENTORY.find((row) => row.field === "email")?.firestore,
     ).toBe("never");
+  });
+});
+
+describe("server logger redaction", () => {
+  it("logError redacts email canaries (R3)", async () => {
+    const { logError } = await import("@/lib/logger");
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    logError("[billing] customer email update failed", {
+      email: "leak@example.com",
+      code: "rate_limit",
+    });
+    expect(spy).toHaveBeenCalled();
+    expect(JSON.stringify(spy.mock.calls[0])).not.toContain("leak@example.com");
+    expect(JSON.stringify(spy.mock.calls[0])).toContain("[REDACTED]");
+    spy.mockRestore();
   });
 });

@@ -115,16 +115,7 @@ describe("documents repository", () => {
     expect(parsed?.contentAllowed).toBe(true);
     expect(parsed?.content).toMatchObject({ type: "doc" });
 
-    // Legacy plaintext map content — triggers lazy migrate transaction.
-    txGet.mockResolvedValueOnce({
-      exists: true,
-      id: "d2",
-      data: () => ({
-        ownerId: "u1",
-        title: "Map",
-        content: { type: "doc", content: [{ type: "paragraph" }] },
-      }),
-    });
+    // Legacy plaintext map content — read does NOT migrate (write-path only).
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d2",
@@ -138,17 +129,8 @@ describe("documents repository", () => {
     });
     const mapped = await getDocumentById("d2");
     expect(mapped?.contentAllowed).toBe(true);
-    expect(txUpdate).toHaveBeenCalled();
+    expect(txUpdate).not.toHaveBeenCalled();
 
-    txGet.mockResolvedValueOnce({
-      exists: true,
-      id: "d3",
-      data: () => ({
-        ownerId: "u1",
-        title: "Bad",
-        content: "{not-json",
-      }),
-    });
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d3",
@@ -161,11 +143,6 @@ describe("documents repository", () => {
     const bad = await getDocumentById("d3");
     expect(bad?.contentAllowed).toBe(false);
 
-    txGet.mockResolvedValueOnce({
-      exists: true,
-      id: "d4",
-      data: () => ({ ownerId: "u1", title: "Nullish", content: 42 }),
-    });
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d4",
@@ -179,18 +156,6 @@ describe("documents repository", () => {
     expect(nullish?.contentAllowed).toBe(false);
     expect(nullish?.content).toEqual(EMPTY_DOCUMENT_CONTENT);
 
-    txGet.mockResolvedValueOnce({
-      exists: true,
-      id: "d5",
-      data: () => ({
-        ownerId: "u1",
-        title: "Evil",
-        content: JSON.stringify({
-          type: "doc",
-          content: [{ type: "codeBlock", content: [] }],
-        }),
-      }),
-    });
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d5",
@@ -756,8 +721,8 @@ describe("documents repository", () => {
     });
     expect(updatedNonStringTitle?.title).toBe("Untitled document");
 
-    // Migration throw on read is swallowed (best-effort).
-    runTransaction.mockRejectedValueOnce(new Error("migrate boom"));
+    // Read of legacy never opens a migration transaction.
+    const txCallsBeforeRead = runTransaction.mock.calls.length;
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "legacy-boom",
@@ -775,6 +740,7 @@ describe("documents repository", () => {
     const boom = await getDocumentById("legacy-boom");
     expect(boom?.title).toBe("Boom");
     expect(boom?.contentAllowed).toBe(true);
+    expect(runTransaction.mock.calls.length).toBe(txCallsBeforeRead);
 
     // Encrypted doc with empty title decrypts to the default.
     const emptyTitleRead = await encryptDocumentFields({
@@ -835,5 +801,193 @@ describe("documents repository", () => {
       }),
     ).toBe(true);
     expect(txUpdate).toHaveBeenCalled();
+  });
+
+  it("P1–P3: rename/migrate never empty off-spec content; malformed fails closed", async () => {
+    const { renameDocument, migrateLegacyDocument, getDocumentById } =
+      await import("@/features/documents/repository");
+    const { encryptDocumentFields, decryptDocumentFields } = await import(
+      "@/lib/crypto/envelope"
+    );
+
+    const evil = JSON.stringify({
+      type: "doc",
+      content: [{ type: "codeBlock", content: [] }],
+    });
+
+    // P1: rename of encrypted off-spec doc keeps contentCipher / evil bytes.
+    const offSpec = await encryptDocumentFields({
+      uid: "u1",
+      docId: "p1",
+      title: "Off",
+      content: evil,
+    });
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "p1",
+      data: () => ({ ownerId: "u1", ...offSpec }),
+    });
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "p1",
+      data: () => ({
+        ownerId: "u1",
+        ...offSpec,
+        // titleCipher will be rewritten; contentCipher must stay the probe's.
+        updatedAt: new Date(),
+        createdAt: new Date(),
+      }),
+    });
+    await renameDocument({
+      documentId: "p1",
+      ownerId: "u1",
+      title: "Renamed",
+    });
+    const p1Update = txUpdate.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    expect(p1Update).toHaveProperty("titleCipher");
+    expect(p1Update).not.toHaveProperty("contentCipher");
+    expect(p1Update).not.toHaveProperty("wrappedDataKey");
+    // Decrypt original contentCipher still yields evil.
+    const stillEvil = await decryptDocumentFields({
+      uid: "u1",
+      docId: "p1",
+      fields: offSpec,
+    });
+    expect(stillEvil.content).toBe(evil);
+
+    // P2: migrate legacy off-spec encrypts verbatim (not EMPTY_DOCUMENT).
+    txUpdate.mockClear();
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "p2",
+      data: () => ({
+        ownerId: "u1",
+        title: "Legacy off",
+        content: evil,
+      }),
+    });
+    expect(
+      await migrateLegacyDocument({
+        id: "p2",
+        ownerId: "u1",
+        title: "Legacy off",
+        content: EMPTY_DOCUMENT_CONTENT,
+        contentAllowed: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).toBe(true);
+    const p2Update = txUpdate.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    expect(p2Update).not.toHaveProperty("updatedAt");
+    const migrated = await decryptDocumentFields({
+      uid: "u1",
+      docId: "p2",
+      fields: {
+        keyVersion: p2Update.keyVersion as number,
+        wrappedDataKey: p2Update.wrappedDataKey as string,
+        titleCipher: p2Update.titleCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+        contentCipher: p2Update.contentCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+      },
+    });
+    expect(migrated.content).toBe(evil);
+    expect(migrated.content).not.toBe(JSON.stringify(EMPTY_DOCUMENT_CONTENT));
+
+    // P3: malformed keyVersion string → unreadable, never rewritten.
+    const txCallsBefore = runTransaction.mock.calls.length;
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "p3",
+      data: () => ({
+        ownerId: "u1",
+        keyVersion: "1",
+        wrappedDataKey: offSpec.wrappedDataKey,
+        titleCipher: offSpec.titleCipher,
+        contentCipher: offSpec.contentCipher,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    const malformed = await getDocumentById("p3");
+    expect(malformed?.contentAllowed).toBe(false);
+    expect(runTransaction.mock.calls.length).toBe(txCallsBefore);
+
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "p3",
+      data: () => ({
+        ownerId: "u1",
+        keyVersion: "1",
+        wrappedDataKey: offSpec.wrappedDataKey,
+        titleCipher: offSpec.titleCipher,
+        contentCipher: offSpec.contentCipher,
+      }),
+    });
+    expect(
+      await renameDocument({
+        documentId: "p3",
+        ownerId: "u1",
+        title: "Nope",
+      }),
+    ).toBeNull();
+  });
+
+  it("create/update payloads never include plaintext title/content (E2/E3)", async () => {
+    const { createDocument, updateDocumentContent } = await import(
+      "@/features/documents/repository"
+    );
+    refSet.mockResolvedValue(undefined);
+    const createdFields = await encryptedFields(
+      "u1",
+      "newdocid00000000001",
+      "PlainTitle",
+    );
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "newdocid00000000001",
+      data: () => ({
+        ownerId: "u1",
+        ...createdFields,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    await createDocument({ ownerId: "u1", title: "PlainTitle" });
+    const createPayload = refSet.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(createPayload).not.toHaveProperty("title");
+    expect(createPayload).not.toHaveProperty("content");
+    expect(JSON.stringify(createPayload)).not.toContain("PlainTitle");
+
+    txGet.mockResolvedValueOnce(await ownedSnap());
+    const after = await encryptedFields("u1", "d1", "T");
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => ({
+        ownerId: "u1",
+        ...after,
+        updatedAt: new Date(),
+      }),
+    });
+    await updateDocumentContent({
+      documentId: "d1",
+      ownerId: "u1",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    const updatePayload = txUpdate.mock.calls.at(-1)?.[1] as Record<
+      string,
+      unknown
+    >;
+    expect(updatePayload).toHaveProperty("contentCipher");
+    expect(JSON.stringify(updatePayload)).not.toMatch(
+      /"content"\s*:\s*"\{/,
+    );
   });
 });

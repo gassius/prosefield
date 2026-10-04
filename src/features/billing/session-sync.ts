@@ -117,7 +117,8 @@ export async function resolveBillingStatusView(input: {
       }
       // invalid_session_id: not a payment failure — fall through to projection/pending.
     } catch (error) {
-      console.error("[billing] session sync failed", {
+      const { logError } = await import("@/lib/logger");
+      logError("[billing] session sync failed", {
         code:
           error && typeof error === "object" && "code" in error
             ? String((error as { code?: string }).code)

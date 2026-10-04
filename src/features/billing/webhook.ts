@@ -179,7 +179,8 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<{
   });
 
   if (!uid) {
-    console.error("[billing] webhook could not resolve firebaseUid", {
+    const { logError } = await import("@/lib/logger");
+    logError("[billing] webhook could not resolve firebaseUid", {
       eventId: event.id,
       type: event.type,
     });

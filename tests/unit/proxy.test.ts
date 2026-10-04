@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { CSRF_COOKIE_NAME } from "@/features/auth/constants";
 import { proxy } from "@/proxy";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 function csrfSecure(request: NextRequest): boolean | undefined {
   const response = proxy(request);
@@ -71,8 +75,20 @@ describe("proxy CSRF cookie Secure / x-forwarded-proto", () => {
     expect(cookie?.secure).toBe(true);
     expect(cookie?.sameSite).toBe("lax");
     expect(response.headers.get("Strict-Transport-Security")).toMatch(/max-age/);
-    expect(response.headers.get("Content-Security-Policy")).toMatch(
-      /upgrade-insecure-requests/,
-    );
+    const csp = response.headers.get("Content-Security-Policy");
+    expect(csp).toMatch(/upgrade-insecure-requests/);
+    expect(csp).toMatch(/'nonce-/);
+    expect(csp).toMatch(/strict-dynamic/);
+    expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+  });
+
+  it("forces Secure CSRF cookie in production when APP_URL is https", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_URL", "https://app.example");
+    const request = new NextRequest("http://app.example/", {
+      headers: { "x-forwarded-proto": "http" },
+    });
+    expect(csrfSecure(request)).toBe(true);
+    vi.unstubAllEnvs();
   });
 });

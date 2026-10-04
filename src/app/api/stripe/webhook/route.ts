@@ -39,7 +39,8 @@ export async function POST(request: Request) {
       processed: result.processed,
     });
   } catch (error) {
-    console.error("[webhook] handler failed", {
+    const { logError } = await import("@/lib/logger");
+    logError("[webhook] handler failed", {
       eventId: event.id,
       type: event.type,
       code:

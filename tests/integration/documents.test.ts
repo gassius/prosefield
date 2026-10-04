@@ -431,12 +431,12 @@ describe("documents guard chain (emulators)", () => {
     const { localId } = await establishSession(email);
     await seedActiveSubscription(localId);
 
-    const { createDocumentAction, saveDocumentAction } = await import(
-      "@/features/documents/actions"
-    );
+    const { createDocumentAction, saveDocumentAction, renameDocumentAction } =
+      await import("@/features/documents/actions");
     const { getDocumentById } = await import(
       "@/features/documents/repository"
     );
+    const { decryptDocumentFields } = await import("@/lib/crypto/envelope");
     const { unsafeSetDocumentContent } = await import(
       "../helpers/documents-admin"
     );
@@ -459,7 +459,7 @@ describe("documents guard chain (emulators)", () => {
     const loaded = await getDocumentById(created.data.id);
     expect(loaded?.contentAllowed).toBe(false);
 
-    // Raw Admin read must not expose the off-spec JSON as plaintext.
+    // Raw Admin read: decrypt stored content equals evil after load.
     const { getAdminFirestore } = await import("@/lib/firebase/admin");
     const raw = await getAdminFirestore()
       .collection("documents")
@@ -469,6 +469,57 @@ describe("documents guard chain (emulators)", () => {
     expect(rawData).toHaveProperty("contentCipher");
     expect(rawData).not.toHaveProperty("content");
     expect(JSON.stringify(rawData)).not.toContain("codeBlock");
+    const afterLoad = await decryptDocumentFields({
+      uid: localId,
+      docId: created.data.id,
+      fields: {
+        keyVersion: rawData.keyVersion as number,
+        wrappedDataKey: rawData.wrappedDataKey as string,
+        titleCipher: rawData.titleCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+        contentCipher: rawData.contentCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+      },
+    });
+    expect(afterLoad.content).toBe(evil);
+
+    // Rename must not rewrite content — decrypt still equals evil.
+    const renamed = await renameDocumentAction({
+      documentId: created.data.id,
+      title: "Still corruptible",
+    });
+    expect(renamed.ok).toBe(true);
+    const rawAfterRename = await getAdminFirestore()
+      .collection("documents")
+      .doc(created.data.id)
+      .get();
+    const renamedData = rawAfterRename.data() ?? {};
+    const afterRename = await decryptDocumentFields({
+      uid: localId,
+      docId: created.data.id,
+      fields: {
+        keyVersion: renamedData.keyVersion as number,
+        wrappedDataKey: renamedData.wrappedDataKey as string,
+        titleCipher: renamedData.titleCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+        contentCipher: renamedData.contentCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+      },
+    });
+    expect(afterRename.content).toBe(evil);
+    expect(afterRename.title).toBe("Still corruptible");
 
     // Saving allow-listed content as owner still works (repair path).
     const repaired = await saveDocumentAction({
@@ -728,43 +779,67 @@ describe("documents guard chain (emulators)", () => {
     expect(JSON.stringify(loaded?.content)).toContain(secretText);
   });
 
-  it("lazily migrates legacy plaintext docs on read", async () => {
+  it("migrates legacy plaintext on explicit migrate (not on plain read)", async () => {
     const email = `docs-migrate-${randomUUID()}@example.com`;
     const { localId: uid } = await establishSession(email);
     await seedActiveSubscription(uid);
     const { getAdminFirestore } = await import("@/lib/firebase/admin");
-    const { getDocumentById } = await import(
+    const { getDocumentById, migrateLegacyDocument } = await import(
       "@/features/documents/repository"
     );
-    const { FieldValue } = await import("firebase-admin/firestore");
+    const { FieldValue, Timestamp } = await import("firebase-admin/firestore");
 
     const ref = getAdminFirestore().collection("documents").doc();
     const legacyTitle = `Legacy ${randomUUID()}`;
     const legacyText = `migrate-me-${randomUUID()}`;
+    const legacyContent = JSON.stringify({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: legacyText }],
+        },
+      ],
+    });
+    const fixedUpdatedAt = Timestamp.fromDate(new Date("2026-01-15T12:00:00Z"));
     await ref.set({
       ownerId: uid,
       title: legacyTitle,
-      content: JSON.stringify({
-        type: "doc",
-        content: [
-          {
-            type: "paragraph",
-            content: [{ type: "text", text: legacyText }],
-          },
-        ],
-      }),
+      content: legacyContent,
       createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
+      updatedAt: fixedUpdatedAt,
     });
 
+    // Plain read must not rewrite the doc.
     const loaded = await getDocumentById(ref.id);
     expect(loaded?.title).toBe(legacyTitle);
     expect(JSON.stringify(loaded?.content)).toContain(legacyText);
+    const rawBefore = await ref.get();
+    expect(rawBefore.data()?.content).toBe(legacyContent);
+    expect(rawBefore.data()?.updatedAt.toMillis()).toBe(fixedUpdatedAt.toMillis());
+
+    expect(
+      await migrateLegacyDocument({
+        id: ref.id,
+        ownerId: uid,
+        title: legacyTitle,
+        content: loaded!.content,
+        contentAllowed: loaded!.contentAllowed,
+        createdAt: loaded!.createdAt,
+        updatedAt: loaded!.updatedAt,
+      }),
+    ).toBe(true);
 
     const raw = await ref.get();
     const rawData = raw.data() ?? {};
     expect(rawData).toHaveProperty("wrappedDataKey");
     expect(rawData).not.toHaveProperty("content");
     expect(JSON.stringify(rawData)).not.toContain(legacyText);
+    // Migration must not bump updatedAt (Minor 10).
+    expect(rawData.updatedAt.toMillis()).toBe(fixedUpdatedAt.toMillis());
+
+    const after = await getDocumentById(ref.id);
+    expect(after?.title).toBe(legacyTitle);
+    expect(JSON.stringify(after?.content)).toContain(legacyText);
   });
 });

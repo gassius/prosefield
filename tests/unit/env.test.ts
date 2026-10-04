@@ -201,18 +201,68 @@ describe("env schema", () => {
     expect(envSchema.safeParse(validEnv).success).toBe(true);
   });
 
-  it("accepts production config without emulator hosts", () => {
+  it("accepts production config without emulator hosts when using kms", () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ALLOW_EMULATORS", "");
     const {
       FIREBASE_AUTH_EMULATOR_HOST,
       FIRESTORE_EMULATOR_HOST,
       NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST,
-      ...prod
+      DOCUMENT_ENCRYPTION_KEK,
+      ...rest
     } = validEnv;
     void FIREBASE_AUTH_EMULATOR_HOST;
     void FIRESTORE_EMULATOR_HOST;
     void NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST;
+    void DOCUMENT_ENCRYPTION_KEK;
+    const prod = {
+      ...rest,
+      APP_URL: "https://app.example",
+      DOCUMENT_ENCRYPTION_PROVIDER: "kms",
+      GCP_KMS_KEY_NAME: "projects/p/locations/l/keyRings/r/cryptoKeys/k",
+    };
     expect(envSchema.safeParse(prod).success).toBe(true);
+  });
+
+  it("rejects dev provider and known filler KEK in production (P4)", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ALLOW_EMULATORS", "");
+    const {
+      FIREBASE_AUTH_EMULATOR_HOST,
+      FIRESTORE_EMULATOR_HOST,
+      NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST,
+      ...prodBase
+    } = validEnv;
+    void FIREBASE_AUTH_EMULATOR_HOST;
+    void FIRESTORE_EMULATOR_HOST;
+    void NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST;
+    const result = envSchema.safeParse({
+      ...prodBase,
+      APP_URL: "https://app.example",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some((issue) =>
+          String(issue.message).includes("dev is not allowed"),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("rejects wrong-length KEK at env parse (P5/K1)", () => {
+    const short = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEK: "short",
+    });
+    expect(short.success).toBe(false);
+    if (!short.success) {
+      expect(
+        short.error.issues.some((issue) =>
+          String(issue.message).includes("32 bytes"),
+        ),
+      ).toBe(true);
+    }
   });
 
   describe("mergeEnvSource local defaults", () => {

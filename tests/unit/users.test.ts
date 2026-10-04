@@ -44,7 +44,8 @@ describe("users document (PII)", () => {
       retainEncryptedEmail: true,
     });
     const created = txSet.mock.calls[0]?.[1] as Record<string, unknown>;
-    expect(created).not.toHaveProperty("email");
+    // P3: emailEnc must never ship a plaintext email copy beside it.
+    expect(JSON.stringify(created)).not.toContain("keep@example.com");
     expect(created.emailEnc).toMatchObject({
       keyVersion: 1,
       wrappedDataKey: expect.any(String),
@@ -54,6 +55,8 @@ describe("users document (PII)", () => {
         tag: expect.any(String),
       }),
     });
+    expect(created).toHaveProperty("email");
+    expect(String(created.email)).not.toContain("@");
 
     docGet.mockResolvedValue({
       exists: true,
@@ -94,6 +97,8 @@ describe("users document (PII)", () => {
     });
     const withEnc = txSet.mock.calls[0]?.[1] as Record<string, unknown>;
     expect(withEnc.emailEnc).toBeDefined();
+    expect(JSON.stringify(withEnc)).not.toContain("retain@example.com");
+    expect(withEnc).toHaveProperty("email");
 
     docGet.mockResolvedValue({ exists: false });
     expect(await getUserDocument("missing")).toBeNull();

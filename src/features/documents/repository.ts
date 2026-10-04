@@ -8,8 +8,11 @@ import {
 import { getAdminFirestore } from "@/lib/firebase/admin";
 import {
   decryptDocumentFields,
+  decryptDocumentTitle,
   encryptDocumentFields,
   isEncryptedDocumentData,
+  isMalformedEncryptedDocumentData,
+  reencryptDocumentTitle,
   type EncryptedDocumentFields,
 } from "@/lib/crypto/envelope";
 import {
@@ -83,6 +86,20 @@ function serialiseContent(content: TiptapJson): string {
   return JSON.stringify(content);
 }
 
+/**
+ * Legacy plaintext content as stored — never re-parse through the allow-list
+ * during migration/rename (byte-for-byte preservation).
+ */
+function legacyContentString(data: DocumentData): string | null {
+  if (typeof data.content === "string") {
+    return data.content;
+  }
+  if (data.content && typeof data.content === "object") {
+    return JSON.stringify(data.content);
+  }
+  return null;
+}
+
 function encryptionWriteFields(
   fields: EncryptedDocumentFields,
 ): Record<string, unknown> {
@@ -109,6 +126,47 @@ async function buildEncryptedPayload(input: {
     title: input.title,
     content: serialiseContent(input.content),
   });
+}
+
+async function encryptVerbatim(input: {
+  ownerId: string;
+  docId: string;
+  title: string;
+  content: string;
+}): Promise<EncryptedDocumentFields> {
+  const encrypted = await encryptDocumentFields({
+    uid: input.ownerId,
+    docId: input.docId,
+    title: input.title,
+    content: input.content,
+  });
+  // Verify before any plaintext deletion lands.
+  const check = await decryptDocumentFields({
+    uid: input.ownerId,
+    docId: input.docId,
+    fields: encrypted,
+  });
+  if (check.title !== input.title || check.content !== input.content) {
+    throw new Error("Envelope round-trip verification failed");
+  }
+  return encrypted;
+}
+
+function unreadableRecord(
+  id: string,
+  ownerId: string,
+  createdAt: Date,
+  updatedAt: Date,
+): DocumentRecord {
+  return {
+    id,
+    ownerId,
+    title: DEFAULT_DOCUMENT_TITLE,
+    content: { ...EMPTY_DOCUMENT_CONTENT },
+    contentAllowed: false,
+    createdAt,
+    updatedAt,
+  };
 }
 
 async function toRecord(
@@ -143,23 +201,20 @@ async function toRecord(
       };
     } catch {
       // Tampered / wrong-key ciphertext — surface as unreadable (blocks save).
-      return {
-        id,
-        ownerId,
-        title: DEFAULT_DOCUMENT_TITLE,
-        content: { ...EMPTY_DOCUMENT_CONTENT },
-        contentAllowed: false,
-        createdAt,
-        updatedAt,
-      };
+      return unreadableRecord(id, ownerId, createdAt, updatedAt);
     }
   }
 
-  // Legacy plaintext — return decrypted view and lazily migrate (idempotent).
+  // Partial / malformed envelope — fail closed; never treat as legacy or rewrite.
+  if (isMalformedEncryptedDocumentData(data)) {
+    return unreadableRecord(id, ownerId, createdAt, updatedAt);
+  }
+
+  // Legacy plaintext — read-only view. Migration runs on write paths only.
   const title =
     typeof data.title === "string" ? data.title : DEFAULT_DOCUMENT_TITLE;
   const { content, contentAllowed } = parseContent(data.content);
-  const record: DocumentRecord = {
+  return {
     id,
     ownerId,
     title,
@@ -168,19 +223,13 @@ async function toRecord(
     createdAt,
     updatedAt,
   };
-  if (ownerId) {
-    try {
-      await migrateLegacyDocument(record);
-    } catch {
-      // Migration is best-effort; next write/read retries.
-    }
-  }
-  return record;
 }
 
 /**
  * Idempotent plaintext → envelope migration. Safe to call repeatedly;
- * no-ops when the stored doc is already encrypted.
+ * no-ops when the stored doc is already encrypted or malformed.
+ * Encrypts the stored content string verbatim (no schema re-parse).
+ * Does not bump `updatedAt`.
  */
 export async function migrateLegacyDocument(
   record: DocumentRecord,
@@ -196,24 +245,70 @@ export async function migrateLegacyDocument(
     if (isEncryptedDocumentData(data)) {
       return false;
     }
+    if (isMalformedEncryptedDocumentData(data)) {
+      return false;
+    }
     if (data.ownerId !== record.ownerId) {
+      return false;
+    }
+    const hasPlaintext =
+      typeof data.title === "string" || legacyContentString(data) !== null;
+    if (!hasPlaintext) {
       return false;
     }
     const title =
       typeof data.title === "string" ? data.title : DEFAULT_DOCUMENT_TITLE;
-    const { content } = parseContent(data.content);
-    const encrypted = await buildEncryptedPayload({
+    const contentRaw =
+      legacyContentString(data) ?? serialiseContent(EMPTY_DOCUMENT_CONTENT);
+    const encrypted = await encryptVerbatim({
       ownerId: record.ownerId,
       docId: record.id,
       title,
-      content,
+      content: contentRaw,
     });
-    tx.update(ref, {
-      ...encryptionWriteFields(encrypted),
-      updatedAt: FieldValue.serverTimestamp(),
-    });
+    tx.update(ref, encryptionWriteFields(encrypted));
     return true;
   });
+}
+
+async function toListItem(
+  id: string,
+  data: DocumentData,
+): Promise<DocumentListItem> {
+  const updatedAt = parseTimestamp(data.updatedAt);
+  const ownerId = typeof data.ownerId === "string" ? data.ownerId : "";
+
+  if (isEncryptedDocumentData(data) && ownerId) {
+    try {
+      const title = await decryptDocumentTitle({
+        uid: ownerId,
+        docId: id,
+        fields: {
+          keyVersion: data.keyVersion,
+          wrappedDataKey: data.wrappedDataKey,
+          titleCipher: data.titleCipher,
+        },
+      });
+      return {
+        id,
+        title: title || DEFAULT_DOCUMENT_TITLE,
+        updatedAt,
+      };
+    } catch {
+      return { id, title: DEFAULT_DOCUMENT_TITLE, updatedAt };
+    }
+  }
+
+  if (isMalformedEncryptedDocumentData(data)) {
+    return { id, title: DEFAULT_DOCUMENT_TITLE, updatedAt };
+  }
+
+  return {
+    id,
+    title:
+      typeof data.title === "string" ? data.title : DEFAULT_DOCUMENT_TITLE,
+    updatedAt,
+  };
 }
 
 export async function listDocumentsForOwner(
@@ -227,12 +322,7 @@ export async function listDocumentsForOwner(
 
   const items: DocumentListItem[] = [];
   for (const doc of snap.docs) {
-    const record = await toRecord(doc.id, doc.data());
-    items.push({
-      id: record.id,
-      title: record.title,
-      updatedAt: record.updatedAt,
-    });
+    items.push(await toListItem(doc.id, doc.data()));
   }
   return items;
 }
@@ -295,6 +385,9 @@ export async function updateDocumentContent(input: {
     if (existing.ownerId !== input.ownerId) {
       return false;
     }
+    if (isMalformedEncryptedDocumentData(existing)) {
+      return false;
+    }
     let title = DEFAULT_DOCUMENT_TITLE;
     if (isEncryptedDocumentData(existing)) {
       const decrypted = await decryptDocumentFields({
@@ -350,11 +443,16 @@ export async function renameDocument(input: {
     if (existing.ownerId !== input.ownerId) {
       return false;
     }
-    let content: TiptapJson = { ...EMPTY_DOCUMENT_CONTENT };
+    if (isMalformedEncryptedDocumentData(existing)) {
+      return false;
+    }
+
     if (isEncryptedDocumentData(existing)) {
-      const decrypted = await decryptDocumentFields({
+      // Title only — never re-parse or rewrite contentCipher.
+      const titleCipher = await reencryptDocumentTitle({
         uid: input.ownerId,
         docId: input.documentId,
+        title: input.title,
         fields: {
           keyVersion: existing.keyVersion,
           wrappedDataKey: existing.wrappedDataKey,
@@ -362,15 +460,24 @@ export async function renameDocument(input: {
           contentCipher: existing.contentCipher,
         },
       });
-      content = parseContent(decrypted.content).content;
-    } else {
-      content = parseContent(existing.content).content;
+      tx.update(ref, {
+        titleCipher,
+        title: FieldValue.delete(),
+        content: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return true;
     }
-    const encrypted = await buildEncryptedPayload({
+
+    // Legacy: encrypt title + verbatim stored content (no schema re-parse).
+    const contentRaw =
+      legacyContentString(existing) ??
+      serialiseContent(EMPTY_DOCUMENT_CONTENT);
+    const encrypted = await encryptVerbatim({
       ownerId: input.ownerId,
       docId: input.documentId,
       title: input.title,
-      content,
+      content: contentRaw,
     });
     tx.update(ref, {
       ...encryptionWriteFields(encrypted),
