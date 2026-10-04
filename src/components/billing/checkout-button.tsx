@@ -15,6 +15,12 @@ export function CheckoutButton(props: {
   cancelPath?: CheckoutCancelPath;
   /** Runs before the checkout request (e.g. stash trial draft). */
   onBeforeCheckout?: () => void | Promise<void>;
+  /**
+   * Runs immediately before `location.assign` to Stripe. Use this to disarm
+   * beforeunload — not `onBeforeCheckout`, which runs before the fetch and
+   * must not leave the guard off if checkout fails (409/503/network).
+   */
+  onBeforeRedirect?: () => void;
   className?: string;
   variant?: "default" | "secondary" | "ghost" | "link";
   size?: "default" | "sm" | "lg";
@@ -22,6 +28,11 @@ export function CheckoutButton(props: {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  function redirectToCheckout(url: string) {
+    props.onBeforeRedirect?.();
+    window.location.assign(url);
+  }
 
   async function onClick() {
     setBusy(true);
@@ -64,7 +75,7 @@ export function CheckoutButton(props: {
       if (response.ok) {
         const body = (await response.json()) as { url?: string };
         if (body.url) {
-          window.location.assign(body.url);
+          redirectToCheckout(body.url);
           return;
         }
       }
@@ -73,7 +84,7 @@ export function CheckoutButton(props: {
       if (response.status === 303) {
         const location = response.headers.get("Location");
         if (location) {
-          window.location.assign(location);
+          redirectToCheckout(location);
           return;
         }
       }

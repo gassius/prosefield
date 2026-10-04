@@ -17,6 +17,8 @@ type TrialSubscribeModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onBeforeCheckout: () => void | Promise<void>;
+  /** Disarm beforeunload only immediately before Stripe redirect. */
+  onBeforeRedirect: () => void;
 };
 
 /**
@@ -26,6 +28,7 @@ export function TrialSubscribeModal({
   open,
   onOpenChange,
   onBeforeCheckout,
+  onBeforeRedirect,
 }: TrialSubscribeModalProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -59,6 +62,7 @@ export function TrialSubscribeModal({
             label={siteCopy.documents.trialSubscribeCta}
             cancelPath="/documents/trial"
             onBeforeCheckout={onBeforeCheckout}
+            onBeforeRedirect={onBeforeRedirect}
           />
         </AlertDialogFooter>
       </AlertDialogContent>

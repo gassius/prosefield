@@ -43,6 +43,16 @@ describe("csrf helpers", () => {
     });
   });
 
+  it("returns undefined header token when the CSRF header is absent", () => {
+    const request = new Request("http://localhost:3000/api/session", {
+      headers: { cookie: "csrf_token=from-cookie" },
+    });
+    expect(readCsrfFromRequest(request)).toEqual({
+      cookieToken: "from-cookie",
+      headerToken: undefined,
+    });
+  });
+
   it("rejects mismatched lengths without throwing", () => {
     expect(csrfTokensMatch("abcd", "ab")).toBe(false);
   });

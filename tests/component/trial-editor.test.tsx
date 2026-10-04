@@ -13,9 +13,28 @@ const stashBehavior = vi.hoisted(() => ({
   mode: "real" as "real" | "invalid" | "unavailable",
 }));
 
+const editorBehavior = vi.hoisted(() => ({
+  forceNull: false,
+}));
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push, refresh, replace: vi.fn() }),
 }));
+
+vi.mock("@tiptap/react", async () => {
+  const actual = await vi.importActual<typeof import("@tiptap/react")>(
+    "@tiptap/react",
+  );
+  return {
+    ...actual,
+    useEditor: (...args: Parameters<typeof actual.useEditor>) => {
+      if (editorBehavior.forceNull) {
+        return null as unknown as ReturnType<typeof actual.useEditor>;
+      }
+      return actual.useEditor(...args);
+    },
+  };
+});
 
 vi.mock("@/features/documents/persist-trial-draft", () => ({
   persistStashedTrialDraft: (...args: unknown[]) =>
@@ -151,6 +170,7 @@ describe("TrialEditor locks and leave guard", () => {
     assign.mockReset();
     persistStashedTrialDraft.mockReset();
     stashBehavior.mode = "real";
+    editorBehavior.forceNull = false;
     vi.unstubAllGlobals();
   });
 
@@ -217,7 +237,7 @@ describe("TrialEditor locks and leave guard", () => {
     expect(persistStashedTrialDraft).not.toHaveBeenCalled();
   });
 
-  it("registers beforeunload only when dirty and disarms after stash for checkout", async () => {
+  it("registers beforeunload only when dirty and disarms only on redirect", async () => {
     Object.defineProperty(window, "location", {
       configurable: true,
       value: { ...window.location, assign, origin: "http://localhost:3000" },
@@ -260,8 +280,104 @@ describe("TrialEditor locks and leave guard", () => {
       expect(assign).toHaveBeenCalled();
     });
 
-    const afterStash = dispatchBeforeUnload();
-    expect(afterStash.defaultPrevented).toBe(false);
+    const afterRedirect = dispatchBeforeUnload();
+    expect(afterRedirect.defaultPrevented).toBe(false);
+  });
+
+  async function dirtyAndCheckout(user: ReturnType<typeof userEvent.setup>) {
+    const title = screen.getByLabelText("Document title");
+    await user.clear(title);
+    await user.type(title, "Keep guard");
+    await user.tab();
+    await waitFor(() => {
+      expect(screen.getByText(siteCopy.documents.unsaved)).toBeVisible();
+    });
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const modal = await screen.findByTestId("trial-subscribe-modal");
+    await user.click(
+      within(modal).getByRole("button", {
+        name: "Continue to secure checkout",
+      }),
+    );
+  }
+
+  it.each([
+    {
+      name: "409",
+      fetchImpl: async () => new Response(null, { status: 409 }),
+    },
+    {
+      name: "503",
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ error: "Billing is not configured." }), {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        }),
+    },
+    {
+      name: "network reject",
+      fetchImpl: async () => {
+        throw new Error("network");
+      },
+    },
+    {
+      name: "303 without Location",
+      fetchImpl: async () => new Response(null, { status: 303 }),
+    },
+  ])(
+    "keeps beforeunload armed after failed checkout ($name)",
+    async ({ fetchImpl }) => {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: { ...window.location, assign, origin: "http://localhost:3000" },
+      });
+      vi.stubGlobal("fetch", vi.fn(fetchImpl));
+      const user = userEvent.setup();
+      renderTrial();
+      await waitForEditor();
+      await dirtyAndCheckout(user);
+      expect(await screen.findByRole("alert")).toBeVisible();
+      expect(assign).not.toHaveBeenCalled();
+      // Guard must stay armed — tab close would otherwise lose the draft.
+      expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
+    },
+  );
+
+  it("re-arms beforeunload after an edit following a successful disarm", async () => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, assign, origin: "http://localhost:3000" },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ url: "https://checkout.stripe.com/c/pay/cs" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderTrial();
+    await waitForEditor();
+    await dirtyAndCheckout(user);
+    await waitFor(() => {
+      expect(assign).toHaveBeenCalled();
+    });
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
+
+    // jsdom does not navigate on assign — close the modal and edit to re-arm.
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => {
+      expect(screen.queryByTestId("trial-subscribe-modal")).toBeNull();
+    });
+    const editable = document.querySelector(
+      "[contenteditable='true']",
+    ) as HTMLElement;
+    await user.click(editable);
+    await user.keyboard("re-arm keystroke");
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
   });
 
   it("stashes draft by uid before checkout from subscribe modal with cancelPath trial", async () => {
@@ -539,7 +655,7 @@ describe("TrialEditor locks and leave guard", () => {
     });
   });
 
-  it("blocks checkout and shows an error when stash validation fails", async () => {
+  it("blocks checkout when stash validation fails and leaves beforeunload armed", async () => {
     Object.defineProperty(window, "location", {
       configurable: true,
       value: { ...window.location, assign, origin: "http://localhost:3000" },
@@ -550,6 +666,15 @@ describe("TrialEditor locks and leave guard", () => {
     const user = userEvent.setup();
     renderTrial();
     await waitForEditor();
+
+    const title = screen.getByLabelText("Document title");
+    await user.clear(title);
+    await user.type(title, "Invalid stash");
+    await user.tab();
+    await waitFor(() => {
+      expect(screen.getByText(siteCopy.documents.unsaved)).toBeVisible();
+    });
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
 
     await user.click(screen.getByRole("button", { name: "Save" }));
     const modal = await screen.findByTestId("trial-subscribe-modal");
@@ -563,6 +688,8 @@ describe("TrialEditor locks and leave guard", () => {
     );
     expect(assign).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+    // Failed stash must not disarm (kills B9).
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
   });
 
   it("blocks checkout when sessionStorage stash is unavailable", async () => {
@@ -583,5 +710,44 @@ describe("TrialEditor locks and leave guard", () => {
       siteCopy.subscribe.checkoutError,
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("stashes EMPTY_DOCUMENT_CONTENT when the editor is not ready", async () => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, assign, origin: "http://localhost:3000" },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({ url: "https://checkout.stripe.com/c/pay/cs" }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+    editorBehavior.forceNull = true;
+    const user = userEvent.setup();
+    renderTrial();
+    // No TipTap surface — title + locked Save still work.
+    expect(document.querySelector("[contenteditable='true']")).toBeNull();
+    const title = screen.getByLabelText("Document title");
+    await user.clear(title);
+    await user.type(title, "No editor yet");
+    await user.tab();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const modal = await screen.findByTestId("trial-subscribe-modal");
+    await user.click(
+      within(modal).getByRole("button", {
+        name: "Continue to secure checkout",
+      }),
+    );
+    await waitFor(() => {
+      expect(readTrialDraft("uid-trial")).toEqual({
+        title: "No editor yet",
+        content: EMPTY_DOCUMENT_CONTENT,
+      });
+      expect(assign).toHaveBeenCalled();
+    });
   });
 });

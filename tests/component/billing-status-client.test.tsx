@@ -155,4 +155,75 @@ describe("BillingStatusClient", () => {
     expect(replace).not.toHaveBeenCalled();
     expect(persistStashedTrialDraft).not.toHaveBeenCalled();
   });
+
+  it("keeps polling when pollBillingStatus throws then recovers to active", async () => {
+    vi.useFakeTimers();
+    pollBillingStatus
+      .mockRejectedValueOnce(new Error("transient"))
+      .mockResolvedValue({ status: "active" });
+    persistStashedTrialDraft.mockResolvedValue({ ok: false, reason: "none" });
+    const { BillingStatusClient } = await import(
+      "@/app/(account)/billing/status/billing-status-client"
+    );
+    render(<BillingStatusClient initialView="pending" uid="uid-1" />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_100);
+    });
+    expect(replace).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_100);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(persistStashedTrialDraft).toHaveBeenCalledWith("uid-1");
+    expect(replace).toHaveBeenCalledWith("/documents");
+  });
+
+  it("unmount during an in-flight poll cancels without persisting", async () => {
+    vi.useFakeTimers();
+    let resolvePoll: ((value: { status: "pending" }) => void) | undefined;
+    pollBillingStatus.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePoll = resolve;
+        }),
+    );
+    const { BillingStatusClient } = await import(
+      "@/app/(account)/billing/status/billing-status-client"
+    );
+    const { unmount } = render(
+      <BillingStatusClient initialView="pending" uid="uid-1" />,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_100);
+    });
+    expect(pollBillingStatus).toHaveBeenCalled();
+    unmount();
+    await act(async () => {
+      resolvePoll?.({ status: "pending" });
+      await Promise.resolve();
+    });
+    expect(persistStashedTrialDraft).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("retry that still fails stays on persist_failed", async () => {
+    const user = userEvent.setup();
+    persistStashedTrialDraft.mockResolvedValue({
+      ok: false,
+      reason: "create_failed",
+    });
+    const { BillingStatusClient } = await import(
+      "@/app/(account)/billing/status/billing-status-client"
+    );
+    render(<BillingStatusClient initialView="active" uid="uid-1" />);
+    expect(await screen.findByTestId("trial-persist-failed")).toBeVisible();
+    await user.click(screen.getByTestId("trial-persist-retry"));
+    await waitFor(() => {
+      expect(persistStashedTrialDraft).toHaveBeenCalledTimes(2);
+    });
+    expect(screen.getByTestId("trial-persist-failed")).toBeVisible();
+    expect(replace).not.toHaveBeenCalled();
+  });
 });

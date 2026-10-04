@@ -134,8 +134,9 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
   }, [editor, title]);
 
   /**
-   * Validate + stash before Stripe redirect. On success, disarm the leave
-   * guard so `location.assign` never triggers a native "Leave site?" dialog.
+   * Validate + stash before the checkout request. Does **not** disarm
+   * beforeunload — that happens only in `disarmForRedirect` immediately
+   * before `location.assign`, so a failed checkout keeps the guard armed.
    */
   const stashCurrent = useCallback(async () => {
     const result = stashTrialDraft(uid, currentDraft());
@@ -148,9 +149,12 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
       throw new Error(`trial_stash_${result.reason}`);
     }
     setDraftError(null);
+  }, [currentDraft, uid]);
+
+  /** Called only immediately before Stripe `location.assign`. */
+  const disarmForRedirect = useCallback(() => {
     allowUnloadRef.current = true;
-    leaveGuard?.setDirty(false);
-  }, [currentDraft, leaveGuard, uid]);
+  }, []);
 
   const openSubscribeModal = useCallback(() => {
     setSubscribeOpen(true);
@@ -279,16 +283,18 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
                 />
               </div>
               <div className="flex shrink-0 items-center gap-2">
+                {/* Icon-only on narrow viewports so the title is not squeezed to "Un…". */}
                 <Button
                   type="button"
                   variant="secondary"
-                  size="sm"
+                  size="icon"
                   className="md:hidden"
                   onClick={openSubscribeModal}
                   data-testid="trial-new-document-mobile"
+                  aria-label={siteCopy.documents.newDocument}
                 >
                   <Plus className="size-4" aria-hidden />
-                  {siteCopy.documents.newDocument}
+                  <span className="sr-only">{siteCopy.documents.newDocument}</span>
                 </Button>
                 <Button
                   type="button"
@@ -350,11 +356,13 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
         open={subscribeOpen}
         onOpenChange={setSubscribeOpen}
         onBeforeCheckout={stashCurrent}
+        onBeforeRedirect={disarmForRedirect}
       />
       <TrialLeaveModal
         open={leaveGuard?.leaveModalOpen ?? false}
         onOpenChange={(open) => leaveGuard?.setLeaveModalOpen(open)}
         onBeforeCheckout={stashCurrent}
+        onBeforeRedirect={disarmForRedirect}
         onLeaveAnyway={onLeaveAnyway}
       />
     </>

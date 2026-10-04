@@ -109,6 +109,11 @@ describe("SignOutButton failure handling", () => {
 
   it("shows an alert and does not navigate when DELETE returns !ok", async () => {
     const user = userEvent.setup();
+    sessionStorage.clear();
+    stashTrialDraft("uid-keep", {
+      title: "Keep on failed sign-out",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -124,16 +129,24 @@ describe("SignOutButton failure handling", () => {
     expect(alert).toHaveTextContent(siteCopy.auth.signOutError);
     expect(replace).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
+    // Failed sign-out must not wipe drafts (kills O6).
+    expect(readTrialDraft("uid-keep")?.title).toBe("Keep on failed sign-out");
     expect(consoleError).toHaveBeenCalledWith("[sign-out]", {
       event: "sign_out_failed",
       reason: "http",
       status: 403,
     });
     assertNoSecretsInLogs(consoleError);
+    sessionStorage.clear();
   });
 
   it("shows an alert and does not navigate when fetch throws", async () => {
     const user = userEvent.setup();
+    sessionStorage.clear();
+    stashTrialDraft("uid-keep-net", {
+      title: "Keep on network fail",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -149,6 +162,7 @@ describe("SignOutButton failure handling", () => {
     expect(alert).not.toHaveTextContent(THROW_MESSAGE_SECRET);
     expect(replace).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
+    expect(readTrialDraft("uid-keep-net")?.title).toBe("Keep on network fail");
     await waitFor(() => {
       expect(consoleError).toHaveBeenCalledWith("[sign-out]", {
         event: "sign_out_failed",
@@ -156,6 +170,7 @@ describe("SignOutButton failure handling", () => {
       });
     });
     assertNoSecretsInLogs(consoleError);
+    sessionStorage.clear();
   });
 
   it("shows an alert and does not navigate when the CSRF cookie is missing", async () => {

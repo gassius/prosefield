@@ -221,6 +221,91 @@ describe("AuthForm", () => {
     expect(passwordInput.getAttribute("aria-describedby")).not.toMatch(/-error$/);
   });
 
+  it("shows network error when the CSRF cookie is missing during session exchange", async () => {
+    const user = userEvent.setup();
+    document.cookie = "csrf_token=; Max-Age=0";
+    getIdToken.mockResolvedValue("id-token");
+    signIn.mockResolvedValue({
+      user: { uid: "uid-csrf", getIdToken },
+    });
+
+    render(createElement(AuthForm, { mode: "login", nextPath: "/subscribe" }));
+    await user.type(screen.getByLabelText(siteCopy.auth.emailLabel), "csrf@example.com");
+    await user.type(screen.getByLabelText(siteCopy.auth.passwordLabel), "password-123");
+    await user.click(screen.getByRole("button", { name: siteCopy.auth.loginSubmit }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      siteCopy.auth.networkError,
+    );
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("shows network error when session exchange returns !ok", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 403 })),
+    );
+    getIdToken.mockResolvedValue("id-token");
+    signIn.mockResolvedValue({
+      user: { uid: "uid-sess", getIdToken },
+    });
+
+    render(createElement(AuthForm, { mode: "login", nextPath: "/subscribe" }));
+    await user.type(screen.getByLabelText(siteCopy.auth.emailLabel), "sess@example.com");
+    await user.type(screen.getByLabelText(siteCopy.auth.passwordLabel), "password-123");
+    await user.click(screen.getByRole("button", { name: siteCopy.auth.loginSubmit }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      siteCopy.auth.networkError,
+    );
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("shows an email field error when registerAction maps field email", async () => {
+    const user = userEvent.setup();
+    registerAction.mockResolvedValue({
+      ok: false,
+      field: "email",
+      message: siteCopy.auth.invalidEmail,
+    });
+
+    render(createElement(AuthForm, { mode: "register", nextPath: "/subscribe" }));
+    const emailInput = screen.getByLabelText(siteCopy.auth.emailLabel);
+    await user.type(emailInput, "bad@example.com");
+    await user.type(screen.getByLabelText(siteCopy.auth.passwordLabel), "password-123");
+    await user.click(
+      screen.getByRole("button", { name: siteCopy.auth.registerSubmit }),
+    );
+
+    expect(emailInput).toHaveAttribute("aria-invalid", "true");
+    expect(await screen.findByText(siteCopy.auth.invalidEmail)).toBeVisible();
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("shows email and password field errors from Firebase auth codes", async () => {
+    const user = userEvent.setup();
+    signIn
+      .mockRejectedValueOnce({ code: "auth/invalid-email" })
+      .mockRejectedValueOnce({ code: "auth/weak-password" });
+
+    render(createElement(AuthForm, { mode: "login", nextPath: "/subscribe" }));
+    const emailInput = screen.getByLabelText(siteCopy.auth.emailLabel);
+    const passwordInput = screen.getByLabelText(siteCopy.auth.passwordLabel);
+
+    await user.type(emailInput, "not-an-email");
+    await user.type(passwordInput, "password-123");
+    await user.click(screen.getByRole("button", { name: siteCopy.auth.loginSubmit }));
+    expect(emailInput).toHaveAttribute("aria-invalid", "true");
+    expect(await screen.findByText(siteCopy.auth.invalidEmail)).toBeVisible();
+
+    await user.clear(emailInput);
+    await user.type(emailInput, "ok@example.com");
+    await user.click(screen.getByRole("button", { name: siteCopy.auth.loginSubmit }));
+    expect(passwordInput).toHaveAttribute("aria-invalid", "true");
+    expect(await screen.findByText(siteCopy.auth.passwordHint)).toBeVisible();
+  });
+
   it("clears trial drafts for other uids after a successful login session exchange", async () => {
     const user = userEvent.setup();
     const {

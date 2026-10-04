@@ -115,6 +115,7 @@ describe("CheckoutButton", () => {
       configurable: true,
       value: { ...window.location, assign, origin: "http://localhost:3000" },
     });
+    const onBeforeRedirect = vi.fn();
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -131,7 +132,12 @@ describe("CheckoutButton", () => {
     const { CheckoutButton } = await import(
       "@/components/billing/checkout-button"
     );
-    render(<CheckoutButton label="Continue to secure checkout" />);
+    render(
+      <CheckoutButton
+        label="Continue to secure checkout"
+        onBeforeRedirect={onBeforeRedirect}
+      />,
+    );
     await userEvent.click(
       screen.getByRole("button", { name: "Continue to secure checkout" }),
     );
@@ -140,6 +146,33 @@ describe("CheckoutButton", () => {
         "https://checkout.stripe.com/c/pay/cs_test",
       );
     });
+    expect(onBeforeRedirect).toHaveBeenCalledTimes(1);
+    expect(onBeforeRedirect.mock.invocationCallOrder[0]).toBeLessThan(
+      assign.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("does not call onBeforeRedirect on 409", async () => {
+    const onBeforeRedirect = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 409 })),
+    );
+    const { CheckoutButton } = await import(
+      "@/components/billing/checkout-button"
+    );
+    render(
+      <CheckoutButton
+        label="Continue to secure checkout"
+        onBeforeRedirect={onBeforeRedirect}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Continue to secure checkout" }),
+    );
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(onBeforeRedirect).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
   });
 
   it("shows generic error when fetch fails", async () => {

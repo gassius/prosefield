@@ -18,6 +18,8 @@ type TrialLeaveModalProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onBeforeCheckout: () => void | Promise<void>;
+  /** Disarm beforeunload only immediately before Stripe redirect. */
+  onBeforeRedirect: () => void;
   onLeaveAnyway: () => void;
 };
 
@@ -28,6 +30,7 @@ export function TrialLeaveModal({
   open,
   onOpenChange,
   onBeforeCheckout,
+  onBeforeRedirect,
   onLeaveAnyway,
 }: TrialLeaveModalProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -70,6 +73,7 @@ export function TrialLeaveModal({
             label={siteCopy.documents.trialSubscribeCta}
             cancelPath="/documents/trial"
             onBeforeCheckout={onBeforeCheckout}
+            onBeforeRedirect={onBeforeRedirect}
           />
         </AlertDialogFooter>
       </AlertDialogContent>
