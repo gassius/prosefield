@@ -57,6 +57,8 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         viewport: { width: 1280, height: 720 },
         video: { mode: "on", size: { width: 1280, height: 720 } },
+        // Slightly slower interactions so viewers can follow; GIF fps stays real-time.
+        launchOptions: { slowMo: 120 },
       },
     },
   ],

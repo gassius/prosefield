@@ -17,6 +17,18 @@ export async function register() {
       );
     }
     try {
+      // Demo GIF recording: optional fixtures + loopback mock. Throws (fail
+      // closed) when PROSEFIELD_DEMO_GIFS=1 outside the local allow-list.
+      // Must run before assertStartupEnv so placeholders are filled first.
+      const { applyDemoGifsBillingEnv } = await import(
+        "@/features/billing/demo-gifs-mode"
+      );
+      const demoGifsBilling = applyDemoGifsBillingEnv();
+      if (demoGifsBilling) {
+        logInfo(
+          "[env] Demo GIF billing fixtures active (loopback Stripe mock; no real keys).",
+        );
+      }
       const { assertStartupEnv } = await import("@/lib/startup-env");
       // Fail closed at startup: refuse to serve when production env is invalid
       // (e.g. emulator hosts without ALLOW_EMULATORS=1).

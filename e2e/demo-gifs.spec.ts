@@ -12,7 +12,8 @@ import {
 /**
  * Demo GIF recordings for the README. Not a visual-regression gate.
  * Run via `pnpm demo:gifs` against a running app + emulators (prefer production
- * `pnpm start` so the Next.js dev indicator is absent).
+ * `pnpm start` with PROSEFIELD_DEMO_GIFS=1 so billing fixtures apply and the
+ * Next.js dev indicator is absent).
  */
 test.describe.configure({ mode: "serial" });
 
@@ -56,6 +57,7 @@ test.use({
   },
   viewport: { width: 1280, height: 720 },
   reducedMotion: "reduce",
+  // slowMo lives on the playwright.config demo-gifs project only (no duplicate).
 });
 
 test("01-landing", async ({ page }) => {
@@ -65,9 +67,9 @@ test("01-landing", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "A writing flow with less friction." }),
   ).toBeVisible();
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(1400);
   await page.mouse.wheel(0, 400);
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(900);
   await saveNamedVideo(page, "01-landing");
 });
 
@@ -81,6 +83,7 @@ test("02-try-register-pay", async ({ page }) => {
   await heroCta.click();
   await expect(page).toHaveURL(/\/register/);
   await preparePage(page);
+  await page.waitForTimeout(700);
 
   const email = uniqueEmail("demo-gif");
   const password = "password-123";
@@ -91,21 +94,40 @@ test("02-try-register-pay", async ({ page }) => {
   await expectSignedIn(page, email);
   await preparePage(page);
 
-  // Default local .env has no Stripe keys — show Try the editor, then mock pay.
-  await expect(page.getByText(/Billing is not configured/i)).toBeVisible();
-  await page.getByTestId("try-editor-before-subscribe").click();
-  await expect(page).toHaveURL(/\/documents\/trial/);
-  await expect(page.getByLabel("Document title")).toBeVisible();
-  await page.waitForTimeout(400);
+  // Configured mocked billing: no warning banner; checkout CTA visible.
+  await expect(page.getByText(/Billing is not configured/i)).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Continue to secure checkout" }),
+  ).toBeVisible();
+  await page.waitForTimeout(1200);
 
   const uid = await lookupUidByEmail(email, password);
+
+  // Mock Stripe Checkout (no network to Stripe): land on billing status, seed.
+  await page.route("**/api/checkout", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        url: `${new URL(page.url()).origin}/billing/status?session_id=cs_test_demogif`,
+      }),
+    });
+  });
+
+  await page
+    .getByRole("button", { name: "Continue to secure checkout" })
+    .click();
+  await expect(page).toHaveURL(/\/billing\/status/);
+  await preparePage(page);
+  await page.waitForTimeout(900);
+
   await seedSubscriptionProjection(uid, "active");
   await page.goto("/documents", { waitUntil: "networkidle" });
   await preparePage(page);
   await expect(
     page.getByRole("heading", { name: "Your first page is waiting." }),
   ).toBeVisible();
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1100);
   await saveNamedVideo(page, "02-try-register-pay");
 });
 
@@ -118,11 +140,13 @@ test("03-document-crud", async ({ page }) => {
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Create account" }).click();
   await expect(page).toHaveURL(/\/subscribe/);
+  await expect(page.getByText(/Billing is not configured/i)).toHaveCount(0);
   const uid = await lookupUidByEmail(email, password);
   await seedSubscriptionProjection(uid, "active");
 
   await page.goto("/documents", { waitUntil: "networkidle" });
   await preparePage(page);
+  await page.waitForTimeout(700);
   await page.getByRole("button", { name: "New document" }).click();
   await expect(page).toHaveURL(/\/documents\/[^/]+/);
   await preparePage(page);
@@ -138,7 +162,7 @@ test("03-document-crud", async ({ page }) => {
   await expect(page.getByText("Unsaved changes")).toBeVisible();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("status")).toHaveText("Saved");
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(800);
 
   await page.getByRole("button", { name: "Delete document" }).first().click();
   await expect(
@@ -146,6 +170,6 @@ test("03-document-crud", async ({ page }) => {
   ).toBeVisible();
   await page.getByRole("button", { name: "Delete document" }).last().click();
   await expect(page).toHaveURL(/\/documents$/);
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(800);
   await saveNamedVideo(page, "03-document-crud");
 });

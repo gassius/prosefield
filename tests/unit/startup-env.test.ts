@@ -8,7 +8,14 @@ describe("startup env fail-closed", () => {
     vi.doUnmock("@/lib/env");
     vi.doUnmock("@/lib/startup-env");
     vi.doUnmock("@/lib/env-defaults");
+    vi.doUnmock("@/features/billing/demo-gifs-mode");
   });
+
+  function mockDemoGifsBillingEnv(applied = false) {
+    vi.doMock("@/features/billing/demo-gifs-mode", () => ({
+      applyDemoGifsBillingEnv: vi.fn(() => applied),
+    }));
+  }
 
   it("assertStartupEnv calls getEnv (removal of the startup check fails this)", async () => {
     const getEnv = vi.fn(() => ({ ok: true }));
@@ -40,6 +47,7 @@ describe("startup env fail-closed", () => {
       localDevDefaults: {},
       applyLocalDevDefaultsToProcessEnv: vi.fn(),
     }));
+    mockDemoGifsBillingEnv(false);
 
     const exitSpy = vi
       .spyOn(process, "exit")
@@ -65,6 +73,7 @@ describe("startup env fail-closed", () => {
       localDevDefaults: {},
       applyLocalDevDefaultsToProcessEnv,
     }));
+    mockDemoGifsBillingEnv(false);
 
     const exitSpy = vi
       .spyOn(process, "exit")
@@ -94,6 +103,7 @@ describe("startup env fail-closed", () => {
       localDevDefaults: { APP_URL: "http://localhost:3000" },
       applyLocalDevDefaultsToProcessEnv,
     }));
+    mockDemoGifsBillingEnv(false);
 
     vi.spyOn(process, "exit").mockImplementation((() => undefined) as unknown as (
       code?: string | number | null | undefined,
@@ -113,6 +123,7 @@ describe("startup env fail-closed", () => {
 
     const assertStartupEnv = vi.fn(async () => undefined);
     vi.doMock("@/lib/startup-env", () => ({ assertStartupEnv }));
+    mockDemoGifsBillingEnv(false);
 
     const { register } = await import("../../src/instrumentation");
     await register();
@@ -132,6 +143,7 @@ describe("startup env fail-closed", () => {
       localDevDefaults: {},
       applyLocalDevDefaultsToProcessEnv: vi.fn(),
     }));
+    mockDemoGifsBillingEnv(false);
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const exitSpy = vi
@@ -162,6 +174,7 @@ describe("startup env fail-closed", () => {
       localDevDefaults: { APP_URL: "http://localhost:3000" },
       applyLocalDevDefaultsToProcessEnv,
     }));
+    mockDemoGifsBillingEnv(false);
 
     vi.spyOn(process, "exit").mockImplementation((() => undefined) as unknown as (
       code?: string | number | null | undefined,

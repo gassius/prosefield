@@ -920,3 +920,177 @@ describe("bash -n", () => {
     }
   });
 });
+
+describe("demo-gifs.sh behavioural + encode", () => {
+  const demoGifsShPath = path.join(root, "scripts/demo-gifs.sh");
+  const demoGifsSh = readFileSync(demoGifsShPath, "utf8");
+  const demoGifsCode = codeWithoutComments(demoGifsSh);
+
+  it("has a real export PROSEFIELD_DEMO_GIFS=1 outside the REQUIREMENTS heredoc (M14)", () => {
+    // REQUIREMENTS heredoc must not use the `export` keyword (inert for Next).
+    const heredoc = demoGifsSh.match(
+      /cat <<EOF\n([\s\S]*?)\nEOF/,
+    )?.[1];
+    expect(heredoc).toBeTruthy();
+    expect(heredoc!).not.toMatch(/^\s*export PROSEFIELD_DEMO_GIFS=1\s*$/m);
+    // Bite M14: removing the real shell export fails this (heredoc alone is not enough).
+    expect(demoGifsCode).toMatch(/^\s*export PROSEFIELD_DEMO_GIFS=1\s*$/m);
+    expect(demoGifsCode).toMatch(/STRIPE_API_HOST='127\.0\.0\.1'/);
+    expect(demoGifsCode).toMatch(/stripe-prices-mock-server\.mjs/);
+    expect(demoGifsCode).not.toMatch(/sk_test_[A-Za-z0-9]+/);
+    expect(demoGifsCode).not.toMatch(/whsec_[A-Za-z0-9]+/);
+  });
+
+  it("cleanup_mock refuses to kill an unrelated sleep PID (P1)", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "pf-demo-cleanup-sleep-"));
+    junk.push(dir);
+    const pidFile = path.join(dir, "mock.pid");
+    const victim = spawn("sleep", ["120"], { stdio: "ignore", detached: true });
+    writeFileSync(pidFile, String(victim.pid));
+    try {
+      const harness = `
+        set -euo pipefail
+        MOCK_PID='${victim.pid}'
+        MOCK_PID_FILE='${pidFile}'
+        eval "$(sed -n '/^cleanup_mock()/,/^}/p' '${demoGifsShPath}')"
+        cleanup_mock 2>&1
+      `;
+      const out = execFileSync("bash", ["-c", harness], {
+        encoding: "utf8",
+        cwd: root,
+      });
+      expect(out).toMatch(/Refusing to signal/);
+      expect(processAlive(victim.pid!)).toBe(true);
+      expect(existsSync(pidFile)).toBe(false);
+    } finally {
+      try {
+        process.kill(victim.pid!, "SIGKILL");
+      } catch {
+        // already gone
+      }
+    }
+  });
+
+  it("cleanup_mock kills a real stripe-prices-mock-server it owns", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "pf-demo-cleanup-mock-"));
+    junk.push(dir);
+    const pidFile = path.join(dir, "mock.pid");
+    const port = 19000 + (process.pid % 1000);
+    const mock = spawn(
+      "node",
+      [path.join(root, "scripts/stripe-prices-mock-server.mjs")],
+      {
+        stdio: "ignore",
+        detached: true,
+        env: {
+          ...process.env,
+          STRIPE_API_HOST: "127.0.0.1",
+          STRIPE_API_PORT: String(port),
+        },
+      },
+    );
+    writeFileSync(pidFile, String(mock.pid));
+    try {
+      // Wait until the mock is listening (or give up after ~2s).
+      for (let i = 0; i < 40; i++) {
+        try {
+          execFileSync(
+            "curl",
+            [
+              "-fsS",
+              `http://127.0.0.1:${port}/v1/prices/price_demogifsrecording01`,
+            ],
+            { stdio: "ignore" },
+          );
+          break;
+        } catch {
+          execFileSync("sleep", ["0.05"]);
+        }
+      }
+      expect(processAlive(mock.pid!)).toBe(true);
+
+      const harness = `
+        set -euo pipefail
+        MOCK_PID='${mock.pid}'
+        MOCK_PID_FILE='${pidFile}'
+        eval "$(sed -n '/^cleanup_mock()/,/^}/p' '${demoGifsShPath}')"
+        cleanup_mock
+      `;
+      execFileSync("bash", ["-c", harness], { encoding: "utf8", cwd: root });
+
+      // Process should be gone (or zombie); pid file removed.
+      expect(existsSync(pidFile)).toBe(false);
+      for (let i = 0; i < 20; i++) {
+        if (!processAlive(mock.pid!)) break;
+        execFileSync("sleep", ["0.05"]);
+      }
+      expect(processAlive(mock.pid!)).toBe(false);
+    } finally {
+      try {
+        process.kill(mock.pid!, "SIGKILL");
+      } catch {
+        // already gone
+      }
+    }
+  });
+
+  it("assert_demo_gifs_billing_ready fails when health.demoGifsBilling is false (M14b)", () => {
+    const harness = `
+      set -euo pipefail
+      APP_URL='http://127.0.0.1:3000'
+      curl() {
+        printf '%s' '{"ok":true,"service":"prosefield","demoGifsBilling":false}'
+      }
+      eval "$(sed -n '/^assert_demo_gifs_billing_ready()/,/^}/p' '${demoGifsShPath}')"
+      set +e
+      msg="$(assert_demo_gifs_billing_ready 2>&1)"
+      status=$?
+      set -e
+      if [[ "\$status" -eq 0 ]]; then
+        echo "expected failure" >&2
+        exit 2
+      fi
+      printf '%s\\n' "\$msg"
+      echo "fail-fast-ok"
+    `;
+    const out = execFileSync("bash", ["-c", harness], {
+      encoding: "utf8",
+      cwd: root,
+    });
+    expect(out).toMatch(/fail-fast-ok/);
+    expect(out).toMatch(/demo GIF billing mode/);
+  });
+
+  it("assert_demo_gifs_billing_ready proceeds when health.demoGifsBilling is true", () => {
+    const harness = `
+      set -euo pipefail
+      APP_URL='http://127.0.0.1:3000'
+      curl() {
+        printf '%s' '{"ok":true,"service":"prosefield","demoGifsBilling":true}'
+      }
+      eval "$(sed -n '/^assert_demo_gifs_billing_ready()/,/^}/p' '${demoGifsShPath}')"
+      assert_demo_gifs_billing_ready
+      echo "ready-ok"
+    `;
+    const out = execFileSync("bash", ["-c", harness], {
+      encoding: "utf8",
+      cwd: root,
+    });
+    expect(out).toMatch(/ready-ok/);
+  });
+
+  it("tracks mock PID via mktemp (not a fixed /tmp path)", () => {
+    expect(demoGifsCode).toMatch(/mktemp/);
+    expect(demoGifsCode).not.toMatch(
+      /PROSEFIELD_DEMO_STRIPE_MOCK_PID|\/tmp\/prosefield-demo-stripe-mock\.pid/,
+    );
+  });
+
+  it("encodes 800px-wide GIFs at real playback fps (no frame-duplication slowdown)", () => {
+    expect(demoGifsCode).toMatch(/scale=800:-1/);
+    expect(demoGifsCode).not.toMatch(/scale=540:-1/);
+    expect(demoGifsCode).toMatch(/fps=8/);
+    expect(demoGifsCode).not.toMatch(/setpts/);
+    expect(demoGifsCode).not.toMatch(/minterpolate/);
+  });
+});
