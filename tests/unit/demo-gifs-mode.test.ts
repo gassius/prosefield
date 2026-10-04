@@ -76,6 +76,25 @@ describe("applyDemoGifsBillingEnv", () => {
     expect(env.STRIPE_SECRET_KEY).not.toContain("replaceme");
   });
 
+  it("treats blank Stripe keys as placeholders and resets non-loopback API host", () => {
+    const env: Record<string, string | undefined> = {
+      PROSEFIELD_DEMO_GIFS: "1",
+      STRIPE_SECRET_KEY: "   ",
+      STRIPE_WEBHOOK_SECRET: undefined,
+      STRIPE_PRICE_ID: "",
+      STRIPE_API_HOST: "evil.example.com",
+      STRIPE_API_PORT: "",
+      STRIPE_API_PROTOCOL: "  ",
+    };
+    expect(applyDemoGifsBillingEnv(env)).toBe(true);
+    expect(env.STRIPE_SECRET_KEY).toBe(DEMO_GIFS_STRIPE_SECRET_KEY);
+    expect(env.STRIPE_WEBHOOK_SECRET).toBe(DEMO_GIFS_STRIPE_WEBHOOK_SECRET);
+    expect(env.STRIPE_PRICE_ID).toBe(DEMO_GIFS_STRIPE_PRICE_ID);
+    expect(env.STRIPE_API_HOST).toBe("127.0.0.1");
+    expect(env.STRIPE_API_PORT).toBe("12111");
+    expect(env.STRIPE_API_PROTOCOL).toBe("http");
+  });
+
   it("does not clobber non-placeholder Stripe values already set", () => {
     const env: Record<string, string | undefined> = {
       PROSEFIELD_DEMO_GIFS: "1",
