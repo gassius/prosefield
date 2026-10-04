@@ -113,4 +113,15 @@ describe("README technical sections (P5a)", () => {
       ).toBe(true);
     }
   });
+
+  it("documents a Security section covering encryption, transport, and passwords", () => {
+    const text = readme();
+    const start = text.indexOf("## Security");
+    expect(start).toBeGreaterThan(-1);
+    const section = text.slice(start, start + 2800);
+    expect(section).toMatch(/AES-256-GCM/);
+    expect(section).toMatch(/KeyProvider/);
+    expect(section).toMatch(/HSTS/);
+    expect(section).toMatch(/salted scrypt/i);
+  });
 });

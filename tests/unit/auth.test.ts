@@ -25,6 +25,9 @@ describe("resolveNextPath", () => {
   it("reports allow-list membership", () => {
     expect(isAllowedNextPath("/subscribe")).toBe(true);
     expect(isAllowedNextPath("/login")).toBe(false);
+    expect(isAllowedNextPath(null)).toBe(false);
+    expect(isAllowedNextPath(undefined)).toBe(false);
+    expect(isAllowedNextPath("")).toBe(false);
   });
 });
 

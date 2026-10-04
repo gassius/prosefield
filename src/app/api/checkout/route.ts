@@ -78,7 +78,8 @@ export async function POST(request: Request) {
         { status: 502 },
       );
     }
-    console.error("[checkout] unexpected error");
+    const { logError } = await import("@/lib/logger");
+    logError("[checkout] unexpected error");
     return NextResponse.json({ error: "Checkout failed" }, { status: 500 });
   }
 }

@@ -45,8 +45,25 @@ export class SessionError extends Error {
   }
 }
 
-/** Prefer the incoming request protocol (incl. x-forwarded-proto); fall back to APP_URL. */
+/**
+ * Prefer the incoming request protocol (incl. x-forwarded-proto); fall back to APP_URL.
+ * In production with https APP_URL, always force Secure so a missing/spoofed
+ * x-forwarded-proto cannot drop the flag.
+ */
 export function isSecureCookieRequest(request?: Request): boolean {
+  if (process.env.NODE_ENV === "production") {
+    try {
+      // Read process.env directly so a partial/invalid env parse cannot
+      // skip the Secure force-closed path.
+      const appUrl = process.env.APP_URL;
+      if (appUrl && new URL(appUrl).protocol === "https:") {
+        return true;
+      }
+    } catch {
+      // fall through
+    }
+  }
+
   if (request) {
     try {
       const url = new URL(request.url);

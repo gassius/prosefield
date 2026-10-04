@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@/lib/zod";
 import { PASSWORD_MIN_LENGTH } from "@/features/auth/constants";
 import { siteCopy } from "@/content/site";
 

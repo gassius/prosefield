@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { connection } from "next/server";
 import { DM_Sans, Fraunces } from "next/font/google";
 import { Toaster } from "@/components/ui/toaster";
 import { siteCopy } from "@/content/site";
@@ -24,11 +25,13 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Nonce-based CSP requires dynamic rendering so Next can stamp scripts.
+  await connection();
   return (
     <html
       lang="en-GB"

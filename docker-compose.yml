@@ -58,6 +58,10 @@ services:
       FIRESTORE_EMULATOR_HOST: emulators:8080
       NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
       ALLOW_EMULATORS: "1"
+      # Dev KEK (32× 0x07 base64) — never a production secret; Compose-owned.
+      DOCUMENT_ENCRYPTION_PROVIDER: dev
+      DOCUMENT_ENCRYPTION_KEY_VERSION: "1"
+      DOCUMENT_ENCRYPTION_KEK: BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=
     depends_on:
       emulators:
         condition: service_healthy

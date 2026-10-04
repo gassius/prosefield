@@ -128,6 +128,14 @@ describe("customers", () => {
     });
     expect(customersRetrieve).not.toHaveBeenCalled();
     expect(set).toHaveBeenCalled();
+    // P4: Firestore users/{uid} writes must not store email plaintext.
+    for (const call of set.mock.calls) {
+      const payload = call[1] as Record<string, unknown>;
+      expect(JSON.stringify(payload)).not.toContain("a@b.co");
+      if (payload && typeof payload === "object" && "email" in payload) {
+        expect(String(payload.email)).not.toContain("@");
+      }
+    }
   });
 
   it("creates the user doc when missing during customer creation", async () => {
@@ -148,6 +156,18 @@ describe("customers", () => {
       getOrCreateStripeCustomer({ uid: "uid_2", email: "new@b.co" }),
     ).resolves.toBe("cus_brand");
     expect(set).toHaveBeenCalled();
+    // P4: create-branch users/{uid} payload must not write email or password.
+    const userCreate = set.mock.calls.find(
+      (call) =>
+        call[1] &&
+        typeof call[1] === "object" &&
+        "stripeCustomerId" in (call[1] as object) &&
+        !("uid" in (call[1] as object)),
+    )?.[1] as Record<string, unknown> | undefined;
+    expect(userCreate).toBeTruthy();
+    expect(userCreate).not.toHaveProperty("email");
+    expect(userCreate).not.toHaveProperty("password");
+    expect(JSON.stringify(userCreate)).not.toContain("new@b.co");
   });
 
   it("still returns customer id when email update fails with a Stripe code", async () => {

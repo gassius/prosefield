@@ -2,6 +2,7 @@ import "server-only";
 
 import { FieldValue } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase/admin";
+import { logError } from "@/lib/logger";
 import { getStripe } from "@/lib/stripe/server";
 
 /**
@@ -9,6 +10,7 @@ import { getStripe } from "@/lib/stripe/server";
  * Uses Idempotency-Key `customer-<uid>` and metadata.firebaseUid (Architecture §5.4).
  * Email is applied in a follow-up update only on create, or when it differs from
  * the stored Stripe Customer, so Dashboard edits are not overwritten on every checkout.
+ * Email is not written to Firestore (Firebase Auth remains the source of truth).
  */
 export async function getOrCreateStripeCustomer(input: {
   uid: string;
@@ -35,7 +37,6 @@ export async function getOrCreateStripeCustomer(input: {
     const now = FieldValue.serverTimestamp();
     if (!snap.exists) {
       tx.set(userRef, {
-        email: input.email,
         stripeCustomerId: customer.id,
         createdAt: now,
         updatedAt: now,
@@ -46,6 +47,8 @@ export async function getOrCreateStripeCustomer(input: {
         {
           stripeCustomerId: customer.id,
           updatedAt: now,
+          email: FieldValue.delete(),
+          password: FieldValue.delete(),
         },
         { merge: true },
       );
@@ -93,7 +96,7 @@ async function updateCustomerEmail(
 }
 
 function logCustomerEmailError(error: unknown): void {
-  console.error("[billing] customer email update failed", {
+  logError("[billing] customer email update failed", {
     code:
       error && typeof error === "object" && "code" in error
         ? String((error as { code?: string }).code)

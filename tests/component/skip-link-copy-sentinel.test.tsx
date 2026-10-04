@@ -25,18 +25,31 @@ vi.mock("@/components/ui/toaster", () => ({
   Toaster: () => null,
 }));
 
+const connection = vi.fn(async () => undefined);
+
+vi.mock("next/server", () => ({
+  connection: () => connection(),
+}));
+
 describe("RootLayout skip link copy sentinel", () => {
   it("Skip to content label comes from siteCopy.a11y (sentinel)", async () => {
+    connection.mockClear();
     const RootLayout = (await import("@/app/layout")).default;
-    render(
-      createElement(
-        RootLayout,
-        null,
-        createElement("main", { id: "main-content" }, "body"),
-      ),
-    );
+    const tree = await RootLayout({
+      children: createElement("main", { id: "main-content" }, "body"),
+    });
+    render(tree);
     expect(
       screen.getByRole("link", { name: "SENTINEL-SKIP" }),
     ).toHaveAttribute("href", "#main-content");
+  });
+
+  it("awaits connection() so /_not-found stays dynamic for nonce CSP (N12)", async () => {
+    connection.mockClear();
+    const RootLayout = (await import("@/app/layout")).default;
+    await RootLayout({
+      children: createElement("main", { id: "main-content" }, "body"),
+    });
+    expect(connection).toHaveBeenCalled();
   });
 });

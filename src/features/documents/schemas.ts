@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@/lib/zod";
 
 /** Title: trimmed, 1–120 characters (Architecture §8). */
 export const DOCUMENT_TITLE_MIN = 1;

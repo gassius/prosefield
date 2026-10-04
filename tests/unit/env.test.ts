@@ -25,6 +25,9 @@ const validEnv = {
   PLAN_DISPLAY_INTERVAL: "month",
   FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
   FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+  DOCUMENT_ENCRYPTION_PROVIDER: "dev",
+  DOCUMENT_ENCRYPTION_KEY_VERSION: "1",
+  DOCUMENT_ENCRYPTION_KEK: Buffer.alloc(32, 0x07).toString("base64"),
 } as const;
 
 describe("env schema", () => {
@@ -38,6 +41,40 @@ describe("env schema", () => {
     expect(env.FIREBASE_PROJECT_ID).toBe("demo-prosefield");
     expect(env.FEATURE_CUSTOMER_PORTAL).toBe(false);
     expect(env.STRIPE_SECRET_KEY).toBe("sk_test_example");
+    expect(env.DOCUMENT_ENCRYPTION_PROVIDER).toBe("dev");
+    expect(env.DOCUMENT_ENCRYPTION_KEY_VERSION).toBe(1);
+  });
+
+  it("rejects non-local http APP_URL", () => {
+    const result = envSchema.safeParse({
+      ...validEnv,
+      APP_URL: "http://evil.example",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("requires KEK for dev provider and KMS name for kms provider", () => {
+    expect(
+      envSchema.safeParse({
+        ...validEnv,
+        DOCUMENT_ENCRYPTION_KEK: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      envSchema.safeParse({
+        ...validEnv,
+        DOCUMENT_ENCRYPTION_PROVIDER: "kms",
+        DOCUMENT_ENCRYPTION_KEK: undefined,
+        GCP_KMS_KEY_NAME: "projects/p/locations/l/keyRings/r/cryptoKeys/k",
+      }).success,
+    ).toBe(true);
+    expect(
+      envSchema.safeParse({
+        ...validEnv,
+        DOCUMENT_ENCRYPTION_PROVIDER: "kms",
+        GCP_KMS_KEY_NAME: undefined,
+      }).success,
+    ).toBe(false);
   });
 
   it("trims Stripe keys before validating", () => {
@@ -164,18 +201,126 @@ describe("env schema", () => {
     expect(envSchema.safeParse(validEnv).success).toBe(true);
   });
 
-  it("accepts production config without emulator hosts", () => {
+  it("accepts production config without emulator hosts when using kms", () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ALLOW_EMULATORS", "");
     const {
       FIREBASE_AUTH_EMULATOR_HOST,
       FIRESTORE_EMULATOR_HOST,
       NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST,
-      ...prod
+      DOCUMENT_ENCRYPTION_KEK,
+      ...rest
     } = validEnv;
     void FIREBASE_AUTH_EMULATOR_HOST;
     void FIRESTORE_EMULATOR_HOST;
     void NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST;
+    void DOCUMENT_ENCRYPTION_KEK;
+    const prod = {
+      ...rest,
+      APP_URL: "https://app.example",
+      DOCUMENT_ENCRYPTION_PROVIDER: "kms",
+      GCP_KMS_KEY_NAME: "projects/p/locations/l/keyRings/r/cryptoKeys/k",
+    };
     expect(envSchema.safeParse(prod).success).toBe(true);
+  });
+
+  it("rejects dev provider and known filler KEK in production (P4)", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ALLOW_EMULATORS", "");
+    const {
+      FIREBASE_AUTH_EMULATOR_HOST,
+      FIRESTORE_EMULATOR_HOST,
+      NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST,
+      ...prodBase
+    } = validEnv;
+    void FIREBASE_AUTH_EMULATOR_HOST;
+    void FIRESTORE_EMULATOR_HOST;
+    void NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST;
+    const result = envSchema.safeParse({
+      ...prodBase,
+      APP_URL: "https://app.example",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some((issue) =>
+          String(issue.message).includes("dev is not allowed"),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("rejects wrong-length KEK at env parse (P5/K1)", () => {
+    const short = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEK: "short",
+    });
+    expect(short.success).toBe(false);
+    if (!short.success) {
+      expect(
+        short.error.issues.some((issue) =>
+          String(issue.message).includes("32 bytes"),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("rejects key versions above uint32 max and non-integers (B2i/MF5)", () => {
+    const aboveMax = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEY_VERSION: "4294967296", // 2^32
+    });
+    expect(aboveMax.success).toBe(false);
+
+    const aliasRisk = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEY_VERSION: "4294967297", // 2^32+1
+    });
+    expect(aliasRisk.success).toBe(false);
+
+    const nonInt = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEY_VERSION: "1.5",
+    });
+    expect(nonInt.success).toBe(false);
+
+    const okMax = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEY_VERSION: "4294967295", // 2^32-1
+    });
+    expect(okMax.success).toBe(true);
+  });
+
+  it("rejects non-canonical / URL-safe KEK base64 (env.ts canonical check)", () => {
+    // 32 raw bytes → standard base64 is padded; base64url drops padding / uses -_.
+    const urlSafe = Buffer.alloc(32, 0xcd).toString("base64url");
+    expect(urlSafe).not.toBe(Buffer.alloc(32, 0xcd).toString("base64"));
+
+    const kek = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEK: urlSafe,
+    });
+    expect(kek.success).toBe(false);
+    if (!kek.success) {
+      expect(
+        kek.error.issues.some((issue) =>
+          String(issue.message).includes("canonical"),
+        ),
+      ).toBe(true);
+    }
+
+    const previous = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEK_PREVIOUS: urlSafe,
+    });
+    expect(previous.success).toBe(false);
+    if (!previous.success) {
+      expect(
+        previous.error.issues.some((issue) =>
+          String(issue.message).includes("canonical"),
+        ),
+      ).toBe(true);
+    }
   });
 
   describe("mergeEnvSource local defaults", () => {

@@ -37,7 +37,9 @@ async function main() {
       log: (message) => console.log(message),
     });
   } catch (error: unknown) {
-    logStripeSetupFailure(error);
+    logStripeSetupFailure(error, (message) => {
+      console.error(message);
+    });
     process.exit(1);
   }
 }

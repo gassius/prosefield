@@ -7,6 +7,15 @@ import {
 } from "firebase-admin/firestore";
 import { getAdminFirestore } from "@/lib/firebase/admin";
 import {
+  decryptDocumentFields,
+  decryptDocumentTitle,
+  encryptDocumentFields,
+  isEncryptedDocumentData,
+  isMalformedEncryptedDocumentData,
+  reencryptDocumentTitle,
+  type EncryptedDocumentFields,
+} from "@/lib/crypto/envelope";
+import {
   assertAllowedTiptapJson,
   DEFAULT_DOCUMENT_TITLE,
   EMPTY_DOCUMENT_CONTENT,
@@ -72,21 +81,233 @@ function parseContent(raw: unknown): {
   }
 }
 
-/** Persist as serialised JSON string so firestore.rules can bound size(). */
+/** Persist as serialised JSON string so size bounds stay meaningful pre-encrypt. */
 function serialiseContent(content: TiptapJson): string {
   return JSON.stringify(content);
 }
 
-function toRecord(id: string, data: DocumentData): DocumentRecord {
+/**
+ * Legacy plaintext content as stored — never re-parse through the allow-list
+ * during migration/rename (byte-for-byte preservation).
+ */
+function legacyContentString(data: DocumentData): string | null {
+  if (typeof data.content === "string") {
+    return data.content;
+  }
+  if (data.content && typeof data.content === "object") {
+    return JSON.stringify(data.content);
+  }
+  return null;
+}
+
+function encryptionWriteFields(
+  fields: EncryptedDocumentFields,
+): Record<string, unknown> {
+  return {
+    keyVersion: fields.keyVersion,
+    wrappedDataKey: fields.wrappedDataKey,
+    titleCipher: fields.titleCipher,
+    contentCipher: fields.contentCipher,
+    // Clear legacy plaintext fields on every encrypted write.
+    title: FieldValue.delete(),
+    content: FieldValue.delete(),
+  };
+}
+
+async function buildEncryptedPayload(input: {
+  ownerId: string;
+  docId: string;
+  title: string;
+  content: TiptapJson;
+}): Promise<EncryptedDocumentFields> {
+  return encryptDocumentFields({
+    uid: input.ownerId,
+    docId: input.docId,
+    title: input.title,
+    content: serialiseContent(input.content),
+  });
+}
+
+async function encryptVerbatim(input: {
+  ownerId: string;
+  docId: string;
+  title: string;
+  content: string;
+}): Promise<EncryptedDocumentFields> {
+  const encrypted = await encryptDocumentFields({
+    uid: input.ownerId,
+    docId: input.docId,
+    title: input.title,
+    content: input.content,
+  });
+  // Verify before any plaintext deletion lands.
+  const check = await decryptDocumentFields({
+    uid: input.ownerId,
+    docId: input.docId,
+    fields: encrypted,
+  });
+  if (check.title !== input.title || check.content !== input.content) {
+    throw new Error("Envelope round-trip verification failed");
+  }
+  return encrypted;
+}
+
+function unreadableRecord(
+  id: string,
+  ownerId: string,
+  createdAt: Date,
+  updatedAt: Date,
+): DocumentRecord {
+  return {
+    id,
+    ownerId,
+    title: DEFAULT_DOCUMENT_TITLE,
+    content: { ...EMPTY_DOCUMENT_CONTENT },
+    contentAllowed: false,
+    createdAt,
+    updatedAt,
+  };
+}
+
+async function toRecord(
+  id: string,
+  data: DocumentData,
+): Promise<DocumentRecord> {
+  const ownerId = typeof data.ownerId === "string" ? data.ownerId : "";
+  const createdAt = parseTimestamp(data.createdAt);
+  const updatedAt = parseTimestamp(data.updatedAt);
+
+  if (isEncryptedDocumentData(data)) {
+    try {
+      const decrypted = await decryptDocumentFields({
+        uid: ownerId,
+        docId: id,
+        fields: {
+          keyVersion: data.keyVersion,
+          wrappedDataKey: data.wrappedDataKey,
+          titleCipher: data.titleCipher,
+          contentCipher: data.contentCipher,
+        },
+      });
+      const { content, contentAllowed } = parseContent(decrypted.content);
+      return {
+        id,
+        ownerId,
+        title: decrypted.title || DEFAULT_DOCUMENT_TITLE,
+        content,
+        contentAllowed,
+        createdAt,
+        updatedAt,
+      };
+    } catch {
+      // Tampered / wrong-key ciphertext — surface as unreadable (blocks save).
+      return unreadableRecord(id, ownerId, createdAt, updatedAt);
+    }
+  }
+
+  // Partial / malformed envelope — fail closed; never treat as legacy or rewrite.
+  if (isMalformedEncryptedDocumentData(data)) {
+    return unreadableRecord(id, ownerId, createdAt, updatedAt);
+  }
+
+  // Legacy plaintext — read-only view. Migration runs on write paths only.
+  const title =
+    typeof data.title === "string" ? data.title : DEFAULT_DOCUMENT_TITLE;
   const { content, contentAllowed } = parseContent(data.content);
   return {
     id,
-    ownerId: typeof data.ownerId === "string" ? data.ownerId : "",
-    title: typeof data.title === "string" ? data.title : DEFAULT_DOCUMENT_TITLE,
+    ownerId,
+    title,
     content,
     contentAllowed,
-    createdAt: parseTimestamp(data.createdAt),
-    updatedAt: parseTimestamp(data.updatedAt),
+    createdAt,
+    updatedAt,
+  };
+}
+
+/**
+ * Idempotent plaintext → envelope migration. Safe to call repeatedly;
+ * no-ops when the stored doc is already encrypted or malformed.
+ * Encrypts the stored content string verbatim (no schema re-parse).
+ * Does not bump `updatedAt`.
+ */
+export async function migrateLegacyDocument(
+  record: DocumentRecord,
+): Promise<boolean> {
+  const db = getAdminFirestore();
+  const ref = db.collection("documents").doc(record.id);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) {
+      return false;
+    }
+    const data = snap.data() ?? {};
+    if (isEncryptedDocumentData(data)) {
+      return false;
+    }
+    if (isMalformedEncryptedDocumentData(data)) {
+      return false;
+    }
+    if (data.ownerId !== record.ownerId) {
+      return false;
+    }
+    const hasPlaintext =
+      typeof data.title === "string" || legacyContentString(data) !== null;
+    if (!hasPlaintext) {
+      return false;
+    }
+    const title =
+      typeof data.title === "string" ? data.title : DEFAULT_DOCUMENT_TITLE;
+    const contentRaw =
+      legacyContentString(data) ?? serialiseContent(EMPTY_DOCUMENT_CONTENT);
+    const encrypted = await encryptVerbatim({
+      ownerId: record.ownerId,
+      docId: record.id,
+      title,
+      content: contentRaw,
+    });
+    tx.update(ref, encryptionWriteFields(encrypted));
+    return true;
+  });
+}
+
+async function toListItem(
+  id: string,
+  data: DocumentData,
+): Promise<DocumentListItem> {
+  const updatedAt = parseTimestamp(data.updatedAt);
+  const ownerId = typeof data.ownerId === "string" ? data.ownerId : "";
+
+  if (isEncryptedDocumentData(data) && ownerId) {
+    try {
+      const title = await decryptDocumentTitle({
+        uid: ownerId,
+        docId: id,
+        fields: {
+          keyVersion: data.keyVersion,
+          wrappedDataKey: data.wrappedDataKey,
+          titleCipher: data.titleCipher,
+        },
+      });
+      return {
+        id,
+        title: title || DEFAULT_DOCUMENT_TITLE,
+        updatedAt,
+      };
+    } catch {
+      return { id, title: DEFAULT_DOCUMENT_TITLE, updatedAt };
+    }
+  }
+
+  if (isMalformedEncryptedDocumentData(data)) {
+    return { id, title: DEFAULT_DOCUMENT_TITLE, updatedAt };
+  }
+
+  return {
+    id,
+    title:
+      typeof data.title === "string" ? data.title : DEFAULT_DOCUMENT_TITLE,
+    updatedAt,
   };
 }
 
@@ -99,15 +320,11 @@ export async function listDocumentsForOwner(
     .orderBy("updatedAt", "desc")
     .get();
 
-  return snap.docs.map((doc) => {
-    const data = doc.data();
-    return {
-      id: doc.id,
-      title:
-        typeof data.title === "string" ? data.title : DEFAULT_DOCUMENT_TITLE,
-      updatedAt: parseTimestamp(data.updatedAt),
-    };
-  });
+  const items: DocumentListItem[] = [];
+  for (const doc of snap.docs) {
+    items.push(await toListItem(doc.id, doc.data()));
+  }
+  return items;
 }
 
 export async function getDocumentById(
@@ -131,10 +348,18 @@ export async function createDocument(input: {
   const ref = getAdminFirestore().collection("documents").doc();
   const title = input.title?.trim() || DEFAULT_DOCUMENT_TITLE;
   const content = input.content ?? { ...EMPTY_DOCUMENT_CONTENT };
+  const encrypted = await buildEncryptedPayload({
+    ownerId: input.ownerId,
+    docId: ref.id,
+    title,
+    content,
+  });
   const payload = {
     ownerId: input.ownerId,
-    title,
-    content: serialiseContent(content),
+    keyVersion: encrypted.keyVersion,
+    wrappedDataKey: encrypted.wrappedDataKey,
+    titleCipher: encrypted.titleCipher,
+    contentCipher: encrypted.contentCipher,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   };
@@ -160,8 +385,33 @@ export async function updateDocumentContent(input: {
     if (existing.ownerId !== input.ownerId) {
       return false;
     }
+    if (isMalformedEncryptedDocumentData(existing)) {
+      return false;
+    }
+    let title = DEFAULT_DOCUMENT_TITLE;
+    if (isEncryptedDocumentData(existing)) {
+      const decrypted = await decryptDocumentFields({
+        uid: input.ownerId,
+        docId: input.documentId,
+        fields: {
+          keyVersion: existing.keyVersion,
+          wrappedDataKey: existing.wrappedDataKey,
+          titleCipher: existing.titleCipher,
+          contentCipher: existing.contentCipher,
+        },
+      });
+      title = decrypted.title || DEFAULT_DOCUMENT_TITLE;
+    } else if (typeof existing.title === "string") {
+      title = existing.title;
+    }
+    const encrypted = await buildEncryptedPayload({
+      ownerId: input.ownerId,
+      docId: input.documentId,
+      title,
+      content: input.content,
+    });
     tx.update(ref, {
-      content: serialiseContent(input.content),
+      ...encryptionWriteFields(encrypted),
       updatedAt: FieldValue.serverTimestamp(),
     });
     return true;
@@ -193,8 +443,44 @@ export async function renameDocument(input: {
     if (existing.ownerId !== input.ownerId) {
       return false;
     }
-    tx.update(ref, {
+    if (isMalformedEncryptedDocumentData(existing)) {
+      return false;
+    }
+
+    if (isEncryptedDocumentData(existing)) {
+      // Title only — never re-parse or rewrite contentCipher.
+      const titleCipher = await reencryptDocumentTitle({
+        uid: input.ownerId,
+        docId: input.documentId,
+        title: input.title,
+        fields: {
+          keyVersion: existing.keyVersion,
+          wrappedDataKey: existing.wrappedDataKey,
+          titleCipher: existing.titleCipher,
+          contentCipher: existing.contentCipher,
+        },
+      });
+      tx.update(ref, {
+        titleCipher,
+        title: FieldValue.delete(),
+        content: FieldValue.delete(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      return true;
+    }
+
+    // Legacy: encrypt title + verbatim stored content (no schema re-parse).
+    const contentRaw =
+      legacyContentString(existing) ??
+      serialiseContent(EMPTY_DOCUMENT_CONTENT);
+    const encrypted = await encryptVerbatim({
+      ownerId: input.ownerId,
+      docId: input.documentId,
       title: input.title,
+      content: contentRaw,
+    });
+    tx.update(ref, {
+      ...encryptionWriteFields(encrypted),
       updatedAt: FieldValue.serverTimestamp(),
     });
     return true;

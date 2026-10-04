@@ -1,12 +1,17 @@
 import "server-only";
 
-import { z } from "zod";
+import { z } from "@/lib/zod";
 import {
   applyLocalDevDefaultsToProcessEnv,
+  assembleLocalDevEncryptionKek,
   localDevDefaults,
 } from "@/lib/env-defaults";
 
-export { applyLocalDevDefaultsToProcessEnv, localDevDefaults };
+export {
+  applyLocalDevDefaultsToProcessEnv,
+  assembleLocalDevEncryptionKek,
+  localDevDefaults,
+};
 
 const booleanFlag = z
   .enum(["true", "false"])
@@ -14,6 +19,30 @@ const booleanFlag = z
   .transform((value) => value === "true");
 
 const nonEmpty = z.string().trim().min(1);
+
+/** Standard base64 encoding of exactly 32 raw bytes (AES-256 KEK). */
+const kekBase64 = z
+  .string()
+  .trim()
+  .min(1)
+  .superRefine((value, ctx) => {
+    const buf = Buffer.from(value, "base64");
+    if (buf.byteLength !== 32) {
+      ctx.addIssue({
+        code: "custom",
+        message:
+          "must be standard base64 for exactly 32 bytes (AES-256 key material)",
+      });
+      return;
+    }
+    // Reject non-canonical / URL-safe encodings so startup validation is strict.
+    if (buf.toString("base64") !== value) {
+      ctx.addIssue({
+        code: "custom",
+        message: "must be canonical standard base64 (not URL-safe or padded oddly)",
+      });
+    }
+  });
 
 export const envSchema = z
   .object({
@@ -26,7 +55,23 @@ export const envSchema = z
     NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST: nonEmpty.optional(),
 
     // Server
-    APP_URL: z.string().trim().url(),
+    APP_URL: z
+      .string()
+      .trim()
+      .url()
+      .superRefine((value, ctx) => {
+        // zod `.url()` already rejects malformed strings; only protocol/host rules here.
+        const url = new URL(value);
+        const local =
+          url.hostname === "localhost" || url.hostname === "127.0.0.1";
+        if (url.protocol === "http:" && !local) {
+          ctx.addIssue({
+            code: "custom",
+            message:
+              "APP_URL must use https:// outside local dev (localhost / 127.0.0.1)",
+          });
+        }
+      }),
     // TODO(P6): relax demo-prosefield literals when deploying to a real Firebase project.
     FIREBASE_PROJECT_ID: z.literal("demo-prosefield"),
     STRIPE_SECRET_KEY: z
@@ -53,11 +98,44 @@ export const envSchema = z
     PLAN_DISPLAY_CURRENCY: nonEmpty,
     PLAN_DISPLAY_INTERVAL: nonEmpty,
 
+    // Document envelope encryption (KEK never stored in Firebase)
+    DOCUMENT_ENCRYPTION_PROVIDER: z.enum(["dev", "kms"]).default("dev"),
+    // Full uint32 range — wire format stores 4 bytes (no single-byte aliasing).
+    DOCUMENT_ENCRYPTION_KEY_VERSION: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(0xffff_ffff)
+      .default(1),
+    DOCUMENT_ENCRYPTION_KEK: kekBase64.optional(),
+    DOCUMENT_ENCRYPTION_KEK_PREVIOUS: kekBase64.optional(),
+    GCP_KMS_KEY_NAME: nonEmpty.optional(),
+
     // Emulators (optional; point at Docker backend when running)
     FIREBASE_AUTH_EMULATOR_HOST: nonEmpty.optional(),
     FIRESTORE_EMULATOR_HOST: nonEmpty.optional(),
   })
   .superRefine((data, ctx) => {
+    if (data.DOCUMENT_ENCRYPTION_PROVIDER === "dev" && !data.DOCUMENT_ENCRYPTION_KEK) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["DOCUMENT_ENCRYPTION_KEK"],
+        message:
+          "DOCUMENT_ENCRYPTION_KEK is required when DOCUMENT_ENCRYPTION_PROVIDER=dev",
+      });
+    }
+    if (
+      data.DOCUMENT_ENCRYPTION_PROVIDER === "kms" &&
+      !data.GCP_KMS_KEY_NAME
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["GCP_KMS_KEY_NAME"],
+        message:
+          "GCP_KMS_KEY_NAME is required when DOCUMENT_ENCRYPTION_PROVIDER=kms",
+      });
+    }
+
     if (process.env.NODE_ENV !== "production") {
       return;
     }
@@ -79,6 +157,37 @@ export const envSchema = z
           message: `${key} must not be set in production without ALLOW_EMULATORS=1 (Admin SDK accepts unsigned tokens in emulator mode)`,
         });
       }
+    }
+
+    // Fail closed: production without emulators must use Cloud KMS, never the
+    // Compose/dev KEK (including the known filler value from .env.example).
+    if (data.DOCUMENT_ENCRYPTION_PROVIDER === "dev") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["DOCUMENT_ENCRYPTION_PROVIDER"],
+        message:
+          "DOCUMENT_ENCRYPTION_PROVIDER=dev is not allowed in production without ALLOW_EMULATORS=1; use kms with GCP_KMS_KEY_NAME",
+      });
+    }
+    if (data.DOCUMENT_ENCRYPTION_PROVIDER !== "kms" || !data.GCP_KMS_KEY_NAME) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["GCP_KMS_KEY_NAME"],
+        message:
+          "Production requires DOCUMENT_ENCRYPTION_PROVIDER=kms and GCP_KMS_KEY_NAME",
+      });
+    }
+    const knownDevKek = assembleLocalDevEncryptionKek();
+    if (
+      data.DOCUMENT_ENCRYPTION_KEK === knownDevKek ||
+      data.DOCUMENT_ENCRYPTION_KEK_PREVIOUS === knownDevKek
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["DOCUMENT_ENCRYPTION_KEK"],
+        message:
+          "Known local/dev DOCUMENT_ENCRYPTION_KEK filler must not be used in production",
+      });
     }
   });
 

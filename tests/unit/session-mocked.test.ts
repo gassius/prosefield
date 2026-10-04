@@ -207,10 +207,99 @@ describe("session helpers (mocked admin)", () => {
     expect(__getCookieRecord(SESSION_COOKIE_NAME)?.secure).toBe(true);
   });
 
+  it("forces Secure session cookie in production when APP_URL is https", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_URL", "https://app.example");
+    const { setSessionCookie, SESSION_COOKIE_NAME, isSecureCookieRequest } =
+      await import("@/features/auth/session");
+
+    expect(
+      isSecureCookieRequest(
+        new Request("http://app.example/api/session", {
+          headers: { "x-forwarded-proto": "http" },
+        }),
+      ),
+    ).toBe(true);
+
+    await setSessionCookie(
+      "sess-forced",
+      new Request("http://app.example/api/session", {
+        headers: { "x-forwarded-proto": "http" },
+      }),
+    );
+    expect(__getCookieRecord(SESSION_COOKIE_NAME)?.secure).toBe(true);
+    vi.unstubAllEnvs();
+  });
+
   it("revokes refresh tokens for a uid", async () => {
     revokeRefreshTokens.mockResolvedValue(undefined);
     const { revokeUserSessions } = await import("@/features/auth/session");
     await revokeUserSessions("uid-1");
     expect(revokeRefreshTokens).toHaveBeenCalledWith("uid-1");
+  });
+
+  it("clears the session cookie and covers isSecureCookieRequest edge cases", async () => {
+    const {
+      clearSessionCookie,
+      setSessionCookie,
+      isSecureCookieRequest,
+      SESSION_COOKIE_NAME,
+    } = await import("@/features/auth/session");
+
+    await setSessionCookie("to-clear", new Request("https://app.example/"));
+    await clearSessionCookie(new Request("https://app.example/"));
+    expect(__getCookieRecord(SESSION_COOKIE_NAME)).toMatchObject({
+      value: "",
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 0,
+    });
+
+    await clearSessionCookie();
+    expect(__getCookieRecord(SESSION_COOKIE_NAME)?.maxAge).toBe(0);
+
+    // Malformed Request.url → fall through to APP_URL (localhost → insecure).
+    expect(
+      isSecureCookieRequest({
+        url: "not-a-url",
+        headers: { get: () => null },
+      } as unknown as Request),
+    ).toBe(false);
+
+    expect(isSecureCookieRequest(new Request("https://app.example/"))).toBe(
+      true,
+    );
+  });
+
+  it("falls through when production APP_URL is malformed", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_URL", ":::not-a-url:::");
+    const { isSecureCookieRequest } = await import("@/features/auth/session");
+    expect(
+      isSecureCookieRequest(
+        new Request("http://app.example/api/session", {
+          headers: { "x-forwarded-proto": "http" },
+        }),
+      ),
+    ).toBe(false);
+    vi.unstubAllEnvs();
+  });
+
+  it("returns false when fallback APP_URL cannot be parsed", async () => {
+    const { getEnv, __resetEnvCacheForTests } = await import("@/lib/env");
+    const { isSecureCookieRequest } = await import("@/features/auth/session");
+    __resetEnvCacheForTests();
+    const env = getEnv();
+    const original = env.APP_URL;
+    // No request → APP_URL fallback; non-local https → Secure.
+    (env as { APP_URL: string }).APP_URL = "https://app.example";
+    expect(isSecureCookieRequest()).toBe(true);
+    (env as { APP_URL: string }).APP_URL = "http://app.example";
+    expect(isSecureCookieRequest()).toBe(false);
+    // Defensive catch: schema normally prevents this; mutate cached env.
+    (env as { APP_URL: string }).APP_URL = ":::bad:::";
+    expect(isSecureCookieRequest()).toBe(false);
+    (env as { APP_URL: string }).APP_URL = original;
   });
 });

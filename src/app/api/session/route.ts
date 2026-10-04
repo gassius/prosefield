@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
+import { z } from "@/lib/zod";
 import {
   assertValidOrigin,
   csrfTokensMatch,
@@ -89,7 +89,8 @@ export async function DELETE(request: Request) {
         error && typeof error === "object" && "code" in error
           ? String((error as { code?: string }).code)
           : "unknown";
-      console.error("[session] revokeRefreshTokens failed", { code });
+      const { logError } = await import("@/lib/logger");
+      logError("[session] revokeRefreshTokens failed", { code });
     }
   }
 

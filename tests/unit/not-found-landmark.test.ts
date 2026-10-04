@@ -12,4 +12,18 @@ describe("not-found page landmark", () => {
     expect(source).toContain("siteCopy.notFound");
     expect(source).not.toMatch(/["']Page not found["']/);
   });
+
+  it("root layout awaits connection() so 404 HTML stays dynamic (N12)", () => {
+    const layout = readFileSync(
+      path.resolve(__dirname, "../../src/app/layout.tsx"),
+      "utf8",
+    );
+    expect(layout).toMatch(/await\s+connection\s*\(/);
+    // not-found uses the root layout; no static export escape hatch.
+    const notFound = readFileSync(
+      path.resolve(__dirname, "../../src/app/not-found.tsx"),
+      "utf8",
+    );
+    expect(notFound).not.toMatch(/export\s+const\s+dynamic\s*=\s*["']force-static["']/);
+  });
 });

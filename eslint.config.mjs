@@ -32,6 +32,22 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  {
+    // Server code must log through `@/lib/logger` (redacting). Client components
+    // and the logger itself may use console.
+    files: [
+      "src/features/**/*.{ts,tsx}",
+      "src/lib/**/*.{ts,tsx}",
+      "src/app/**/route.ts",
+      "src/app/**/actions.ts",
+      "src/instrumentation.ts",
+      "src/proxy.ts",
+    ],
+    ignores: ["src/lib/logger.ts"],
+    rules: {
+      "no-console": "error",
+    },
+  },
 ]);
 
 export default eslintConfig;

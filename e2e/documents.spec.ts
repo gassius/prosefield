@@ -98,6 +98,31 @@ test("persistence across logout and login", async ({ page }) => {
   await expect(page.getByText("Survives the session.")).toBeVisible();
 });
 
+test("create, save, reload keeps content intact (envelope encryption)", async ({
+  page,
+}) => {
+  await registerActiveSubscriber(page);
+
+  await page.getByRole("button", { name: "New document" }).click();
+  await expect(page).toHaveURL(/\/documents\/[^/]+/);
+
+  const title = page.getByLabel("Document title");
+  await title.fill("Encrypted brief");
+  await title.blur();
+
+  const editor = page.locator("[contenteditable='true']").first();
+  await editor.click();
+  await page.keyboard.type("Ciphertext must round-trip.");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status")).toHaveText("Saved");
+  const url = page.url();
+
+  await page.reload();
+  await expect(page).toHaveURL(url);
+  await expect(page.getByLabel("Document title")).toHaveValue("Encrypted brief");
+  await expect(page.getByText("Ciphertext must round-trip.")).toBeVisible();
+});
+
 test("foreign document URL returns 404", async ({ page }) => {
   const ownerEmail = uniqueEmail("docs-owner");
   const password = "password-123";

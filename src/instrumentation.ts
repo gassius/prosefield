@@ -10,8 +10,9 @@ export async function register() {
       });
     // Mutate process.env so Admin SDK + client public config see emulator hosts.
     applyLocalDevDefaultsToProcessEnv();
+    const { logInfo, logError } = await import("@/lib/logger");
     if (usingDefaults) {
-      console.info(
+      logInfo(
         "[env] Using built-in local defaults for missing variables. Copy .env.example to .env to customize (required for Stripe CLI / production builds).",
       );
     }
@@ -21,7 +22,10 @@ export async function register() {
       // (e.g. emulator hosts without ALLOW_EMULATORS=1).
       await assertStartupEnv();
     } catch (error) {
-      console.error("[env] Startup env validation failed; exiting.", error);
+      logError("[env] Startup env validation failed; exiting.", {
+        name: error instanceof Error ? error.name : "unknown",
+        message: error instanceof Error ? error.message : String(error),
+      });
       process.exit(1);
     }
   }

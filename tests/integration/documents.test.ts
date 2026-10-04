@@ -37,6 +37,11 @@ process.env.PLAN_DISPLAY_PRICE ??= "8";
 process.env.PLAN_DISPLAY_CURRENCY ??= "EUR";
 process.env.PLAN_DISPLAY_INTERVAL ??= "month";
 process.env.FEATURE_CUSTOMER_PORTAL ??= "false";
+process.env.DOCUMENT_ENCRYPTION_PROVIDER ??= "dev";
+process.env.DOCUMENT_ENCRYPTION_KEY_VERSION ??= "1";
+process.env.DOCUMENT_ENCRYPTION_KEK ??= Buffer.alloc(32, 0x07).toString(
+  "base64",
+);
 
 async function establishSession(email: string) {
   const { createSessionCookieFromIdToken, setSessionCookie } = await import(
@@ -426,12 +431,12 @@ describe("documents guard chain (emulators)", () => {
     const { localId } = await establishSession(email);
     await seedActiveSubscription(localId);
 
-    const { createDocumentAction, saveDocumentAction } = await import(
-      "@/features/documents/actions"
-    );
+    const { createDocumentAction, saveDocumentAction, renameDocumentAction } =
+      await import("@/features/documents/actions");
     const { getDocumentById } = await import(
       "@/features/documents/repository"
     );
+    const { decryptDocumentFields } = await import("@/lib/crypto/envelope");
     const { unsafeSetDocumentContent } = await import(
       "../helpers/documents-admin"
     );
@@ -454,14 +459,67 @@ describe("documents guard chain (emulators)", () => {
     const loaded = await getDocumentById(created.data.id);
     expect(loaded?.contentAllowed).toBe(false);
 
-    // Even if a client tried to save empty after a bad load, Zod allow-list
-    // still accepts empty — the editor must refuse. Repository still holds evil.
+    // Raw Admin read: decrypt stored content equals evil after load.
     const { getAdminFirestore } = await import("@/lib/firebase/admin");
     const raw = await getAdminFirestore()
       .collection("documents")
       .doc(created.data.id)
       .get();
-    expect(raw.data()?.content).toBe(evil);
+    const rawData = raw.data() ?? {};
+    expect(rawData).toHaveProperty("contentCipher");
+    expect(rawData).not.toHaveProperty("content");
+    expect(JSON.stringify(rawData)).not.toContain("codeBlock");
+    const afterLoad = await decryptDocumentFields({
+      uid: localId,
+      docId: created.data.id,
+      fields: {
+        keyVersion: rawData.keyVersion as number,
+        wrappedDataKey: rawData.wrappedDataKey as string,
+        titleCipher: rawData.titleCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+        contentCipher: rawData.contentCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+      },
+    });
+    expect(afterLoad.content).toBe(evil);
+
+    // Rename must not rewrite content — decrypt still equals evil.
+    const renamed = await renameDocumentAction({
+      documentId: created.data.id,
+      title: "Still corruptible",
+    });
+    expect(renamed.ok).toBe(true);
+    const rawAfterRename = await getAdminFirestore()
+      .collection("documents")
+      .doc(created.data.id)
+      .get();
+    const renamedData = rawAfterRename.data() ?? {};
+    const afterRename = await decryptDocumentFields({
+      uid: localId,
+      docId: created.data.id,
+      fields: {
+        keyVersion: renamedData.keyVersion as number,
+        wrappedDataKey: renamedData.wrappedDataKey as string,
+        titleCipher: renamedData.titleCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+        contentCipher: renamedData.contentCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+      },
+    });
+    expect(afterRename.content).toBe(evil);
+    expect(afterRename.title).toBe("Still corruptible");
 
     // Saving allow-listed content as owner still works (repair path).
     const repaired = await saveDocumentAction({
@@ -486,12 +544,16 @@ describe("documents guard chain (emulators)", () => {
       updateDocumentContent,
       renameDocument,
       createDocument,
+      getDocumentById,
     } = await import("@/features/documents/repository");
 
     const db = getAdminFirestore();
 
     // Ownership checked inside the transaction (not only via outer get).
     const again = await createDocument({ ownerId: uid, title: "Again" });
+    const before = await db.collection("documents").doc(again.id).get();
+    const beforeWrapped = before.data()?.wrappedDataKey;
+    expect(beforeWrapped).toEqual(expect.any(String));
     await db.collection("documents").doc(again.id).update({ ownerId: "other-uid" });
     expect(
       await updateDocumentContent({
@@ -508,7 +570,14 @@ describe("documents guard chain (emulators)", () => {
       }),
     ).toBeNull();
     const untouched = await db.collection("documents").doc(again.id).get();
-    expect(untouched.data()?.title).toBe("Again");
+    // Title stays envelope-encrypted — no plaintext title field to clobber.
+    expect(untouched.data()?.title).toBeUndefined();
+    expect(untouched.data()?.titleCipher).toBeDefined();
+    // Refused mutations must not rewrite the ciphertext package.
+    expect(untouched.data()?.wrappedDataKey).toBe(beforeWrapped);
+    expect(untouched.data()?.ownerId).toBe("other-uid");
+    const viaApp = await getDocumentById(again.id);
+    expect(viaApp?.title).not.toBe("Nope");
 
     // Doc deleted before the action runs → not_found (sequential, not a race).
     const owned = await createDocumentAction({ title: "For deleted-doc" });
@@ -653,5 +722,183 @@ describe("documents guard chain (emulators)", () => {
     const deleted = await deleteDocumentAction({ documentId: created.data.id });
     expect(deleted.ok).toBe(true);
     expect(await getDocumentById(created.data.id)).toBeNull();
+  });
+
+  it("raw Firestore doc has no plaintext while the app still reads content", async () => {
+    const email = `docs-enc-${randomUUID()}@example.com`;
+    const { localId: uid } = await establishSession(email);
+    await seedActiveSubscription(uid);
+
+    const { createDocumentAction, saveDocumentAction } = await import(
+      "@/features/documents/actions"
+    );
+    const { getDocumentById } = await import(
+      "@/features/documents/repository"
+    );
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+
+    const secretTitle = `Secret title ${randomUUID()}`;
+    const secretText = `plaintext-must-not-persist-${randomUUID()}`;
+    const created = await createDocumentAction({ title: secretTitle });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+
+    const content = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: secretText }],
+        },
+      ],
+    };
+    const saved = await saveDocumentAction({
+      documentId: created.data.id,
+      content,
+    });
+    expect(saved.ok).toBe(true);
+
+    const raw = await getAdminFirestore()
+      .collection("documents")
+      .doc(created.data.id)
+      .get();
+    const rawData = raw.data() ?? {};
+    const rawJson = JSON.stringify(rawData);
+    expect(rawData).toHaveProperty("wrappedDataKey");
+    expect(rawData).toHaveProperty("contentCipher");
+    expect(rawData).toHaveProperty("titleCipher");
+    expect(rawData).not.toHaveProperty("title");
+    expect(rawData).not.toHaveProperty("content");
+    expect(rawJson).not.toContain(secretTitle);
+    expect(rawJson).not.toContain(secretText);
+
+    const loaded = await getDocumentById(created.data.id);
+    expect(loaded?.title).toBe(secretTitle);
+    expect(JSON.stringify(loaded?.content)).toContain(secretText);
+  });
+
+  it("legacy rename keeps off-spec content verbatim (RN2)", async () => {
+    const email = `docs-legacy-rn2-${randomUUID()}@example.com`;
+    const { localId: uid } = await establishSession(email);
+    await seedActiveSubscription(uid);
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+    const { renameDocumentAction } = await import(
+      "@/features/documents/actions"
+    );
+    const { decryptDocumentFields } = await import("@/lib/crypto/envelope");
+    const { FieldValue } = await import("firebase-admin/firestore");
+
+    const evil = JSON.stringify({
+      type: "doc",
+      content: [{ type: "codeBlock", content: [] }],
+    });
+    const ref = getAdminFirestore().collection("documents").doc();
+    await ref.set({
+      ownerId: uid,
+      title: "Legacy off-spec",
+      content: evil,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const renamed = await renameDocumentAction({
+      documentId: ref.id,
+      title: "Renamed legacy",
+    });
+    expect(renamed.ok).toBe(true);
+
+    const raw = await ref.get();
+    const data = raw.data() ?? {};
+    expect(data).toHaveProperty("contentCipher");
+    expect(data).not.toHaveProperty("content");
+    expect(data).not.toHaveProperty("title");
+    expect(JSON.stringify(data)).not.toContain("codeBlock");
+
+    const decrypted = await decryptDocumentFields({
+      uid,
+      docId: ref.id,
+      fields: {
+        keyVersion: data.keyVersion as number,
+        wrappedDataKey: data.wrappedDataKey as string,
+        titleCipher: data.titleCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+        contentCipher: data.contentCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+      },
+    });
+    expect(decrypted.content).toBe(evil);
+    expect(decrypted.title).toBe("Renamed legacy");
+  });
+
+  it("migrates legacy plaintext on explicit migrate (not on plain read)", async () => {
+    const email = `docs-migrate-${randomUUID()}@example.com`;
+    const { localId: uid } = await establishSession(email);
+    await seedActiveSubscription(uid);
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+    const { getDocumentById, migrateLegacyDocument } = await import(
+      "@/features/documents/repository"
+    );
+    const { FieldValue, Timestamp } = await import("firebase-admin/firestore");
+
+    const ref = getAdminFirestore().collection("documents").doc();
+    const legacyTitle = `Legacy ${randomUUID()}`;
+    const legacyText = `migrate-me-${randomUUID()}`;
+    const legacyContent = JSON.stringify({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: legacyText }],
+        },
+      ],
+    });
+    const fixedUpdatedAt = Timestamp.fromDate(new Date("2026-01-15T12:00:00Z"));
+    await ref.set({
+      ownerId: uid,
+      title: legacyTitle,
+      content: legacyContent,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: fixedUpdatedAt,
+    });
+
+    // Plain read must not rewrite the doc.
+    const loaded = await getDocumentById(ref.id);
+    expect(loaded?.title).toBe(legacyTitle);
+    expect(JSON.stringify(loaded?.content)).toContain(legacyText);
+    const rawBefore = await ref.get();
+    expect(rawBefore.data()?.content).toBe(legacyContent);
+    expect(rawBefore.data()?.updatedAt.toMillis()).toBe(fixedUpdatedAt.toMillis());
+
+    expect(
+      await migrateLegacyDocument({
+        id: ref.id,
+        ownerId: uid,
+        title: legacyTitle,
+        content: loaded!.content,
+        contentAllowed: loaded!.contentAllowed,
+        createdAt: loaded!.createdAt,
+        updatedAt: loaded!.updatedAt,
+      }),
+    ).toBe(true);
+
+    const raw = await ref.get();
+    const rawData = raw.data() ?? {};
+    expect(rawData).toHaveProperty("wrappedDataKey");
+    expect(rawData).not.toHaveProperty("content");
+    expect(JSON.stringify(rawData)).not.toContain(legacyText);
+    // Migration must not bump updatedAt (Minor 10).
+    expect(rawData.updatedAt.toMillis()).toBe(fixedUpdatedAt.toMillis());
+
+    const after = await getDocumentById(ref.id);
+    expect(after?.title).toBe(legacyTitle);
+    expect(JSON.stringify(after?.content)).toContain(legacyText);
   });
 });

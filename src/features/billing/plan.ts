@@ -55,7 +55,8 @@ export async function getPlan(): Promise<PlanDisplay> {
   try {
     return await getCachedStripePlan();
   } catch (error) {
-    console.error("[billing] getPlan Stripe retrieve failed; using display fallback", {
+    const { logError } = await import("@/lib/logger");
+    logError("[billing] getPlan Stripe retrieve failed; using display fallback", {
       code:
         error && typeof error === "object" && "code" in error
           ? String((error as { code?: string }).code)
