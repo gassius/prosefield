@@ -28,6 +28,8 @@ src/components/__eslint_planted__/
 # misc
 .DS_Store
 *.pem
+.prosefield-dev.pid
+.prosefield-dev.log
 
 # debug
 npm-debug.log*

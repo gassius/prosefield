@@ -25,10 +25,36 @@ function pnpmScriptNames(text: string): string[] {
   return [...names];
 }
 
-describe("README technical sections (P5a)", () => {
-  it("quick start uses nvm install, corepack, host pnpm dev, and Docker Compose backend only", () => {
+describe("README technical sections (P5a / P5b)", () => {
+  it("opens with pitch, demo GIFs, three-step Quick Start, then agent setup", () => {
     const text = readme();
-    const start = text.indexOf("## Quick start");
+    const pitchIdx = text.indexOf("local-first writing workspace");
+    const demoIdx = text.indexOf("## Demo");
+    const quickIdx = text.indexOf("## Quick start");
+    const agentIdx = text.indexOf("## Let your agent set up and run this project");
+    expect(pitchIdx).toBeGreaterThan(-1);
+    expect(demoIdx).toBeGreaterThan(pitchIdx);
+    expect(quickIdx).toBeGreaterThan(demoIdx);
+    expect(agentIdx).toBeGreaterThan(quickIdx);
+
+    const quickEnd = text.indexOf("## Let your agent");
+    const quick = text.slice(quickIdx, quickEnd);
+    expect(quick).toMatch(/bash scripts\/check\.sh/);
+    expect(quick).toMatch(/bash scripts\/start\.sh/);
+    expect(quick).toMatch(/git clone/);
+    // No toolchain jargon in Quick Start (corepack handled by scripts).
+    expect(quick).not.toMatch(/corepack/i);
+    expect(quick).not.toMatch(/\.nvmrc/);
+    expect(quick).toMatch(/WSL2/);
+    expect(quick).toMatch(/learn\.microsoft\.com\/en-us\/windows\/wsl\/install/);
+
+    expect(text).toMatch(/docs\/demo\/01-landing\.gif/);
+    expect(text).toMatch(/AGENT_SETUP\.md/);
+  });
+
+  it("manual start (below the fold) still documents nvm, host pnpm dev, and Compose backend", () => {
+    const text = readme();
+    const start = text.indexOf("## Manual start (optional)");
     const end = text.indexOf("## Architecture overview");
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
@@ -36,7 +62,6 @@ describe("README technical sections (P5a)", () => {
     expect(section).toMatch(/nvm install/);
     expect(section).toMatch(/\.nvmrc/);
     expect(section).toMatch(/corepack enable/);
-    // Pin the host frontend fence (not the optional-step prose mention of `pnpm dev`).
     expect(section).toMatch(/```bash\n\s*pnpm install\n\s*pnpm dev\n\s*```/);
     expect(section).toMatch(/docker compose up -d --wait/);
     expect(section).toMatch(/pnpm backend:up/);
@@ -44,16 +69,17 @@ describe("README technical sections (P5a)", () => {
     expect(section).toMatch(/pnpm backend:logs/);
   });
 
-  it("prerequisites keep Docker-only backend and no host Firebase CLI", () => {
+  it("prerequisites keep Docker-only backend, no host Firebase CLI, WSL2-only Windows", () => {
     const text = readme();
-    const start = text.indexOf("## Prerequisites");
-    const end = text.indexOf("## Quick start");
+    const start = text.indexOf("## Prerequisites (details)");
+    const end = text.indexOf("## Manual start (optional)");
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const section = text.slice(start, end);
     expect(section).toMatch(/do not install the Firebase CLI on the host/i);
     expect(section).toMatch(/no global `firebase-tools`/);
     expect(section).toMatch(/Emulator Suite runtime/);
+    expect(section).toMatch(/WSL2 only/i);
   });
 
   it("documents architecture overview with core stack choices", () => {
@@ -74,7 +100,7 @@ describe("README technical sections (P5a)", () => {
   it("documents known limitations including Docker-only backend and manual save", () => {
     const text = readme();
     const start = text.indexOf("## Known limitations");
-    const end = text.indexOf("## Scripts");
+    const end = text.indexOf("## Tradeoffs");
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const section = text.slice(start, end);
@@ -83,6 +109,15 @@ describe("README technical sections (P5a)", () => {
     expect(section).toMatch(/No real-time collaboration/i);
     expect(section).toMatch(/sk_test_/);
     expect(section).toMatch(/FEATURE_CUSTOMER_PORTAL/);
+  });
+
+  it("includes tradeoffs, AI usage, and credits sections", () => {
+    const text = readme();
+    expect(text).toMatch(/## Tradeoffs and “With another day”/);
+    expect(text).toMatch(/## AI usage and manual verification/);
+    expect(text).toMatch(/## Credits/);
+    expect(text).toMatch(/docs\/time-log\.md/);
+    expect(text).toMatch(/docs\/write-up\.md/);
   });
 
   it("Stripe 4242 section uses Compose app+stripe profiles without host pnpm dev", () => {

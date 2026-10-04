@@ -11,7 +11,7 @@ describe("README Stripe manual 4242 flow", () => {
     const text = readme();
     const section = text.slice(
       text.indexOf("### Manual Stripe test payment (4242)"),
-      text.indexOf("## Scripts"),
+      text.indexOf("## Known limitations"),
     );
     const setupIdx = section.indexOf("pnpm stripe:setup");
     const forwardIdx = section.indexOf(
@@ -39,7 +39,7 @@ describe("README Stripe manual 4242 flow", () => {
     const text = readme();
     const manualSection = text.slice(
       text.indexOf("### Manual Stripe test payment (4242)"),
-      text.indexOf("## Scripts"),
+      text.indexOf("## Known limitations"),
     );
     // Step 2 must be setup, not a bare seed + paste instruction.
     expect(manualSection).toMatch(/2\.\s+Run `pnpm stripe:setup`/);

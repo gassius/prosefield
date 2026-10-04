@@ -345,6 +345,71 @@ jobs:
           docker compose config -q
           docker compose --profile stripe config -q
 
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq shellcheck
+
+      - name: shellcheck bash scripts
+        run: |
+          set -euo pipefail
+          mapfile -t scripts < <(git ls-files '*.sh' 'scripts/*.sh')
+          shellcheck -x "${scripts[@]}"
+
+  fresh-start:
+    name: Fresh machine start
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup pnpm
+        # pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        # actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Timed check + clean start
+        env:
+          APP_URL: http://localhost:3000
+        run: |
+          set -euo pipefail
+          start_ts=$(date +%s)
+          bash scripts/check.sh
+          # Clean start path: no prior node_modules / .env / compose.
+          rm -rf node_modules .env .prosefield-dev.pid .prosefield-dev.log
+          docker compose down -v >/dev/null 2>&1 || true
+          bash scripts/start.sh
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/)
+          test "$code" = "200"
+          end_ts=$(date +%s)
+          elapsed=$((end_ts - start_ts))
+          echo "Fresh start elapsed_seconds=${elapsed}"
+          # Soft budget signal (ticket goal: under 15 minutes).
+          if [ "$elapsed" -gt 900 ]; then
+            echo "::warning::Fresh start took ${elapsed}s (>15 min)"
+          fi
+
+      - name: Stop stack
+        if: always()
+        run: bash scripts/stop.sh || docker compose down -v || true
+
   gitleaks:
     name: gitleaks
     runs-on: ubuntu-latest
