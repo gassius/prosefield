@@ -40,6 +40,31 @@ import { SiteFooter } from "@/components/marketing/site-footer";
 import { SiteHeader } from "@/components/marketing/site-header";
 import { HeroCtaGroup } from "@/components/marketing/hero-cta-group";
 import { siteCopy } from "@/content/site";
+import type { AccountState } from "@/features/auth/account-state";
+
+const loggedIn: AccountState = {
+  kind: "logged_in",
+  uid: "u1",
+  email: "writer@example.com",
+  displayName: null,
+  subscriptionActive: false,
+};
+
+const subscriber: AccountState = {
+  kind: "subscriber",
+  uid: "u1",
+  email: "writer@example.com",
+  displayName: "Ada Writer",
+  subscriptionActive: true,
+};
+
+async function openAccountMenu(
+  user: ReturnType<typeof userEvent.setup>,
+) {
+  await user.click(
+    screen.getAllByRole("button", { name: siteCopy.header.accountMenu })[0]!,
+  );
+}
 
 describe("SiteHeader", () => {
   beforeEach(() => {
@@ -52,11 +77,12 @@ describe("SiteHeader", () => {
     );
   });
 
-  it("shows Sign in when logged out and routes CTA to register", () => {
+  it("logged out on landing: Sign in, CTA, and middle nav unchanged", () => {
     render(
       createElement(SiteHeader, {
         accountState: { kind: "logged_out" },
         ctaHref: "/register?next=/subscribe",
+        surface: "marketing",
       }),
     );
 
@@ -73,28 +99,140 @@ describe("SiteHeader", () => {
     expect(
       screen.getByRole("link", { name: siteCopy.header.navPricing }),
     ).toHaveAttribute("href", "/#pricing");
+    expect(
+      screen.queryByRole("button", { name: siteCopy.header.accountMenu }),
+    ).not.toBeInTheDocument();
   });
 
-  it("shows email and Sign out when logged in", () => {
+  it("signed in, not subscribed, landing: nav + CTA + account dropdown", async () => {
+    const user = userEvent.setup();
     render(
       createElement(SiteHeader, {
-        accountState: {
-          kind: "logged_in",
-          uid: "u1",
-          email: "writer@example.com",
-          subscriptionActive: false,
-        },
+        accountState: loggedIn,
         ctaHref: "/subscribe",
+        surface: "marketing",
       }),
     );
 
-    expect(screen.getByText("writer@example.com")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: siteCopy.header.signOut }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
     expect(
       screen.getAllByRole("link", { name: siteCopy.header.cta })[0],
     ).toHaveAttribute("href", "/subscribe");
+    expect(screen.getByText("writer@example.com")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: siteCopy.header.signOut }),
+    ).not.toBeInTheDocument();
+
+    await openAccountMenu(user);
+    expect(
+      screen.getByRole("menuitem", { name: siteCopy.header.signOut }),
+    ).toBeInTheDocument();
+  });
+
+  it("signed in, not subscribed, editor: no landing nav, keeps CTA + dropdown", () => {
+    render(
+      createElement(SiteHeader, {
+        accountState: loggedIn,
+        ctaHref: "/subscribe",
+        surface: "app",
+      }),
+    );
+
+    expect(
+      screen.queryByRole("navigation", { name: "Primary" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("link", { name: siteCopy.header.cta })[0],
+    ).toHaveAttribute("href", "/subscribe");
+    expect(
+      screen.getByRole("button", { name: siteCopy.header.accountMenu }),
+    ).toBeInTheDocument();
+  });
+
+  it("subscribed, landing: Open the Editor CTA, nav, and dropdown", () => {
+    render(
+      createElement(SiteHeader, {
+        accountState: subscriber,
+        ctaHref: "/documents",
+        surface: "marketing",
+      }),
+    );
+
+    expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("link", { name: siteCopy.header.openEditor })[0],
+    ).toHaveAttribute("href", "/documents");
+    expect(screen.getByText("Ada Writer")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: siteCopy.header.cta }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("subscribed, editor: no landing nav, no CTA, dropdown only", () => {
+    render(
+      createElement(SiteHeader, {
+        accountState: subscriber,
+        ctaHref: "/documents",
+        surface: "app",
+      }),
+    );
+
+    expect(
+      screen.queryByRole("navigation", { name: "Primary" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: siteCopy.header.openEditor }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: siteCopy.header.cta }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: siteCopy.header.accountMenu }),
+    ).toBeInTheDocument();
+  });
+
+  it("account menu is keyboard accessible and signs out", async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(SiteHeader, {
+        accountState: loggedIn,
+        ctaHref: "/subscribe",
+        surface: "marketing",
+      }),
+    );
+
+    const trigger = screen.getAllByRole("button", {
+      name: siteCopy.header.accountMenu,
+    })[0]!;
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    trigger.focus();
+    await user.keyboard("{Enter}");
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const menu = await screen.findByRole("menu");
+    const signOutItem = within(menu).getByRole("menuitem", {
+      name: siteCopy.header.signOut,
+    });
+    expect(signOutItem).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveFocus();
+
+    trigger.focus();
+    await user.keyboard(" ");
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await user.click(
+      screen.getByRole("menuitem", { name: siteCopy.header.signOut }),
+    );
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/session",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(replace).toHaveBeenCalledWith("/");
+    expect(refresh).toHaveBeenCalled();
   });
 
   it("opens the mobile Sheet and exposes FAQ / pricing anchors", async () => {
@@ -216,13 +354,14 @@ describe("SiteHeader", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  it("falls back to signed-in copy when email is empty", () => {
+  it("falls back to signed-in copy when email and display name are empty", () => {
     render(
       createElement(SiteHeader, {
         accountState: {
           kind: "logged_in",
           uid: "u1",
           email: "",
+          displayName: null,
           subscriptionActive: false,
         },
         ctaHref: "/subscribe",
@@ -231,6 +370,29 @@ describe("SiteHeader", () => {
 
     expect(
       screen.getByText(siteCopy.header.signedInFallback),
+    ).toBeInTheDocument();
+  });
+
+  it("app surface mobile sheet omits landing nav links", async () => {
+    const user = userEvent.setup();
+    render(
+      createElement(SiteHeader, {
+        accountState: subscriber,
+        ctaHref: "/documents",
+        surface: "app",
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: siteCopy.header.menu }));
+    const mobileNav = await screen.findByRole("dialog");
+    expect(
+      within(mobileNav).queryByRole("link", { name: siteCopy.header.navFaq }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(mobileNav).queryByRole("link", { name: siteCopy.header.openEditor }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(mobileNav).getByRole("button", { name: siteCopy.header.accountMenu }),
     ).toBeInTheDocument();
   });
 });

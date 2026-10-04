@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Menu } from "lucide-react";
+import { AccountMenu } from "@/components/auth/account-menu";
 import { ProsefieldLogo } from "@/components/brand/prosefield-logo";
-import { SignOutButton } from "@/components/auth/sign-out-button";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Sheet,
@@ -14,15 +14,23 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { siteCopy } from "@/content/site";
-import type {
-  AccountState,
-  CtaDestination,
+import {
+  accountDisplayLabel,
+  type AccountState,
+  type CtaDestination,
 } from "@/features/auth/account-state";
 import { cn } from "@/lib/utils";
+
+export type SiteHeaderSurface = "marketing" | "app";
 
 type SiteHeaderProps = {
   accountState: AccountState;
   ctaHref: CtaDestination;
+  /**
+   * `marketing` keeps the landing middle nav.
+   * `app` (editor / documents) removes landing nav; subscribed users also lose the CTA.
+   */
+  surface?: SiteHeaderSurface;
 };
 
 const navLinks = [
@@ -34,9 +42,25 @@ const navLinks = [
 /** Tailwind `sm` breakpoint — close the mobile Sheet when the viewport widens past it. */
 export const MOBILE_NAV_MAX_WIDTH_PX = 639;
 
-export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
+function headerCtaLabel(accountState: AccountState): string {
+  return accountState.kind === "subscriber"
+    ? siteCopy.header.openEditor
+    : siteCopy.header.cta;
+}
+
+export function SiteHeader({
+  accountState,
+  ctaHref,
+  surface = "marketing",
+}: SiteHeaderProps) {
   const [open, setOpen] = useState(false);
   const loggedIn = accountState.kind !== "logged_out";
+  const showLandingNav = surface === "marketing";
+  const showCta = !(surface === "app" && accountState.kind === "subscriber");
+  const ctaLabel = headerCtaLabel(accountState);
+  const accountLabel = loggedIn
+    ? accountDisplayLabel(accountState) || siteCopy.header.signedInFallback
+    : null;
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
@@ -58,29 +82,28 @@ export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
         <ProsefieldLogo />
 
-        <nav
-          className="text-muted-foreground hidden items-center gap-6 text-sm sm:flex"
-          aria-label={siteCopy.header.primaryNav}
-        >
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="hover:text-foreground transition-colors"
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
+        {showLandingNav ? (
+          <nav
+            className="text-muted-foreground hidden items-center gap-6 text-sm sm:flex"
+            aria-label={siteCopy.header.primaryNav}
+          >
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="hover:text-foreground transition-colors"
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        ) : (
+          <div className="hidden flex-1 sm:block" aria-hidden />
+        )}
 
         <div className="hidden items-center gap-2 sm:flex">
           {loggedIn ? (
-            <>
-              <span className="text-muted-foreground max-w-[12rem] truncate text-sm">
-                {accountState.email || siteCopy.header.signedInFallback}
-              </span>
-              <SignOutButton />
-            </>
+            <AccountMenu label={accountLabel!} />
           ) : (
             <Link
               href="/login"
@@ -89,12 +112,14 @@ export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
               {siteCopy.header.signIn}
             </Link>
           )}
-          <Link
-            href={ctaHref}
-            className={cn(buttonVariants({ variant: "default", size: "sm" }))}
-          >
-            {siteCopy.header.cta}
-          </Link>
+          {showCta ? (
+            <Link
+              href={ctaHref}
+              className={cn(buttonVariants({ variant: "default", size: "sm" }))}
+            >
+              {ctaLabel}
+            </Link>
+          ) : null}
         </div>
 
         <Sheet open={open} onOpenChange={setOpen}>
@@ -121,23 +146,20 @@ export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
               className="flex flex-col gap-3"
               aria-label={siteCopy.header.mobileNav}
             >
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="text-foreground py-2 text-sm font-medium"
-                  onClick={() => setOpen(false)}
-                >
-                  {link.label}
-                </Link>
-              ))}
+              {showLandingNav
+                ? navLinks.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className="text-foreground py-2 text-sm font-medium"
+                      onClick={() => setOpen(false)}
+                    >
+                      {link.label}
+                    </Link>
+                  ))
+                : null}
               {loggedIn ? (
-                <>
-                  <p className="text-muted-foreground truncate text-sm">
-                    {accountState.email || siteCopy.header.signedInFallback}
-                  </p>
-                  <SignOutButton />
-                </>
+                <AccountMenu label={accountLabel!} />
               ) : (
                 <Link
                   href="/login"
@@ -147,16 +169,18 @@ export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
                   {siteCopy.header.signIn}
                 </Link>
               )}
-              <Link
-                href={ctaHref}
-                className={cn(
-                  buttonVariants({ variant: "default", size: "default" }),
-                  "w-full",
-                )}
-                onClick={() => setOpen(false)}
-              >
-                {siteCopy.header.cta}
-              </Link>
+              {showCta ? (
+                <Link
+                  href={ctaHref}
+                  className={cn(
+                    buttonVariants({ variant: "default", size: "default" }),
+                    "w-full",
+                  )}
+                  onClick={() => setOpen(false)}
+                >
+                  {ctaLabel}
+                </Link>
+              ) : null}
             </nav>
           </SheetContent>
         </Sheet>

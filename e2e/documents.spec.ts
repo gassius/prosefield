@@ -7,6 +7,7 @@ import {
   registerViaUi,
   resetEmulators,
   seedSubscriptionProjection,
+  signOutViaUi,
   uniqueEmail,
 } from "./helpers";
 

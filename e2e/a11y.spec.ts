@@ -73,6 +73,24 @@ test.describe("accessibility smoke", () => {
     await expectNoSeriousOrCritical(page);
     await page.goto("/");
     await expectNoSeriousOrCritical(page);
+
+    await page.getByRole("button", { name: /Account menu/i }).first().click();
+    await expect(page.getByRole("menu")).toBeVisible();
+    await expectNoSeriousOrCritical(page);
+  });
+
+  test("subscribed landing Open the Editor header", async ({ page }) => {
+    await resetEmulators();
+    const email = uniqueEmail("a11y-subscriber");
+    await registerViaUi(page, email, "password-123");
+    await expectSignedIn(page, email);
+    const uid = await lookupUidByEmail(email);
+    await seedSubscriptionProjection(uid, "active");
+    await page.goto("/");
+    await expect(
+      page.getByRole("link", { name: "Open the Editor" }).first(),
+    ).toBeVisible();
+    await expectNoSeriousOrCritical(page);
   });
 
   test("subscribe and billing status", async ({ page }) => {

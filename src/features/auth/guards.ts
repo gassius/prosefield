@@ -45,12 +45,17 @@ export async function getAccountState(): Promise<AccountState> {
   }
 
   const email = typeof session.email === "string" ? session.email : "";
+  const displayName =
+    typeof session.name === "string" && session.name.trim()
+      ? session.name.trim()
+      : null;
   const active = await isSubscriptionActive(session.uid);
   if (active) {
     return {
       kind: "subscriber",
       uid: session.uid,
       email,
+      displayName,
       subscriptionActive: true,
     };
   }
@@ -59,6 +64,7 @@ export async function getAccountState(): Promise<AccountState> {
     kind: "logged_in",
     uid: session.uid,
     email,
+    displayName,
     subscriptionActive: false,
   };
 }

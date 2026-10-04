@@ -74,11 +74,22 @@ export async function loginViaUi(
 }
 
 export async function expectSignedIn(page: Page, email: string): Promise<void> {
-  await expect(page.getByText(email)).toBeVisible({ timeout: 20_000 });
+  await expect(
+    page.getByRole("button", { name: /Account menu/i }),
+  ).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(email).first()).toBeVisible({ timeout: 20_000 });
 }
 
 export async function expectSignedOut(page: Page): Promise<void> {
   await expect(page.getByRole("link", { name: "Sign in" }).first()).toBeVisible();
+}
+
+/** Open the account dropdown and choose Sign out. */
+export async function signOutViaUi(page: Page): Promise<void> {
+  const trigger = page.getByRole("button", { name: /Account menu/i }).first();
+  await expect(trigger).toBeVisible({ timeout: 20_000 });
+  await trigger.click();
+  await page.getByRole("menuitem", { name: "Sign out" }).click();
 }
 
 export async function expectNoSessionCookie(page: Page): Promise<void> {

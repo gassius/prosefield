@@ -22,7 +22,7 @@ export default async function DocumentsPage() {
     const plan = await getPlan();
     return (
       <>
-        <SiteHeader accountState={account} ctaHref={ctaHref} />
+        <SiteHeader accountState={account} ctaHref={ctaHref} surface="app" />
         <PageMain className="justify-center">
           <div className="mx-auto flex w-full max-w-lg flex-col px-6 py-16">
             <div className="rounded-xl border border-border bg-background p-8">
@@ -60,7 +60,7 @@ export default async function DocumentsPage() {
 
   return (
     <>
-      <SiteHeader accountState={account} ctaHref={ctaHref} />
+      <SiteHeader accountState={account} ctaHref={ctaHref} surface="app" />
       <PageMain>
         <DocumentsWorkspace documents={entries} />
       </PageMain>

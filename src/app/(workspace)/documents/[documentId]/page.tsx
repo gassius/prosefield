@@ -36,7 +36,7 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
     const plan = await getPlan();
     return (
       <>
-        <SiteHeader accountState={account} ctaHref={ctaHref} />
+        <SiteHeader accountState={account} ctaHref={ctaHref} surface="app" />
         <PageMain className="justify-center">
           <div className="mx-auto flex w-full max-w-lg flex-col px-6 py-16">
             <div className="rounded-xl border border-border bg-background p-8">
@@ -85,7 +85,7 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
 
   return (
     <>
-      <SiteHeader accountState={account} ctaHref={ctaHref} />
+      <SiteHeader accountState={account} ctaHref={ctaHref} surface="app" />
       <PageMain>
         <div className="border-border flex items-center gap-3 border-b px-4 py-3 md:hidden">
           <Link

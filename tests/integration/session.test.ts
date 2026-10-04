@@ -119,6 +119,7 @@ describe("session exchange (emulators)", () => {
       kind: "logged_in",
       uid: localId,
       email,
+      displayName: null,
       subscriptionActive: false,
     });
 
