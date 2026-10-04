@@ -115,6 +115,26 @@ describe("Pricing", () => {
       screen.getByRole("link", { name: siteCopy.header.cta }),
     ).toHaveAttribute("href", "/register?next=/subscribe");
   });
+
+  it("omits the interval span when the plan has no interval", () => {
+    render(
+      createElement(Pricing, {
+        plan: {
+          name: "Prosefield",
+          price: "9",
+          currency: "EUR",
+          interval: "",
+          priceLabel: "€9",
+          checkoutReassurance: "Secure checkout",
+        },
+        ctaHref: "/register?next=/subscribe",
+        checkoutReassurance: "Secure checkout",
+      }),
+    );
+    const price = screen.getByTestId("pricing-card-price");
+    expect(price.querySelector(".font-display")?.textContent).toBe("€9");
+    expect(price.querySelector(".text-muted-foreground")).toBeNull();
+  });
 });
 
 describe("Faq", () => {

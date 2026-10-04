@@ -47,6 +47,12 @@ describe("csrf helpers", () => {
     expect(csrfTokensMatch("abcd", "ab")).toBe(false);
   });
 
+  it("returns false when equal string lengths yield unequal Buffer lengths", () => {
+    // JS string length matches, but UTF-8 byte lengths differ → timingSafeEqual throws.
+    expect(csrfTokensMatch("é", "a")).toBe(false);
+    expect(csrfTokensMatch("a", "é")).toBe(false);
+  });
+
   it("parses the last matching cookie value segment", () => {
     expect(parseCookieValue("csrf_token=a=b=c", "csrf_token")).toBe("a=b=c");
   });

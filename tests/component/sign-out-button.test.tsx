@@ -22,11 +22,18 @@ import {
 } from "@/features/documents/trial-draft-stash";
 import { EMPTY_DOCUMENT_CONTENT } from "@/features/documents/schemas";
 
-function DirtySignOutHarness() {
+function DirtySignOutHarness({
+  onReady,
+}: {
+  onReady?: (confirmLeaveAnyway: () => void) => void;
+}) {
   const guard = useUnsavedLeaveGuard();
   useEffect(() => {
     guard?.setDirty(true);
-  }, [guard]);
+    if (guard) {
+      onReady?.(() => guard.confirmLeaveAnyway());
+    }
+  }, [guard, onReady]);
   return createElement(SignOutButton, { trialUid: "uid-leave" });
 }
 
@@ -242,20 +249,33 @@ describe("SignOutButton leave-guard integration", () => {
       async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
     );
     vi.stubGlobal("fetch", fetchMock);
+    let confirmLeave: (() => void) | undefined;
 
     render(
       createElement(
         UnsavedLeaveGuardProvider,
         null,
-        createElement(DirtySignOutHarness),
+        createElement(DirtySignOutHarness, {
+          onReady: (confirm) => {
+            confirmLeave = confirm;
+          },
+        }),
       ),
     );
     await waitFor(() => {
       expect(screen.getByRole("button", { name: siteCopy.header.signOut })).toBeEnabled();
+      expect(confirmLeave).toBeTypeOf("function");
     });
     await user.click(screen.getByRole("button", { name: siteCopy.header.signOut }));
     // Leave guard should intercept before fetch.
     expect(fetchMock).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
+
+    // Confirming leave runs the deferred performSignOut callback.
+    confirmLeave?.();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(replace).toHaveBeenCalledWith("/");
+    });
   });
 });
