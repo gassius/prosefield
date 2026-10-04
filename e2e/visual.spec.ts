@@ -328,4 +328,31 @@ test.describe("visual regression", () => {
       mask: [page.getByText(email), page.locator("time")],
     });
   });
+
+  for (const width of [375, 768, 1280] as const) {
+    test(`trial editor and subscribe modal ${width}`, async ({ page }) => {
+      await resetEmulators();
+      const email = uniqueEmail(`visual-trial-${width}`);
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      // Register at desktop so the header email is visible for expectSignedIn;
+      // then resize for the baseline (375 hides desktop account chrome).
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await registerViaUi(page, email, "password-123");
+      await expectSignedIn(page, email);
+      await preparePage(page, "/documents/trial", { width, height: 900 });
+      await expect(page.getByLabel("Document title")).toBeVisible();
+      await expect(page).toHaveScreenshot(`trial-editor-${width}.png`, {
+        fullPage: true,
+        mask: [page.getByText(email), page.locator("time")],
+      });
+
+      await page.getByRole("button", { name: "Save" }).click();
+      await expect(page.getByTestId("trial-subscribe-modal")).toBeVisible();
+      await page.addStyleTag({ content: FREEZE_CSS });
+      await expect(page).toHaveScreenshot(`trial-subscribe-modal-${width}.png`, {
+        fullPage: true,
+        mask: [page.getByText(email), page.locator("time")],
+      });
+    });
+  }
 });

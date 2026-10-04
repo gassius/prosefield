@@ -267,6 +267,25 @@ describe("customers", () => {
     stripeCustomersGet.mockResolvedValue({ exists: false });
     await expect(lookupUidByStripeCustomerId("cus_missing")).resolves.toBeNull();
   });
+
+  it("returns null when stripeCustomers doc exists but uid is not a string", async () => {
+    stripeCustomersGet.mockResolvedValue({
+      exists: true,
+      data: () => ({ uid: 42 }),
+    });
+    const { lookupUidByStripeCustomerId } = await import(
+      "@/features/billing/customers"
+    );
+    await expect(lookupUidByStripeCustomerId("cus_bad_uid")).resolves.toBeNull();
+
+    stripeCustomersGet.mockResolvedValue({
+      exists: true,
+      data: () => ({}),
+    });
+    await expect(
+      lookupUidByStripeCustomerId("cus_missing_uid"),
+    ).resolves.toBeNull();
+  });
 });
 
 describe("webhook subscription id extraction paths", () => {

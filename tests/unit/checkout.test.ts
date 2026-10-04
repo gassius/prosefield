@@ -183,6 +183,62 @@ describe("createCheckoutSession", () => {
     );
   });
 
+  it("uses allow-listed cancelPath for trial editor cancel_url", async () => {
+    stubConfiguredEnv();
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    const projection = await import("@/features/billing/projection");
+    vi.mocked(projection.getSubscriptionProjection).mockResolvedValue(null);
+    subscriptionsList.mockResolvedValue({ data: [] });
+    sessionsList.mockResolvedValue({ data: [] });
+    sessionsCreate.mockResolvedValue({
+      id: "cs_trial",
+      url: "https://checkout.stripe.com/c/pay/cs_trial",
+    });
+
+    const { createCheckoutSession } = await import(
+      "@/features/billing/checkout"
+    );
+    await createCheckoutSession({
+      uid: "uid_1",
+      email: "writer@example.com",
+      cancelPath: "/documents/trial",
+    });
+    expect(sessionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cancel_url: "http://localhost:3000/documents/trial",
+      }),
+    );
+  });
+
+  it("falls back cancel_url to /subscribe for unknown cancelPath", async () => {
+    stubConfiguredEnv();
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    const projection = await import("@/features/billing/projection");
+    vi.mocked(projection.getSubscriptionProjection).mockResolvedValue(null);
+    subscriptionsList.mockResolvedValue({ data: [] });
+    sessionsList.mockResolvedValue({ data: [] });
+    sessionsCreate.mockResolvedValue({
+      id: "cs_bad",
+      url: "https://checkout.stripe.com/c/pay/cs_bad",
+    });
+
+    const { createCheckoutSession } = await import(
+      "@/features/billing/checkout"
+    );
+    await createCheckoutSession({
+      uid: "uid_1",
+      email: "writer@example.com",
+      cancelPath: "https://evil.example",
+    });
+    expect(sessionsCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cancel_url: "http://localhost:3000/subscribe",
+      }),
+    );
+  });
+
   it("throws stripe_error when Checkout Session has no url", async () => {
     stubConfiguredEnv();
     const { __resetEnvCacheForTests } = await import("@/lib/env");

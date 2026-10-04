@@ -41,7 +41,12 @@ describe("CheckoutButton", () => {
   it("redirects to login on 401 unauthenticated", async () => {
     const fetchMock = vi.fn(
       async (_url: string, init?: RequestInit) => {
-        expect(init?.headers).toEqual({ accept: "application/json" });
+        const headers = init?.headers as Record<string, string>;
+        expect(headers.accept).toBe("application/json");
+        expect(headers["content-type"]).toBe("application/json");
+        expect(JSON.parse(String(init?.body))).toEqual({
+          cancelPath: "/subscribe",
+        });
         return new Response(null, { status: 401 });
       },
     );
@@ -82,11 +87,35 @@ describe("CheckoutButton", () => {
     ).toHaveTextContent("Billing is not configured.");
   });
 
+  it("falls back to generic copy when 503 body has no error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({}), {
+            status: 503,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+    const { CheckoutButton } = await import(
+      "@/components/billing/checkout-button"
+    );
+    render(<CheckoutButton label="Continue to secure checkout" />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Continue to secure checkout" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Could not start checkout/i,
+    );
+  });
+
   it("assigns location from JSON url on success", async () => {
     Object.defineProperty(window, "location", {
       configurable: true,
       value: { ...window.location, assign, origin: "http://localhost:3000" },
     });
+    const onBeforeRedirect = vi.fn();
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -103,7 +132,12 @@ describe("CheckoutButton", () => {
     const { CheckoutButton } = await import(
       "@/components/billing/checkout-button"
     );
-    render(<CheckoutButton label="Continue to secure checkout" />);
+    render(
+      <CheckoutButton
+        label="Continue to secure checkout"
+        onBeforeRedirect={onBeforeRedirect}
+      />,
+    );
     await userEvent.click(
       screen.getByRole("button", { name: "Continue to secure checkout" }),
     );
@@ -112,6 +146,33 @@ describe("CheckoutButton", () => {
         "https://checkout.stripe.com/c/pay/cs_test",
       );
     });
+    expect(onBeforeRedirect).toHaveBeenCalledTimes(1);
+    expect(onBeforeRedirect.mock.invocationCallOrder[0]).toBeLessThan(
+      assign.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("does not call onBeforeRedirect on 409", async () => {
+    const onBeforeRedirect = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 409 })),
+    );
+    const { CheckoutButton } = await import(
+      "@/components/billing/checkout-button"
+    );
+    render(
+      <CheckoutButton
+        label="Continue to secure checkout"
+        onBeforeRedirect={onBeforeRedirect}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Continue to secure checkout" }),
+    );
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(onBeforeRedirect).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
   });
 
   it("shows generic error when fetch fails", async () => {
@@ -120,6 +181,64 @@ describe("CheckoutButton", () => {
       vi.fn(async () => {
         throw new Error("network");
       }),
+    );
+    const { CheckoutButton } = await import(
+      "@/components/billing/checkout-button"
+    );
+    render(<CheckoutButton label="Continue to secure checkout" />);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Continue to secure checkout" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /Could not start checkout/i,
+    );
+  });
+
+  it("assigns location from a 303 Location header", async () => {
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...window.location, assign, origin: "http://localhost:3000" },
+    });
+    const onBeforeRedirect = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(null, {
+            status: 303,
+            headers: {
+              Location: "https://checkout.stripe.com/c/pay/cs_303",
+            },
+          }),
+      ),
+    );
+    const { CheckoutButton } = await import(
+      "@/components/billing/checkout-button"
+    );
+    render(
+      <CheckoutButton
+        label="Continue to secure checkout"
+        onBeforeRedirect={onBeforeRedirect}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Continue to secure checkout" }),
+    );
+    await waitFor(() => {
+      expect(assign).toHaveBeenCalledWith(
+        "https://checkout.stripe.com/c/pay/cs_303",
+      );
+    });
+    expect(onBeforeRedirect).toHaveBeenCalledTimes(1);
+    expect(onBeforeRedirect.mock.invocationCallOrder[0]).toBeLessThan(
+      assign.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("shows generic error when 303 has no Location", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 303 })),
     );
     const { CheckoutButton } = await import(
       "@/components/billing/checkout-button"

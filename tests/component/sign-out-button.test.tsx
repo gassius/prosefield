@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { createElement, useEffect } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
@@ -11,7 +11,31 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { SignOutButton } from "@/components/auth/sign-out-button";
+import {
+  UnsavedLeaveGuardProvider,
+  useUnsavedLeaveGuard,
+} from "@/components/documents/unsaved-leave-guard";
 import { siteCopy } from "@/content/site";
+import {
+  readTrialDraft,
+  stashTrialDraft,
+} from "@/features/documents/trial-draft-stash";
+import { EMPTY_DOCUMENT_CONTENT } from "@/features/documents/schemas";
+
+function DirtySignOutHarness({
+  onReady,
+}: {
+  onReady?: (confirmLeaveAnyway: () => void) => void;
+}) {
+  const guard = useUnsavedLeaveGuard();
+  useEffect(() => {
+    guard?.setDirty(true);
+    if (guard) {
+      onReady?.(() => guard.confirmLeaveAnyway());
+    }
+  }, [guard, onReady]);
+  return createElement(SignOutButton);
+}
 
 const CSRF_VALUE = "test-csrf-secret-token";
 const RESPONSE_BODY_SECRET = "forbidden-body-secret";
@@ -85,6 +109,11 @@ describe("SignOutButton failure handling", () => {
 
   it("shows an alert and does not navigate when DELETE returns !ok", async () => {
     const user = userEvent.setup();
+    sessionStorage.clear();
+    stashTrialDraft("uid-keep", {
+      title: "Keep on failed sign-out",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -100,16 +129,24 @@ describe("SignOutButton failure handling", () => {
     expect(alert).toHaveTextContent(siteCopy.auth.signOutError);
     expect(replace).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
+    // Failed sign-out must not wipe drafts (kills O6).
+    expect(readTrialDraft("uid-keep")?.title).toBe("Keep on failed sign-out");
     expect(consoleError).toHaveBeenCalledWith("[sign-out]", {
       event: "sign_out_failed",
       reason: "http",
       status: 403,
     });
     assertNoSecretsInLogs(consoleError);
+    sessionStorage.clear();
   });
 
   it("shows an alert and does not navigate when fetch throws", async () => {
     const user = userEvent.setup();
+    sessionStorage.clear();
+    stashTrialDraft("uid-keep-net", {
+      title: "Keep on network fail",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -125,6 +162,7 @@ describe("SignOutButton failure handling", () => {
     expect(alert).not.toHaveTextContent(THROW_MESSAGE_SECRET);
     expect(replace).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
+    expect(readTrialDraft("uid-keep-net")?.title).toBe("Keep on network fail");
     await waitFor(() => {
       expect(consoleError).toHaveBeenCalledWith("[sign-out]", {
         event: "sign_out_failed",
@@ -132,6 +170,7 @@ describe("SignOutButton failure handling", () => {
       });
     });
     assertNoSecretsInLogs(consoleError);
+    sessionStorage.clear();
   });
 
   it("shows an alert and does not navigate when the CSRF cookie is missing", async () => {
@@ -183,5 +222,81 @@ describe("SignOutButton failure handling", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(2);
     assertNoSecretsInLogs(consoleError);
+  });
+
+  it("clears every trial draft stash after a successful sign-out (no trialUid prop)", async () => {
+    const user = userEvent.setup();
+    sessionStorage.clear();
+    stashTrialDraft("uid-signout", {
+      title: "Clear on sign out",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    stashTrialDraft("uid-other", {
+      title: "Also clear",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(readTrialDraft("uid-signout")).not.toBeNull();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })),
+    );
+
+    // No trialUid — clearing must be unconditional (subscribe/billing/landing/documents).
+    render(createElement(SignOutButton));
+    await user.click(screen.getByRole("button", { name: siteCopy.header.signOut }));
+    await waitFor(() => {
+      expect(replace).toHaveBeenCalledWith("/");
+    });
+    expect(readTrialDraft("uid-signout")).toBeNull();
+    expect(readTrialDraft("uid-other")).toBeNull();
+    sessionStorage.clear();
+  });
+});
+
+describe("SignOutButton leave-guard integration", () => {
+  beforeEach(() => {
+    replace.mockReset();
+    refresh.mockReset();
+    document.cookie = `csrf_token=${CSRF_VALUE}`;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("defers sign-out through the leave guard when the trial draft is dirty", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    let confirmLeave: (() => void) | undefined;
+
+    render(
+      createElement(
+        UnsavedLeaveGuardProvider,
+        null,
+        createElement(DirtySignOutHarness, {
+          onReady: (confirm) => {
+            confirmLeave = confirm;
+          },
+        }),
+      ),
+    );
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: siteCopy.header.signOut })).toBeEnabled();
+      expect(confirmLeave).toBeTypeOf("function");
+    });
+    await user.click(screen.getByRole("button", { name: siteCopy.header.signOut }));
+    // Leave guard should intercept before fetch.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+
+    // Confirming leave runs the deferred performSignOut callback.
+    confirmLeave?.();
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(replace).toHaveBeenCalledWith("/");
+    });
   });
 });

@@ -4,24 +4,52 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { siteCopy } from "@/content/site";
+import type { CheckoutCancelPath } from "@/features/billing/checkout-cancel-path";
 
 /**
  * Starts Checkout via POST /api/checkout (JSON clients get 409/503/401; browsers redirect).
  */
-export function CheckoutButton(props: { label: string }) {
+export function CheckoutButton(props: {
+  label: string;
+  /** Stripe cancel_url path (allow-listed server-side). */
+  cancelPath?: CheckoutCancelPath;
+  /** Runs before the checkout request (e.g. stash trial draft). */
+  onBeforeCheckout?: () => void | Promise<void>;
+  /**
+   * Runs immediately before `location.assign` to Stripe. Use this to disarm
+   * beforeunload — not `onBeforeCheckout`, which runs before the fetch and
+   * must not leave the guard off if checkout fails (409/503/network).
+   */
+  onBeforeRedirect?: () => void;
+  className?: string;
+  variant?: "default" | "secondary" | "ghost" | "link";
+  size?: "default" | "sm" | "lg";
+}) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  function redirectToCheckout(url: string) {
+    props.onBeforeRedirect?.();
+    window.location.assign(url);
+  }
 
   async function onClick() {
     setBusy(true);
     setError(null);
     try {
+      if (props.onBeforeCheckout) {
+        await props.onBeforeCheckout();
+      }
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: {
           accept: "application/json",
+          "content-type": "application/json",
         },
+        body: JSON.stringify({
+          cancelPath: props.cancelPath ?? "/subscribe",
+        }),
         redirect: "manual",
       });
 
@@ -47,7 +75,7 @@ export function CheckoutButton(props: { label: string }) {
       if (response.ok) {
         const body = (await response.json()) as { url?: string };
         if (body.url) {
-          window.location.assign(body.url);
+          redirectToCheckout(body.url);
           return;
         }
       }
@@ -56,7 +84,7 @@ export function CheckoutButton(props: { label: string }) {
       if (response.status === 303) {
         const location = response.headers.get("Location");
         if (location) {
-          window.location.assign(location);
+          redirectToCheckout(location);
           return;
         }
       }
@@ -73,6 +101,9 @@ export function CheckoutButton(props: { label: string }) {
     <div className="flex flex-col gap-3">
       <Button
         type="button"
+        variant={props.variant}
+        size={props.size}
+        className={props.className}
         onClick={() => {
           void onClick();
         }}

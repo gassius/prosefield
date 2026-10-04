@@ -5,14 +5,46 @@ import { useEffect, useState, useEffectEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { siteCopy } from "@/content/site";
 import { pollBillingStatus } from "@/features/billing/actions";
+import { persistStashedTrialDraft } from "@/features/documents/persist-trial-draft";
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_MAX_MS = 30_000;
 
-type StatusPhase = "pending" | "delayed" | "failed" | "active";
+type StatusPhase =
+  | "pending"
+  | "delayed"
+  | "failed"
+  | "active"
+  | "persist_failed";
+
+/**
+ * After verified active: create the stashed trial draft (if any).
+ * Keeps the stash and surfaces retry UI on create failure — never hangs on
+ * the spinner, and never silently drops a paid user's draft.
+ */
+async function tryPersistActive(
+  router: ReturnType<typeof useRouter>,
+  uid: string,
+): Promise<"navigated" | "persist_failed"> {
+  try {
+    const persisted = await persistStashedTrialDraft(uid);
+    if (persisted.ok) {
+      router.replace(`/documents/${persisted.documentId}`);
+      return "navigated";
+    }
+    if (persisted.reason === "none") {
+      router.replace("/documents");
+      return "navigated";
+    }
+    return "persist_failed";
+  } catch {
+    return "persist_failed";
+  }
+}
 
 export function BillingStatusClient(props: {
   initialView: "pending" | "failed" | "active";
+  uid: string;
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<StatusPhase>(
@@ -22,22 +54,35 @@ export function BillingStatusClient(props: {
         ? "failed"
         : "pending",
   );
+  const [retrying, setRetrying] = useState(false);
 
-  const onPollResult = useEffectEvent((status: "pending" | "active" | "failed") => {
-    if (status === "active") {
-      setPhase("active");
-      router.replace("/documents");
-      return;
-    }
-    if (status === "failed") {
-      setPhase("failed");
+  const runPersist = useEffectEvent(async () => {
+    const outcome = await tryPersistActive(router, props.uid);
+    if (outcome === "persist_failed") {
+      setPhase("persist_failed");
     }
   });
 
+  const onPollResult = useEffectEvent(
+    async (status: "pending" | "active" | "failed") => {
+      if (status === "active") {
+        setPhase("active");
+        await runPersist();
+        return;
+      }
+      if (status === "failed") {
+        setPhase("failed");
+      }
+    },
+  );
+
   useEffect(() => {
     if (props.initialView === "active") {
-      router.replace("/documents");
-      return;
+      // Defer so setPhase from persist isn't sync-in-effect (react-hooks/set-state-in-effect).
+      const timeoutId = window.setTimeout(() => {
+        void runPersist();
+      }, 0);
+      return () => window.clearTimeout(timeoutId);
     }
     if (props.initialView === "failed") {
       return;
@@ -56,7 +101,7 @@ export function BillingStatusClient(props: {
         if (cancelled) {
           return;
         }
-        onPollResult(result.status);
+        await onPollResult(result.status);
         if (result.status === "active" || result.status === "failed") {
           return;
         }
@@ -83,7 +128,19 @@ export function BillingStatusClient(props: {
         clearTimeout(timeoutId);
       }
     };
-  }, [props.initialView, router]);
+  }, [props.initialView]);
+
+  const onRetryPersist = async () => {
+    setRetrying(true);
+    try {
+      const outcome = await tryPersistActive(router, props.uid);
+      if (outcome === "persist_failed") {
+        setPhase("persist_failed");
+      }
+    } finally {
+      setRetrying(false);
+    }
+  };
 
   if (phase === "failed") {
     return (
@@ -100,6 +157,36 @@ export function BillingStatusClient(props: {
         <form action="/subscribe" method="get" className="mt-8">
           <Button type="submit">{siteCopy.billingStatus.tryAgain}</Button>
         </form>
+      </div>
+    );
+  }
+
+  if (phase === "persist_failed") {
+    return (
+      <div
+        className="rounded-xl bg-destructive-soft p-6"
+        role="alert"
+        data-testid="trial-persist-failed"
+      >
+        <h1 className="font-display text-2xl font-medium tracking-tight text-foreground">
+          {siteCopy.documents.trialPersistFailedTitle}
+        </h1>
+        <p className="text-muted-foreground mt-3 text-base leading-relaxed">
+          {siteCopy.documents.trialPersistFailedBody}
+        </p>
+        <div className="mt-8">
+          <Button
+            type="button"
+            onClick={() => {
+              void onRetryPersist();
+            }}
+            disabled={retrying}
+            aria-busy={retrying}
+            data-testid="trial-persist-retry"
+          >
+            {siteCopy.documents.trialPersistRetry}
+          </Button>
+        </div>
       </div>
     );
   }

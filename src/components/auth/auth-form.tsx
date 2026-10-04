@@ -19,6 +19,7 @@ import {
 import { mapAuthError } from "@/features/auth/map-auth-error";
 import { assertRegisterPassword } from "@/features/auth/password";
 import { registerAction } from "@/features/auth/register";
+import { clearTrialDraftsNotForUid } from "@/features/documents/trial-draft-stash";
 import { getClientAuth } from "@/lib/firebase/client";
 
 type Mode = "login" | "register";
@@ -121,6 +122,8 @@ export function AuthForm({ mode, nextPath }: AuthFormProps) {
 
       const idToken = await credential.user.getIdToken();
       await exchangeSession(idToken);
+      // Drop stashes for any other uid (session expiry → new login / shared device).
+      clearTrialDraftsNotForUid(credential.user.uid);
       await signOut(auth);
       router.replace(nextPath);
       router.refresh();

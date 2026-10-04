@@ -136,6 +136,28 @@ describe("getPlan", () => {
     expect(plan.name).toBe("Prosefield");
   });
 
+  it("uses display name when Stripe product name is empty", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);
+    vi.stubEnv("STRIPE_PRICE_ID", FAKE_STRIPE_PRICE_ID);
+    vi.stubEnv("PLAN_DISPLAY_NAME", "Prosefield");
+    const { __resetEnvCacheForTests } = await import("@/lib/env");
+    __resetEnvCacheForTests();
+    retrievePrice.mockResolvedValue({
+      unit_amount: 800,
+      currency: "eur",
+      recurring: { interval: "month" },
+      product: { name: "", deleted: false },
+    });
+    const { __fetchPlanFromStripeForTests } = await import(
+      "@/features/billing/plan"
+    );
+    const plan = await __fetchPlanFromStripeForTests();
+    // Empty product.name must not ship as the card label.
+    expect(plan.name).toBe("Prosefield");
+    expect(plan.priceLabel).toBe("€8/month");
+  });
+
   it("falls back when Stripe fails with a coded error", async () => {
     vi.stubEnv("STRIPE_SECRET_KEY", FAKE_STRIPE_SECRET_KEY);
     vi.stubEnv("STRIPE_WEBHOOK_SECRET", FAKE_STRIPE_WEBHOOK_SECRET);

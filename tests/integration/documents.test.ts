@@ -131,6 +131,54 @@ describe("documents guard chain (emulators)", () => {
     }
   });
 
+  it("trial (signed-in, unsubscribed) cannot create, save, rename, or delete", async () => {
+    // Conversion funnel: UI is client-only; server must still reject writes.
+    const email = `docs-trial-${randomUUID()}@example.com`;
+    await establishSession(email);
+
+    const {
+      createDocumentAction,
+      saveDocumentAction,
+      renameDocumentAction,
+      deleteDocumentAction,
+    } = await import("@/features/documents/actions");
+
+    const created = await createDocumentAction({
+      title: "Trial attempt",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(created.ok).toBe(false);
+    if (!created.ok) {
+      expect(created.code).toBe("forbidden");
+    }
+
+    const saved = await saveDocumentAction({
+      documentId: "abcABC1234567890wxyz",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(saved.ok).toBe(false);
+    if (!saved.ok) {
+      expect(saved.code).toBe("forbidden");
+    }
+
+    const renamed = await renameDocumentAction({
+      documentId: "abcABC1234567890wxyz",
+      title: "Trial rename",
+    });
+    expect(renamed.ok).toBe(false);
+    if (!renamed.ok) {
+      expect(renamed.code).toBe("forbidden");
+    }
+
+    const deleted = await deleteDocumentAction({
+      documentId: "abcABC1234567890wxyz",
+    });
+    expect(deleted.ok).toBe(false);
+    if (!deleted.ok) {
+      expect(deleted.code).toBe("forbidden");
+    }
+  });
+
   it("inactive subscription + foreign doc → forbidden (subscription before owner)", async () => {
     const ownerEmail = `docs-own-${randomUUID()}@example.com`;
     const { localId: ownerUid } = await establishSession(ownerEmail);
