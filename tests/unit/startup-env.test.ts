@@ -119,4 +119,58 @@ describe("startup env fail-closed", () => {
 
     expect(assertStartupEnv).not.toHaveBeenCalled();
   });
+
+  it("instrumentation register redacts non-Error startup failures", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    vi.stubEnv("NODE_ENV", "test");
+
+    const assertStartupEnv = vi.fn(async () => {
+      throw "plain-string-failure";
+    });
+    vi.doMock("@/lib/startup-env", () => ({ assertStartupEnv }));
+    vi.doMock("@/lib/env-defaults", () => ({
+      localDevDefaults: {},
+      applyLocalDevDefaultsToProcessEnv: vi.fn(),
+    }));
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined) as unknown as (
+        code?: string | number | null | undefined,
+      ) => never);
+
+    const { register } = await import("../../src/instrumentation");
+    await register();
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(JSON.stringify(errorSpy.mock.calls[0])).toContain("unknown");
+    expect(JSON.stringify(errorSpy.mock.calls[0])).toContain(
+      "plain-string-failure",
+    );
+  });
+
+  it("instrumentation register skips defaults banner in production", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    vi.stubEnv("NODE_ENV", "production");
+
+    const assertStartupEnv = vi.fn(async () => undefined);
+    const applyLocalDevDefaultsToProcessEnv = vi.fn();
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.doMock("@/lib/startup-env", () => ({ assertStartupEnv }));
+    vi.doMock("@/lib/env-defaults", () => ({
+      localDevDefaults: { APP_URL: "http://localhost:3000" },
+      applyLocalDevDefaultsToProcessEnv,
+    }));
+
+    vi.spyOn(process, "exit").mockImplementation((() => undefined) as unknown as (
+      code?: string | number | null | undefined,
+    ) => never);
+
+    const { register } = await import("../../src/instrumentation");
+    await register();
+
+    expect(assertStartupEnv).toHaveBeenCalledTimes(1);
+    expect(infoSpy).not.toHaveBeenCalled();
+  });
 });

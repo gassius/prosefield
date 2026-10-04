@@ -56,6 +56,10 @@ describe("transport security headers and cookies", () => {
       "X-Frame-Options",
     ]);
     expect(SECURITY_HEADERS.map((h) => h.key)).toEqual(keys);
+    // Empty / nameless CSP segments are skipped (bites parse regressions).
+    expect(parseCspDirectives(" ;  ; default-src 'self'; ; ")).toEqual({
+      "default-src": ["'self'"],
+    });
   });
 
   it("builds nonce CSP without unsafe-inline scripts; eval/emulators gated", () => {

@@ -113,11 +113,10 @@ export function parseCspDirectives(policy: string): Record<string, string[]> {
     if (!trimmed) {
       continue;
     }
-    const [name, ...rest] = trimmed.split(/\s+/);
-    if (!name) {
-      continue;
-    }
-    out[name] = rest;
+    const tokens = trimmed.split(/\s+/).filter(Boolean);
+    // `trimmed` is non-empty, so there is always at least one token.
+    const name = tokens[0]!;
+    out[name] = tokens.slice(1);
   }
   return out;
 }

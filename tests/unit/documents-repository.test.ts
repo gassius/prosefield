@@ -939,6 +939,222 @@ describe("documents repository", () => {
     ).toBeNull();
   });
 
+  it("covers list malformed/empty-title, update malformed, migrate no-plaintext, rename empty legacy", async () => {
+    const {
+      listDocumentsForOwner,
+      updateDocumentContent,
+      migrateLegacyDocument,
+      renameDocument,
+    } = await import("@/features/documents/repository");
+    const { encryptDocumentFields } = await import("@/lib/crypto/envelope");
+
+    const emptyTitle = await encryptDocumentFields({
+      uid: "u1",
+      docId: "list-empty",
+      title: "",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+    });
+    const good = await encryptedFields("u1", "list-good", "Good");
+    docsQueryGet.mockResolvedValueOnce({
+      docs: [
+        {
+          id: "list-empty",
+          data: () => ({ ownerId: "u1", ...emptyTitle, updatedAt: new Date() }),
+        },
+        {
+          id: "list-malformed",
+          data: () => ({
+            ownerId: "u1",
+            keyVersion: "1",
+            wrappedDataKey: good.wrappedDataKey,
+            titleCipher: good.titleCipher,
+            contentCipher: good.contentCipher,
+            updatedAt: new Date(),
+          }),
+        },
+        {
+          id: "list-legacy",
+          data: () => ({
+            ownerId: "u1",
+            title: 42,
+            updatedAt: new Date(),
+          }),
+        },
+        {
+          id: "list-boom",
+          data: () => ({
+            ownerId: "u1",
+            ...good,
+            // Wrong owner binding in AAD via mismatched uid stored as ownerId ok —
+            // force decrypt failure by corrupting wrapped key.
+            wrappedDataKey: Buffer.from("nope").toString("base64"),
+            updatedAt: new Date(),
+          }),
+        },
+      ],
+    });
+    const listed = await listDocumentsForOwner("u1");
+    expect(listed.map((i) => i.title)).toEqual([
+      "Untitled document",
+      "Untitled document",
+      "Untitled document",
+      "Untitled document",
+    ]);
+
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "upd-mal",
+      data: () => ({
+        ownerId: "u1",
+        keyVersion: "1",
+        wrappedDataKey: "x",
+        titleCipher: good.titleCipher,
+        contentCipher: good.contentCipher,
+      }),
+    });
+    expect(
+      await updateDocumentContent({
+        documentId: "upd-mal",
+        ownerId: "u1",
+        content: EMPTY_DOCUMENT_CONTENT,
+      }),
+    ).toBeNull();
+
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "mig-empty",
+      data: () => ({ ownerId: "u1" }),
+    });
+    expect(
+      await migrateLegacyDocument({
+        id: "mig-empty",
+        ownerId: "u1",
+        title: "T",
+        content: EMPTY_DOCUMENT_CONTENT,
+        contentAllowed: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).toBe(false);
+
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "mig-mal",
+      data: () => ({
+        ownerId: "u1",
+        keyVersion: "1",
+        wrappedDataKey: "x",
+      }),
+    });
+    expect(
+      await migrateLegacyDocument({
+        id: "mig-mal",
+        ownerId: "u1",
+        title: "T",
+        content: EMPTY_DOCUMENT_CONTENT,
+        contentAllowed: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).toBe(false);
+
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "rename-empty-legacy",
+      data: () => ({ ownerId: "u1", title: "OnlyTitle" }),
+    });
+    const renamedFields = await encryptedFields(
+      "u1",
+      "rename-empty-legacy",
+      "New",
+    );
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "rename-empty-legacy",
+      data: () => ({
+        ownerId: "u1",
+        ...renamedFields,
+        updatedAt: new Date(),
+      }),
+    });
+    const renamed = await renameDocument({
+      documentId: "rename-empty-legacy",
+      ownerId: "u1",
+      title: "New",
+    });
+    expect(renamed?.title).toBe("New");
+
+    // Object-shaped legacy content is serialised verbatim (legacyContentString).
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "mig-obj",
+      data: () => ({
+        ownerId: "u1",
+        title: "Obj",
+        content: { type: "doc", content: [{ type: "paragraph" }] },
+      }),
+    });
+    expect(
+      await migrateLegacyDocument({
+        id: "mig-obj",
+        ownerId: "u1",
+        title: "Obj",
+        content: EMPTY_DOCUMENT_CONTENT,
+        contentAllowed: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).toBe(true);
+    const objUpdate = txUpdate.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    const { decryptDocumentFields } = await import("@/lib/crypto/envelope");
+    const objPlain = await decryptDocumentFields({
+      uid: "u1",
+      docId: "mig-obj",
+      fields: {
+        keyVersion: objUpdate.keyVersion as number,
+        wrappedDataKey: objUpdate.wrappedDataKey as string,
+        titleCipher: objUpdate.titleCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+        contentCipher: objUpdate.contentCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+      },
+    });
+    expect(objPlain.content).toContain('"type":"doc"');
+
+    // Round-trip verification failure aborts migration (no silent empty write).
+    const envelope = await import("@/lib/crypto/envelope");
+    const decryptSpy = vi
+      .spyOn(envelope, "decryptDocumentFields")
+      .mockResolvedValue({ title: "nope", content: "nope" });
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "mig-verify",
+      data: () => ({
+        ownerId: "u1",
+        title: "V",
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      }),
+    });
+    await expect(
+      migrateLegacyDocument({
+        id: "mig-verify",
+        ownerId: "u1",
+        title: "V",
+        content: EMPTY_DOCUMENT_CONTENT,
+        contentAllowed: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).rejects.toThrow(/round-trip verification failed/);
+    decryptSpy.mockRestore();
+  });
+
   it("create/update payloads never include plaintext title/content (E2/E3)", async () => {
     const { createDocument, updateDocumentContent } = await import(
       "@/features/documents/repository"
