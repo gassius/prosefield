@@ -49,7 +49,7 @@ test("checkout success keeps the same draft saved and enables editor functions",
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        url: `${page.url().origin}/billing/status?session_id=cs_test_funnel`,
+        url: `${new URL(page.url()).origin}/billing/status?session_id=cs_test_funnel`,
       }),
     });
   });
@@ -95,7 +95,7 @@ test("checkout cancel keeps the draft in the trial editor", async ({ page }) => 
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        url: `${page.url().origin}/documents/trial`,
+        url: `${new URL(page.url()).origin}/documents/trial`,
       }),
     });
   });
