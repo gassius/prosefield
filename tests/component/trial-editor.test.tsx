@@ -452,6 +452,8 @@ describe("TrialEditor locks and leave guard", () => {
       expect(assign).toHaveBeenCalled();
       expect(fetchMock).toHaveBeenCalled();
     });
+    // onBeforeRedirect must disarm beforeunload before the Stripe hop (N5).
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
   });
 
   it("navigates immediately when clean (guard only when dirty)", async () => {

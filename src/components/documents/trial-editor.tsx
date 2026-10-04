@@ -294,7 +294,6 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
                   aria-label={siteCopy.documents.newDocument}
                 >
                   <Plus className="size-4" aria-hidden />
-                  <span className="sr-only">{siteCopy.documents.newDocument}</span>
                 </Button>
                 <Button
                   type="button"
