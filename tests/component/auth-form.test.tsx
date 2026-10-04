@@ -172,4 +172,26 @@ describe("AuthForm", () => {
     expect(registerAction).not.toHaveBeenCalled();
     expect(signIn).not.toHaveBeenCalled();
   });
+
+  it("shows the password hint error for 123456 without calling the server", async () => {
+    const user = userEvent.setup();
+    render(createElement(AuthForm, { mode: "register", nextPath: "/subscribe" }));
+
+    await user.type(screen.getByLabelText(siteCopy.auth.emailLabel), "six@example.com");
+    await user.type(screen.getByLabelText(siteCopy.auth.passwordLabel), "123456");
+    await user.click(
+      screen.getByRole("button", { name: siteCopy.auth.registerSubmit }),
+    );
+
+    expect(await screen.findByText(siteCopy.auth.passwordHint)).toBeInTheDocument();
+    expect(registerAction).not.toHaveBeenCalled();
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("does not set minLength on the login password field", () => {
+    render(createElement(AuthForm, { mode: "login", nextPath: "/subscribe" }));
+    expect(screen.getByLabelText(siteCopy.auth.passwordLabel)).not.toHaveAttribute(
+      "minLength",
+    );
+  });
 });

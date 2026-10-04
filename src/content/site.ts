@@ -3,6 +3,8 @@
  * hard-code them. FEATURE_CUSTOMER_PORTAL gates Art Direction 4.5 claims.
  */
 
+import { PASSWORD_MIN_LENGTH } from "@/features/auth/constants";
+
 /** Shared hero + footer tagline (conversion-facing brand line). */
 export const brandTagline = "A focused home for your writing" as const;
 
@@ -40,7 +42,7 @@ export const siteCopy = {
     genericError: "Email or password is incorrect.",
     networkError: "Something went wrong. Please try again.",
     signOutError: "We couldn't sign you out. Please try again.",
-    passwordHint: "Use at least 8 characters.",
+    passwordHint: `Use at least ${PASSWORD_MIN_LENGTH} characters.`,
     invalidEmail: "Enter a valid email address.",
     pleaseWait: "Please wait…",
   },

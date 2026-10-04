@@ -22,9 +22,25 @@ describe("register password policy (shared schema)", () => {
     expect(parsed.success).toBe(false);
   });
 
+  it("rejects the reported 6-character Firebase-default password 123456", () => {
+    const short = "123456";
+    expect(short).toHaveLength(6);
+    expect(assertRegisterPassword(short)).toEqual({
+      ok: false,
+      message: siteCopy.auth.passwordHint,
+    });
+    expect(registerPasswordSchema.safeParse(short).success).toBe(false);
+  });
+
   it("accepts an 8-character password", () => {
     const ok = assertRegisterPassword("abcdefgh");
     expect(ok).toEqual({ ok: true, password: "abcdefgh" });
+  });
+
+  it("keeps the hint text in sync with PASSWORD_MIN_LENGTH", () => {
+    expect(siteCopy.auth.passwordHint).toBe(
+      `Use at least ${PASSWORD_MIN_LENGTH} characters.`,
+    );
   });
 
   it("falls back to siteCopy hint when zod omits issue messages", () => {
