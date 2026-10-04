@@ -29,7 +29,7 @@ export function AccountMenu({ label, className }: AccountMenuProps) {
             buttonVariants({ variant: "ghost", size: "sm" }),
             "max-w-[12rem] truncate",
           )}
-          aria-label={siteCopy.header.accountMenu}
+          aria-label={`${label}, ${siteCopy.header.accountMenu}`}
         >
           <span className="truncate">{label}</span>
         </DropdownMenuTrigger>

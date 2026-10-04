@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import {
@@ -10,12 +10,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 describe("DropdownMenu", () => {
-  it("supports inset menu items", async () => {
+  it("opens a menu with menuitem roles and supports inset items", async () => {
     const user = userEvent.setup();
     render(
       createElement(
         DropdownMenu,
-        null,
+        { modal: false },
         createElement(DropdownMenuTrigger, null, "Open"),
         createElement(
           DropdownMenuContent,
@@ -25,8 +25,14 @@ describe("DropdownMenu", () => {
       ),
     );
 
-    await user.click(screen.getByRole("button", { name: "Open" }));
-    const item = await screen.findByRole("menuitem", { name: "Inset item" });
+    const trigger = screen.getByRole("button", { name: "Open" });
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const menu = await screen.findByRole("menu");
+    const item = within(menu).getByRole("menuitem", { name: "Inset item" });
     expect(item.className).toContain("pl-8");
   });
 });

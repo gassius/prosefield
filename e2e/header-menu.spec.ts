@@ -6,9 +6,14 @@ import {
   registerViaUi,
   resetEmulators,
   seedSubscriptionProjection,
+  signOutViaMobileSheet,
   signOutViaUi,
   uniqueEmail,
 } from "./helpers";
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 test.describe.configure({ mode: "serial" });
 
@@ -37,17 +42,17 @@ test("signed in, not subscribed: landing keeps nav+CTA; editor drops nav", async
   page,
 }) => {
   const email = uniqueEmail("header-logged-in");
+  await page.setViewportSize({ width: 1280, height: 800 });
   await registerViaUi(page, email, "password-123");
   await expectSignedIn(page, email);
 
-  await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/");
   await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Start your first page" }).first(),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /Account menu/i }).first(),
+    page.getByRole("button", { name: new RegExp(escapeRegExp(email)) }).first(),
   ).toBeVisible();
 
   await page.goto("/documents");
@@ -59,7 +64,7 @@ test("signed in, not subscribed: landing keeps nav+CTA; editor drops nav", async
     page.getByRole("link", { name: "Start your first page" }).first(),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /Account menu/i }).first(),
+    page.getByRole("button", { name: new RegExp(escapeRegExp(email)) }).first(),
   ).toBeVisible();
 });
 
@@ -67,19 +72,19 @@ test("subscribed: landing Open the Editor; editor has dropdown only", async ({
   page,
 }) => {
   const email = uniqueEmail("header-subscriber");
+  await page.setViewportSize({ width: 1280, height: 800 });
   await registerViaUi(page, email, "password-123");
   await expectSignedIn(page, email);
   const uid = await lookupUidByEmail(email);
   await seedSubscriptionProjection(uid, "active");
 
-  await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/");
   await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Open the Editor" }).first(),
   ).toHaveAttribute("href", "/documents");
   await expect(
-    page.getByRole("button", { name: /Account menu/i }).first(),
+    page.getByRole("button", { name: new RegExp(escapeRegExp(email)) }).first(),
   ).toBeVisible();
 
   await page.goto("/documents");
@@ -93,10 +98,25 @@ test("subscribed: landing Open the Editor; editor has dropdown only", async ({
   await expect(
     page.getByRole("link", { name: "Start your first page" }),
   ).toHaveCount(0);
-  const menu = page.getByRole("button", { name: /Account menu/i }).first();
-  await expect(menu).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: new RegExp(escapeRegExp(email)) }).first(),
+  ).toBeVisible();
 
   await signOutViaUi(page);
+  await expect(page).toHaveURL("/");
+  await expectSignedOut(page);
+});
+
+test("mobile Sheet account menu signs out at 375", async ({ page }) => {
+  const email = uniqueEmail("header-mobile");
+  // Register at desktop so expectSignedIn can see the account trigger.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await registerViaUi(page, email, "password-123");
+  await expectSignedIn(page, email);
+
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto("/");
+  await signOutViaMobileSheet(page);
   await expect(page).toHaveURL("/");
   await expectSignedOut(page);
 });

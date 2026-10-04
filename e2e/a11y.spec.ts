@@ -74,7 +74,12 @@ test.describe("accessibility smoke", () => {
     await page.goto("/");
     await expectNoSeriousOrCritical(page);
 
-    await page.getByRole("button", { name: /Account menu/i }).first().click();
+    await page
+      .getByRole("button", {
+        name: new RegExp(email.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+      })
+      .first()
+      .click();
     await expect(page.getByRole("menu")).toBeVisible();
     await expectNoSeriousOrCritical(page);
   });

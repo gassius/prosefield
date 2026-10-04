@@ -60,9 +60,10 @@ const subscriber: AccountState = {
 
 async function openAccountMenu(
   user: ReturnType<typeof userEvent.setup>,
+  label = "writer@example.com",
 ) {
   await user.click(
-    screen.getAllByRole("button", { name: siteCopy.header.accountMenu })[0]!,
+    screen.getAllByRole("button", { name: new RegExp(label) })[0]!,
   );
 }
 
@@ -100,7 +101,7 @@ describe("SiteHeader", () => {
       screen.getByRole("link", { name: siteCopy.header.navPricing }),
     ).toHaveAttribute("href", "/#pricing");
     expect(
-      screen.queryByRole("button", { name: siteCopy.header.accountMenu }),
+      screen.queryByRole("button", { name: /Account menu/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -118,7 +119,11 @@ describe("SiteHeader", () => {
     expect(
       screen.getAllByRole("link", { name: siteCopy.header.cta })[0],
     ).toHaveAttribute("href", "/subscribe");
-    expect(screen.getByText("writer@example.com")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /writer@example.com/ }),
+    ).toHaveAccessibleName(
+      `writer@example.com, ${siteCopy.header.accountMenu}`,
+    );
     expect(
       screen.queryByRole("button", { name: siteCopy.header.signOut }),
     ).not.toBeInTheDocument();
@@ -145,7 +150,7 @@ describe("SiteHeader", () => {
       screen.getAllByRole("link", { name: siteCopy.header.cta })[0],
     ).toHaveAttribute("href", "/subscribe");
     expect(
-      screen.getByRole("button", { name: siteCopy.header.accountMenu }),
+      screen.getByRole("button", { name: /writer@example.com/ }),
     ).toBeInTheDocument();
   });
 
@@ -162,7 +167,9 @@ describe("SiteHeader", () => {
     expect(
       screen.getAllByRole("link", { name: siteCopy.header.openEditor })[0],
     ).toHaveAttribute("href", "/documents");
-    expect(screen.getByText("Ada Writer")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Ada Writer/ }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: siteCopy.header.cta }),
     ).not.toBeInTheDocument();
@@ -186,9 +193,11 @@ describe("SiteHeader", () => {
     expect(
       screen.queryByRole("link", { name: siteCopy.header.cta }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: siteCopy.header.accountMenu }),
-    ).toBeInTheDocument();
+    const trigger = screen.getByRole("button", { name: /Ada Writer/ });
+    expect(trigger).toBeInTheDocument();
+    // Dropdown is the rightmost control in the desktop auth cluster (no CTA).
+    const accountWrap = trigger.closest("span");
+    expect(accountWrap?.parentElement?.lastElementChild).toBe(accountWrap);
   });
 
   it("account menu is keyboard accessible and signs out", async () => {
@@ -202,7 +211,7 @@ describe("SiteHeader", () => {
     );
 
     const trigger = screen.getAllByRole("button", {
-      name: siteCopy.header.accountMenu,
+      name: /writer@example.com/,
     })[0]!;
     expect(trigger).toHaveAttribute("aria-haspopup", "menu");
     expect(trigger).toHaveAttribute("aria-expanded", "false");
@@ -392,7 +401,7 @@ describe("SiteHeader", () => {
       within(mobileNav).queryByRole("link", { name: siteCopy.header.openEditor }),
     ).not.toBeInTheDocument();
     expect(
-      within(mobileNav).getByRole("button", { name: siteCopy.header.accountMenu }),
+      within(mobileNav).getByRole("button", { name: /Ada Writer/ }),
     ).toBeInTheDocument();
   });
 });
