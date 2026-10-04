@@ -196,3 +196,32 @@ Or `docker compose down` then `up --build`. Do not rely on a named `app_node_mod
 Document CRUD goes through **Server Actions + the Firebase Admin SDK**. Browser clients never read or write `/documents` — `firestore.rules` default-denies create/update/delete/read for that collection (Architecture §5.6).
 
 Title (**1–120** characters) and content (**≤ 512 KiB** UTF-8 bytes when serialised as Tiptap JSON) are enforced **server-side in Zod** (`src/features/documents/schemas.ts`), not in security rules.
+
+## Security
+
+### Encryption at rest (documents)
+
+Document **title** and **content** are envelope-encrypted **server-side** before any Firestore write:
+
+- Per-document random 256-bit data key + **AES-256-GCM**
+- Ciphertext, IV, auth tag, wrapped data key, and key version are stored together
+- AAD binds each field to `uid` + `docId` (ciphertext cannot be copied across users/docs)
+- The key-encryption key (KEK) **never** lives in Firebase. Local/CI use `DOCUMENT_ENCRYPTION_PROVIDER=dev` with `DOCUMENT_ENCRYPTION_KEK` from Compose / `.env`; production uses a Cloud KMS provider behind the same `KeyProvider` interface
+- Existing plaintext docs migrate lazily (idempotent) on the next read or write
+- Key rotation is supported via `DOCUMENT_ENCRYPTION_KEY_VERSION` (+ optional previous KEK)
+
+Cloud KMS keyring/key/IAM and production env wiring are **Firebase Infra** (Carlos approval) — not changed by this app PR.
+
+### Transport
+
+- HSTS, a strict CSP (includes `upgrade-insecure-requests`), and related headers on every response
+- Session cookie `__session`: **HttpOnly**, **Secure** (when the request is HTTPS), **SameSite=Lax**
+- `APP_URL` must be `https://` outside local `localhost` / `127.0.0.1`
+
+### Personal data
+
+Minimal inventory: email and password stay in **Firebase Auth** only (email is not duplicated as plaintext in Firestore). `stripeCustomerId` is an opaque billing reference. Document title/content are envelope-encrypted. Logs use `redactForLog` so emails, passwords, and document bodies are not written to error output.
+
+### Passwords
+
+Passwords are handled only by **Firebase Auth**, which hashes them with **salted scrypt**. The app never stores, logs, or sends passwords anywhere else (Firestore, application logs, or analytics). Minimum-length enforcement is covered separately (ClickUp `869fbj5r7`).

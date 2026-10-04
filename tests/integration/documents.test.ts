@@ -37,6 +37,11 @@ process.env.PLAN_DISPLAY_PRICE ??= "8";
 process.env.PLAN_DISPLAY_CURRENCY ??= "EUR";
 process.env.PLAN_DISPLAY_INTERVAL ??= "month";
 process.env.FEATURE_CUSTOMER_PORTAL ??= "false";
+process.env.DOCUMENT_ENCRYPTION_PROVIDER ??= "dev";
+process.env.DOCUMENT_ENCRYPTION_KEY_VERSION ??= "1";
+process.env.DOCUMENT_ENCRYPTION_KEK ??= Buffer.alloc(32, 0x07).toString(
+  "base64",
+);
 
 async function establishSession(email: string) {
   const { createSessionCookieFromIdToken, setSessionCookie } = await import(
@@ -653,5 +658,100 @@ describe("documents guard chain (emulators)", () => {
     const deleted = await deleteDocumentAction({ documentId: created.data.id });
     expect(deleted.ok).toBe(true);
     expect(await getDocumentById(created.data.id)).toBeNull();
+  });
+
+  it("raw Firestore doc has no plaintext while the app still reads content", async () => {
+    const email = `docs-enc-${randomUUID()}@example.com`;
+    const { localId: uid } = await establishSession(email);
+    await seedActiveSubscription(uid);
+
+    const { createDocumentAction, saveDocumentAction } = await import(
+      "@/features/documents/actions"
+    );
+    const { getDocumentById } = await import(
+      "@/features/documents/repository"
+    );
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+
+    const secretTitle = `Secret title ${randomUUID()}`;
+    const secretText = `plaintext-must-not-persist-${randomUUID()}`;
+    const created = await createDocumentAction({ title: secretTitle });
+    expect(created.ok).toBe(true);
+    if (!created.ok) {
+      return;
+    }
+
+    const content = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: secretText }],
+        },
+      ],
+    };
+    const saved = await saveDocumentAction({
+      documentId: created.data.id,
+      content,
+    });
+    expect(saved.ok).toBe(true);
+
+    const raw = await getAdminFirestore()
+      .collection("documents")
+      .doc(created.data.id)
+      .get();
+    const rawData = raw.data() ?? {};
+    const rawJson = JSON.stringify(rawData);
+    expect(rawData).toHaveProperty("wrappedDataKey");
+    expect(rawData).toHaveProperty("contentCipher");
+    expect(rawData).toHaveProperty("titleCipher");
+    expect(rawData).not.toHaveProperty("title");
+    expect(rawData).not.toHaveProperty("content");
+    expect(rawJson).not.toContain(secretTitle);
+    expect(rawJson).not.toContain(secretText);
+
+    const loaded = await getDocumentById(created.data.id);
+    expect(loaded?.title).toBe(secretTitle);
+    expect(JSON.stringify(loaded?.content)).toContain(secretText);
+  });
+
+  it("lazily migrates legacy plaintext docs on read", async () => {
+    const email = `docs-migrate-${randomUUID()}@example.com`;
+    const { localId: uid } = await establishSession(email);
+    await seedActiveSubscription(uid);
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+    const { getDocumentById } = await import(
+      "@/features/documents/repository"
+    );
+    const { FieldValue } = await import("firebase-admin/firestore");
+
+    const ref = getAdminFirestore().collection("documents").doc();
+    const legacyTitle = `Legacy ${randomUUID()}`;
+    const legacyText = `migrate-me-${randomUUID()}`;
+    await ref.set({
+      ownerId: uid,
+      title: legacyTitle,
+      content: JSON.stringify({
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: legacyText }],
+          },
+        ],
+      }),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const loaded = await getDocumentById(ref.id);
+    expect(loaded?.title).toBe(legacyTitle);
+    expect(JSON.stringify(loaded?.content)).toContain(legacyText);
+
+    const raw = await ref.get();
+    const rawData = raw.data() ?? {};
+    expect(rawData).toHaveProperty("wrappedDataKey");
+    expect(rawData).not.toHaveProperty("content");
+    expect(JSON.stringify(rawData)).not.toContain(legacyText);
   });
 });

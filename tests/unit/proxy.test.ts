@@ -60,4 +60,19 @@ describe("proxy CSRF cookie Secure / x-forwarded-proto", () => {
     const response = proxy(request);
     expect(response.cookies.get(CSRF_COOKIE_NAME)).toBeUndefined();
   });
+
+  it("sets Secure + SameSite on CSRF cookie and attaches HSTS/CSP headers", () => {
+    const response = proxy(
+      new NextRequest("https://app.example/", {
+        headers: { "x-forwarded-proto": "https" },
+      }),
+    );
+    const cookie = response.cookies.get(CSRF_COOKIE_NAME);
+    expect(cookie?.secure).toBe(true);
+    expect(cookie?.sameSite).toBe("lax");
+    expect(response.headers.get("Strict-Transport-Security")).toMatch(/max-age/);
+    expect(response.headers.get("Content-Security-Policy")).toMatch(
+      /upgrade-insecure-requests/,
+    );
+  });
 });

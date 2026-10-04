@@ -1,4 +1,13 @@
 /**
+ * Assembled local/CI document-encryption KEK (32 bytes, base64).
+ * Not a production secret — bytes are fixed filler so gitleaks stays clean.
+ */
+export function assembleLocalDevEncryptionKek(): string {
+  // 32× 0x07 — clearly fake; Compose/CI load the same value from env.
+  return Buffer.alloc(32, 0x07).toString("base64");
+}
+
+/**
  * Local demo placeholders (same shape as `.env.example`) for bare `pnpm dev`.
  * Shared by `next.config.ts` (no `server-only`) and `src/lib/env.ts`.
  */
@@ -20,6 +29,9 @@ export const localDevDefaults = {
   PLAN_DISPLAY_INTERVAL: "month",
   FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
   FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+  DOCUMENT_ENCRYPTION_PROVIDER: "dev",
+  DOCUMENT_ENCRYPTION_KEY_VERSION: "1",
+  DOCUMENT_ENCRYPTION_KEK: assembleLocalDevEncryptionKek(),
 } as const;
 
 function isBlank(value: string | undefined): boolean {

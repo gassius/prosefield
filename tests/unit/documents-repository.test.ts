@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EMPTY_DOCUMENT_CONTENT } from "@/features/documents/schemas";
+import { assembleLocalDevEncryptionKek } from "@/lib/env";
+import { encryptDocumentFields } from "@/lib/crypto/envelope";
 
 const refGet = vi.fn();
 const refSet = vi.fn();
@@ -19,7 +21,6 @@ vi.mock("@/lib/firebase/admin", () => ({
       runTransaction(fn),
     collection: () => ({
       doc: (documentPath?: string) => {
-        // Mirror Admin SDK: document ids cannot contain `/` or be `.` / `..`.
         if (
           typeof documentPath === "string" &&
           (documentPath.includes("/") ||
@@ -47,14 +48,32 @@ vi.mock("@/lib/firebase/admin", () => ({
   }),
 }));
 
-function ownedSnap(overrides: Record<string, unknown> = {}) {
+process.env.DOCUMENT_ENCRYPTION_PROVIDER = "dev";
+process.env.DOCUMENT_ENCRYPTION_KEY_VERSION = "1";
+process.env.DOCUMENT_ENCRYPTION_KEK = assembleLocalDevEncryptionKek();
+
+async function encryptedFields(
+  ownerId: string,
+  docId: string,
+  title = "T",
+  content = EMPTY_DOCUMENT_CONTENT,
+) {
+  return encryptDocumentFields({
+    uid: ownerId,
+    docId,
+    title,
+    content: JSON.stringify(content),
+  });
+}
+
+async function ownedSnap(overrides: Record<string, unknown> = {}) {
+  const fields = await encryptedFields("u1", "d1");
   return {
     exists: true,
     id: "d1",
     data: () => ({
       ownerId: "u1",
-      title: "T",
-      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      ...fields,
       createdAt: new Date(),
       updatedAt: new Date(),
       ...overrides,
@@ -74,20 +93,20 @@ describe("documents repository", () => {
     runTransaction.mockClear();
   });
 
-  it("parses string, map, invalid JSON, and non-object content", async () => {
+  it("parses encrypted, legacy plaintext, invalid JSON, and non-object content", async () => {
     const { getDocumentById, listDocumentsForOwner, createDocument, deleteDocument } =
       await import("@/features/documents/repository");
 
+    const enc = await encryptedFields("u1", "d1", "T", {
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "hi" }] }],
+    });
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d1",
       data: () => ({
         ownerId: "u1",
-        title: "T",
-        content: JSON.stringify({
-          type: "doc",
-          content: [{ type: "paragraph", content: [{ type: "text", text: "hi" }] }],
-        }),
+        ...enc,
         createdAt: new Date("2026-01-01"),
         updatedAt: new Date("2026-01-02"),
       }),
@@ -96,6 +115,16 @@ describe("documents repository", () => {
     expect(parsed?.contentAllowed).toBe(true);
     expect(parsed?.content).toMatchObject({ type: "doc" });
 
+    // Legacy plaintext map content — triggers lazy migrate transaction.
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d2",
+      data: () => ({
+        ownerId: "u1",
+        title: "Map",
+        content: { type: "doc", content: [{ type: "paragraph" }] },
+      }),
+    });
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d2",
@@ -109,7 +138,17 @@ describe("documents repository", () => {
     });
     const mapped = await getDocumentById("d2");
     expect(mapped?.contentAllowed).toBe(true);
+    expect(txUpdate).toHaveBeenCalled();
 
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d3",
+      data: () => ({
+        ownerId: "u1",
+        title: "Bad",
+        content: "{not-json",
+      }),
+    });
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d3",
@@ -122,6 +161,11 @@ describe("documents repository", () => {
     const bad = await getDocumentById("d3");
     expect(bad?.contentAllowed).toBe(false);
 
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d4",
+      data: () => ({ ownerId: "u1", title: "Nullish", content: 42 }),
+    });
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d4",
@@ -135,6 +179,18 @@ describe("documents repository", () => {
     expect(nullish?.contentAllowed).toBe(false);
     expect(nullish?.content).toEqual(EMPTY_DOCUMENT_CONTENT);
 
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d5",
+      data: () => ({
+        ownerId: "u1",
+        title: "Evil",
+        content: JSON.stringify({
+          type: "doc",
+          content: [{ type: "codeBlock", content: [] }],
+        }),
+      }),
+    });
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d5",
@@ -150,29 +206,14 @@ describe("documents repository", () => {
     const evil = await getDocumentById("d5");
     expect(evil?.contentAllowed).toBe(false);
 
-    refGet.mockResolvedValueOnce({
-      exists: true,
-      id: "d6",
-      data: () => ({
-        ownerId: "u1",
-        title: 99,
-        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
-        createdAt: { toDate: () => new Date("2026-03-01") },
-        updatedAt: { toDate: () => new Date("2026-03-02") },
-      }),
-    });
-    const coerced = await getDocumentById("d6");
-    expect(coerced?.title).toBe("Untitled document");
-    expect(coerced?.createdAt.toISOString()).toBe("1970-01-01T00:00:00.000Z");
-
     const { Timestamp } = await import("firebase-admin/firestore");
+    const stampedFields = await encryptedFields("u1", "d7", "Stamped");
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d7",
       data: () => ({
         ownerId: "u1",
-        title: "Stamped",
-        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        ...stampedFields,
         createdAt: Timestamp.fromDate(new Date("2026-04-01T00:00:00Z")),
         updatedAt: Timestamp.fromDate(new Date("2026-04-02T00:00:00Z")),
       }),
@@ -181,15 +222,25 @@ describe("documents repository", () => {
     expect(stamped?.createdAt.toISOString()).toContain("2026-04-01");
     expect(stamped?.title).toBe("Stamped");
 
+    const listA = await encryptedFields("u1", "a", "A");
+    const listB = await encryptedFields("u1", "b", "Untitled document");
     docsQueryGet.mockResolvedValueOnce({
       docs: [
         {
           id: "a",
-          data: () => ({ title: "A", updatedAt: new Date("2026-02-01") }),
+          data: () => ({
+            ownerId: "u1",
+            ...listA,
+            updatedAt: new Date("2026-02-01"),
+          }),
         },
         {
           id: "b",
-          data: () => ({ updatedAt: new Date("2026-02-01") }),
+          data: () => ({
+            ownerId: "u1",
+            ...listB,
+            updatedAt: new Date("2026-02-01"),
+          }),
         },
       ],
     });
@@ -198,13 +249,17 @@ describe("documents repository", () => {
     expect(list[1]?.title).toBe("Untitled document");
 
     refSet.mockResolvedValue(undefined);
+    const createdFields = await encryptedFields(
+      "u1",
+      "newdocid00000000001",
+      "Untitled document",
+    );
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "newdocid00000000001",
       data: () => ({
         ownerId: "u1",
-        title: "Untitled document",
-        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        ...createdFields,
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -212,6 +267,10 @@ describe("documents repository", () => {
     const created = await createDocument({ ownerId: "u1" });
     expect(created.id).toBe("newdocid00000000001");
     expect(created.contentAllowed).toBe(true);
+    const setPayload = refSet.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(setPayload).toHaveProperty("wrappedDataKey");
+    expect(setPayload).toHaveProperty("contentCipher");
+    expect(JSON.stringify(setPayload)).not.toContain('"type":"doc"');
 
     refGet.mockResolvedValueOnce({ exists: true });
     refDelete.mockResolvedValue(undefined);
@@ -233,19 +292,21 @@ describe("documents repository", () => {
     expect(createdFallback.title).toBe("Untitled document");
     expect(createdFallback.ownerId).toBe("u1");
 
+    const noOwnerFields = await encryptedFields("u1", "d8", "No owner string");
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d8",
       data: () => ({
         ownerId: 42,
-        title: "No owner string",
-        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        ...noOwnerFields,
         createdAt: new Date("2026-05-01"),
         updatedAt: new Date("2026-05-02"),
       }),
     });
     const noOwner = await getDocumentById("d8");
     expect(noOwner?.ownerId).toBe("");
+    // Wrong AAD owner → contentAllowed false
+    expect(noOwner?.contentAllowed).toBe(false);
 
     refGet.mockResolvedValueOnce({ exists: false });
     expect(await getDocumentById("missing-doc-id-0001")).toBeNull();
@@ -269,15 +330,14 @@ describe("documents repository", () => {
     const storedUpdatedAt = Timestamp.fromDate(
       new Date("2026-06-15T12:00:00.000Z"),
     );
-    txGet.mockResolvedValueOnce(ownedSnap());
-    // Post-commit re-read returns the stored server timestamp (not local Date()).
+    txGet.mockResolvedValueOnce(await ownedSnap());
+    const afterFields = await encryptedFields("u1", "d1");
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d1",
       data: () => ({
         ownerId: "u1",
-        title: "T",
-        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        ...afterFields,
         createdAt: new Date("2026-01-01"),
         updatedAt: storedUpdatedAt,
       }),
@@ -295,10 +355,11 @@ describe("documents repository", () => {
     expect(runTransaction).toHaveBeenCalledTimes(1);
     expect(txGet).toHaveBeenCalledTimes(1);
     expect(txUpdate).toHaveBeenCalledTimes(1);
-    // Ownership read is tx.get; ref.get is only the post-commit re-read.
     expect(refGet).toHaveBeenCalledTimes(1);
-    // Mutation 9a: writing via ref.update must fail.
     expect(refUpdate).not.toHaveBeenCalled();
+    const updatePayload = txUpdate.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(updatePayload).toHaveProperty("contentCipher");
+    expect(JSON.stringify(updatePayload)).not.toContain('"type":"doc"');
 
     txGet.mockResolvedValueOnce({ exists: false });
     expect(
@@ -310,10 +371,9 @@ describe("documents repository", () => {
     ).toBeNull();
     expect(txUpdate).toHaveBeenCalledTimes(1);
     expect(refUpdate).not.toHaveBeenCalled();
-    // Failed ownership/exists → no post-commit re-read.
     expect(refGet).toHaveBeenCalledTimes(1);
 
-    txGet.mockResolvedValueOnce(ownedSnap({ ownerId: "other" }));
+    txGet.mockResolvedValueOnce(await ownedSnap({ ownerId: "other" }));
     expect(
       await updateDocumentContent({
         documentId: "d1",
@@ -324,17 +384,18 @@ describe("documents repository", () => {
     expect(txUpdate).toHaveBeenCalledTimes(1);
     expect(refUpdate).not.toHaveBeenCalled();
 
+    const sparseFields = await encryptedFields("u1", "d1");
     txGet.mockResolvedValueOnce({
       exists: true,
       id: "d1",
-      data: () => ({ ownerId: "u1" }),
+      data: () => ({ ownerId: "u1", ...sparseFields }),
     });
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d1",
       data: () => ({
         ownerId: "u1",
-        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        ...sparseFields,
         updatedAt: storedUpdatedAt,
       }),
     });
@@ -344,7 +405,7 @@ describe("documents repository", () => {
       content: EMPTY_DOCUMENT_CONTENT,
     });
     expect(updatedSparse?.contentAllowed).toBe(true);
-    expect(updatedSparse?.title).toBe("Untitled document");
+    expect(updatedSparse?.title).toBe("T");
     expect(updatedSparse?.updatedAt.toISOString()).toBe(
       "2026-06-15T12:00:00.000Z",
     );
@@ -360,12 +421,10 @@ describe("documents repository", () => {
       ownerId: "u1",
       content: EMPTY_DOCUMENT_CONTENT,
     });
-    // empty data → ownerId undefined !== "u1"
     expect(updatedEmptyData).toBeNull();
     expect(refUpdate).not.toHaveBeenCalled();
 
-    // Transaction wrote, but post-commit re-read finds the doc gone.
-    txGet.mockResolvedValueOnce(ownedSnap());
+    txGet.mockResolvedValueOnce(await ownedSnap());
     refGet.mockResolvedValueOnce({ exists: false });
     expect(
       await updateDocumentContent({
@@ -377,8 +436,7 @@ describe("documents repository", () => {
     expect(txUpdate).toHaveBeenCalled();
     expect(refUpdate).not.toHaveBeenCalled();
 
-    // Post-commit snap exists but data() is undefined → empty fallback record.
-    txGet.mockResolvedValueOnce(ownedSnap());
+    txGet.mockResolvedValueOnce(await ownedSnap());
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d1",
@@ -401,14 +459,14 @@ describe("documents repository", () => {
     const storedUpdatedAt = Timestamp.fromDate(
       new Date("2026-07-01T08:30:00.000Z"),
     );
-    txGet.mockResolvedValueOnce(ownedSnap());
+    txGet.mockResolvedValueOnce(await ownedSnap());
+    const renamedFields = await encryptedFields("u1", "d1", "Renamed");
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d1",
       data: () => ({
         ownerId: "u1",
-        title: "Renamed",
-        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        ...renamedFields,
         createdAt: new Date("2026-01-01"),
         updatedAt: storedUpdatedAt,
       }),
@@ -426,7 +484,6 @@ describe("documents repository", () => {
     expect(runTransaction).toHaveBeenCalledTimes(1);
     expect(txGet).toHaveBeenCalledTimes(1);
     expect(txUpdate).toHaveBeenCalledTimes(1);
-    // Mutation 9b: ownership via ref.get would make this 2+.
     expect(refGet).toHaveBeenCalledTimes(1);
     expect(refUpdate).not.toHaveBeenCalled();
 
@@ -436,25 +493,26 @@ describe("documents repository", () => {
     ).toBeNull();
     expect(refUpdate).not.toHaveBeenCalled();
 
-    txGet.mockResolvedValueOnce(ownedSnap({ ownerId: "other" }));
+    txGet.mockResolvedValueOnce(await ownedSnap({ ownerId: "other" }));
     expect(
       await renameDocument({ documentId: "d1", ownerId: "u1", title: "Nope" }),
     ).toBeNull();
     expect(txUpdate).toHaveBeenCalledTimes(1);
     expect(refUpdate).not.toHaveBeenCalled();
 
+    const renameSparseIn = await encryptedFields("u1", "d1");
+    const renameSparseOut = await encryptedFields("u1", "d1", "After");
     txGet.mockResolvedValueOnce({
       exists: true,
       id: "d1",
-      data: () => ({ ownerId: "u1" }),
+      data: () => ({ ownerId: "u1", ...renameSparseIn }),
     });
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d1",
       data: () => ({
         ownerId: "u1",
-        title: "After",
-        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        ...renameSparseOut,
         updatedAt: storedUpdatedAt,
       }),
     });
@@ -469,8 +527,7 @@ describe("documents repository", () => {
     );
     expect(refUpdate).not.toHaveBeenCalled();
 
-    // Transaction wrote, but post-commit re-read finds the doc gone.
-    txGet.mockResolvedValueOnce(ownedSnap());
+    txGet.mockResolvedValueOnce(await ownedSnap());
     refGet.mockResolvedValueOnce({ exists: false });
     expect(
       await renameDocument({
@@ -481,7 +538,6 @@ describe("documents repository", () => {
     ).toBeNull();
     expect(refUpdate).not.toHaveBeenCalled();
 
-    // exists + undefined data inside the transaction → owner mismatch via ?? {}.
     txGet.mockResolvedValueOnce({
       exists: true,
       id: "d1",
@@ -495,8 +551,7 @@ describe("documents repository", () => {
       }),
     ).toBeNull();
 
-    // Post-commit snap exists but data() is undefined → empty fallback record.
-    txGet.mockResolvedValueOnce(ownedSnap());
+    txGet.mockResolvedValueOnce(await ownedSnap());
     refGet.mockResolvedValueOnce({
       exists: true,
       id: "d1",
@@ -511,5 +566,4 @@ describe("documents repository", () => {
     expect(renamedEmptyAfter?.title).toBe("Untitled document");
     expect(refUpdate).not.toHaveBeenCalled();
   });
-
 });

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { CSRF_COOKIE_NAME } from "@/features/auth/constants";
+import { SECURITY_HEADERS } from "@/lib/security-headers";
 
 function createCsrfToken(): string {
   const bytes = new Uint8Array(32);
@@ -19,8 +20,15 @@ function isSecureHost(request: NextRequest): boolean {
   return request.nextUrl.protocol === "https:";
 }
 
+function applySecurityHeaders(response: NextResponse): void {
+  for (const header of SECURITY_HEADERS) {
+    response.headers.set(header.key, header.value);
+  }
+}
+
 export function proxy(request: NextRequest) {
   const response = NextResponse.next();
+  applySecurityHeaders(response);
   if (!request.cookies.get(CSRF_COOKIE_NAME)?.value) {
     response.cookies.set({
       name: CSRF_COOKIE_NAME,

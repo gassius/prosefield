@@ -62,6 +62,13 @@ export default defineConfig({
         "src/lib/motion.ts": highBar,
         "src/lib/startup-env.ts": highBar,
         "src/lib/utils.ts": highBar,
+        "src/lib/security-headers.ts": highBar,
+        "src/lib/crypto/**": {
+          lines: 95,
+          functions: 95,
+          branches: 85,
+          statements: 95,
+        },
         "src/features/auth/password.ts": highBar,
         "src/features/auth/register.ts": highBar,
         "src/features/auth/register-input.ts": highBar,

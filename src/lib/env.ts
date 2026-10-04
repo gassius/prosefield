@@ -3,10 +3,15 @@ import "server-only";
 import { z } from "zod";
 import {
   applyLocalDevDefaultsToProcessEnv,
+  assembleLocalDevEncryptionKek,
   localDevDefaults,
 } from "@/lib/env-defaults";
 
-export { applyLocalDevDefaultsToProcessEnv, localDevDefaults };
+export {
+  applyLocalDevDefaultsToProcessEnv,
+  assembleLocalDevEncryptionKek,
+  localDevDefaults,
+};
 
 const booleanFlag = z
   .enum(["true", "false"])
@@ -26,7 +31,27 @@ export const envSchema = z
     NEXT_PUBLIC_FIREBASE_AUTH_EMULATOR_HOST: nonEmpty.optional(),
 
     // Server
-    APP_URL: z.string().trim().url(),
+    APP_URL: z
+      .string()
+      .trim()
+      .url()
+      .superRefine((value, ctx) => {
+        let url: URL;
+        try {
+          url = new URL(value);
+        } catch {
+          return;
+        }
+        const local =
+          url.hostname === "localhost" || url.hostname === "127.0.0.1";
+        if (url.protocol === "http:" && !local) {
+          ctx.addIssue({
+            code: "custom",
+            message:
+              "APP_URL must use https:// outside local dev (localhost / 127.0.0.1)",
+          });
+        }
+      }),
     // TODO(P6): relax demo-prosefield literals when deploying to a real Firebase project.
     FIREBASE_PROJECT_ID: z.literal("demo-prosefield"),
     STRIPE_SECRET_KEY: z
@@ -53,11 +78,38 @@ export const envSchema = z
     PLAN_DISPLAY_CURRENCY: nonEmpty,
     PLAN_DISPLAY_INTERVAL: nonEmpty,
 
+    // Document envelope encryption (KEK never stored in Firebase)
+    DOCUMENT_ENCRYPTION_PROVIDER: z.enum(["dev", "kms"]).default("dev"),
+    DOCUMENT_ENCRYPTION_KEY_VERSION: z.coerce.number().int().positive().default(1),
+    DOCUMENT_ENCRYPTION_KEK: nonEmpty.optional(),
+    DOCUMENT_ENCRYPTION_KEK_PREVIOUS: nonEmpty.optional(),
+    GCP_KMS_KEY_NAME: nonEmpty.optional(),
+
     // Emulators (optional; point at Docker backend when running)
     FIREBASE_AUTH_EMULATOR_HOST: nonEmpty.optional(),
     FIRESTORE_EMULATOR_HOST: nonEmpty.optional(),
   })
   .superRefine((data, ctx) => {
+    if (data.DOCUMENT_ENCRYPTION_PROVIDER === "dev" && !data.DOCUMENT_ENCRYPTION_KEK) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["DOCUMENT_ENCRYPTION_KEK"],
+        message:
+          "DOCUMENT_ENCRYPTION_KEK is required when DOCUMENT_ENCRYPTION_PROVIDER=dev",
+      });
+    }
+    if (
+      data.DOCUMENT_ENCRYPTION_PROVIDER === "kms" &&
+      !data.GCP_KMS_KEY_NAME
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["GCP_KMS_KEY_NAME"],
+        message:
+          "GCP_KMS_KEY_NAME is required when DOCUMENT_ENCRYPTION_PROVIDER=kms",
+      });
+    }
+
     if (process.env.NODE_ENV !== "production") {
       return;
     }

@@ -25,6 +25,9 @@ const validEnv = {
   PLAN_DISPLAY_INTERVAL: "month",
   FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
   FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+  DOCUMENT_ENCRYPTION_PROVIDER: "dev",
+  DOCUMENT_ENCRYPTION_KEY_VERSION: "1",
+  DOCUMENT_ENCRYPTION_KEK: Buffer.alloc(32, 0x07).toString("base64"),
 } as const;
 
 describe("env schema", () => {
@@ -38,6 +41,40 @@ describe("env schema", () => {
     expect(env.FIREBASE_PROJECT_ID).toBe("demo-prosefield");
     expect(env.FEATURE_CUSTOMER_PORTAL).toBe(false);
     expect(env.STRIPE_SECRET_KEY).toBe("sk_test_example");
+    expect(env.DOCUMENT_ENCRYPTION_PROVIDER).toBe("dev");
+    expect(env.DOCUMENT_ENCRYPTION_KEY_VERSION).toBe(1);
+  });
+
+  it("rejects non-local http APP_URL", () => {
+    const result = envSchema.safeParse({
+      ...validEnv,
+      APP_URL: "http://evil.example",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("requires KEK for dev provider and KMS name for kms provider", () => {
+    expect(
+      envSchema.safeParse({
+        ...validEnv,
+        DOCUMENT_ENCRYPTION_KEK: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      envSchema.safeParse({
+        ...validEnv,
+        DOCUMENT_ENCRYPTION_PROVIDER: "kms",
+        DOCUMENT_ENCRYPTION_KEK: undefined,
+        GCP_KMS_KEY_NAME: "projects/p/locations/l/keyRings/r/cryptoKeys/k",
+      }).success,
+    ).toBe(true);
+    expect(
+      envSchema.safeParse({
+        ...validEnv,
+        DOCUMENT_ENCRYPTION_PROVIDER: "kms",
+        GCP_KMS_KEY_NAME: undefined,
+      }).success,
+    ).toBe(false);
   });
 
   it("trims Stripe keys before validating", () => {

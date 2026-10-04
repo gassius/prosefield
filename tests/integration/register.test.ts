@@ -35,6 +35,11 @@ process.env.PLAN_DISPLAY_PRICE ??= "8";
 process.env.PLAN_DISPLAY_CURRENCY ??= "EUR";
 process.env.PLAN_DISPLAY_INTERVAL ??= "month";
 process.env.FEATURE_CUSTOMER_PORTAL ??= "false";
+process.env.DOCUMENT_ENCRYPTION_PROVIDER ??= "dev";
+process.env.DOCUMENT_ENCRYPTION_KEY_VERSION ??= "1";
+process.env.DOCUMENT_ENCRYPTION_KEK ??= Buffer.alloc(32, 0x07).toString(
+  "base64",
+);
 
 describe("registerAction (emulators)", () => {
   beforeAll(async () => {

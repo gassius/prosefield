@@ -41,6 +41,11 @@ process.env.PLAN_DISPLAY_PRICE ??= "8";
 process.env.PLAN_DISPLAY_CURRENCY ??= "EUR";
 process.env.PLAN_DISPLAY_INTERVAL ??= "month";
 process.env.FEATURE_CUSTOMER_PORTAL ??= "false";
+process.env.DOCUMENT_ENCRYPTION_PROVIDER ??= "dev";
+process.env.DOCUMENT_ENCRYPTION_KEY_VERSION ??= "1";
+process.env.DOCUMENT_ENCRYPTION_KEK ??= Buffer.alloc(32, 0x07).toString(
+  "base64",
+);
 
 describe("session exchange (emulators)", () => {
   beforeAll(async () => {
@@ -84,8 +89,21 @@ describe("session exchange (emulators)", () => {
     await upsertUserDocument({ uid: localId, email });
 
     const user = await getUserDocument(localId);
-    expect(user?.email).toBe(email);
+    // Email stays in Firebase Auth — not duplicated as plaintext in Firestore.
+    expect(user).not.toHaveProperty("email");
+    expect(JSON.stringify(user)).not.toContain(email);
     expect(user?.stripeCustomerId).toBeNull();
+    const rawUser = await (
+      await import("@/lib/firebase/admin")
+    )
+      .getAdminFirestore()
+      .collection("users")
+      .doc(localId)
+      .get();
+    const rawData = rawUser.data() ?? {};
+    expect(rawData).not.toHaveProperty("password");
+    expect(rawData).not.toHaveProperty("email");
+    expect(JSON.stringify(rawData)).not.toContain("password-123");
 
     const verified = await verifySessionCookieValue(sessionCookie, false);
     expect(verified.uid).toBe(localId);
