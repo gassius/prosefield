@@ -46,6 +46,8 @@ describe("users document (PII)", () => {
     const created = txSet.mock.calls[0]?.[1] as Record<string, unknown>;
     // P3: emailEnc must never ship a plaintext email copy beside it.
     expect(JSON.stringify(created)).not.toContain("keep@example.com");
+    expect(created).not.toHaveProperty("email");
+    expect(created).not.toHaveProperty("password");
     expect(created.emailEnc).toMatchObject({
       keyVersion: 1,
       wrappedDataKey: expect.any(String),
@@ -55,8 +57,6 @@ describe("users document (PII)", () => {
         tag: expect.any(String),
       }),
     });
-    expect(created).toHaveProperty("email");
-    expect(String(created.email)).not.toContain("@");
 
     docGet.mockResolvedValue({
       exists: true,
