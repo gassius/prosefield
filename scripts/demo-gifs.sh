@@ -53,11 +53,11 @@ export PROSEFIELD_DEMO_GIFS=1
 
 cat <<EOF
 demo:gifs REQUIREMENTS — start Next with these in the same process env, then re-run:
-  export PROSEFIELD_DEMO_GIFS=1
-  export ALLOW_EMULATORS=1
-  export APP_URL='${APP_URL}'
-  export FIREBASE_AUTH_EMULATOR_HOST='127.0.0.1:9099'
-  export FIRESTORE_EMULATOR_HOST='127.0.0.1:8080'
+  PROSEFIELD_DEMO_GIFS=1
+  ALLOW_EMULATORS=1
+  APP_URL='${APP_URL}'
+  FIREBASE_AUTH_EMULATOR_HOST='127.0.0.1:9099'
+  FIRESTORE_EMULATOR_HOST='127.0.0.1:8080'
   # Placeholder Stripe keys in .env are fine; do not set real Stripe keys.
   # Prefer: ALLOW_EMULATORS=1 PROSEFIELD_DEMO_GIFS=1 pnpm build && pnpm start
 EOF
@@ -101,16 +101,22 @@ if ! curl -fsS "http://${STRIPE_API_HOST}:${STRIPE_API_PORT}/v1/prices/${STRIPE_
 fi
 
 # Fail fast if the running Next process was not started with demo GIF billing.
-health_json="$(curl -fsS "${APP_URL%/}/api/health" || true)"
-if [[ -z "${health_json}" ]]; then
-  echo "App not reachable at ${APP_URL}/api/health. Start Next with PROSEFIELD_DEMO_GIFS=1 first." >&2
-  exit 1
-fi
-if ! printf '%s' "${health_json}" | grep -q '"demoGifsBilling"[[:space:]]*:[[:space:]]*true'; then
-  echo "Next at ${APP_URL} is not in demo GIF billing mode (health.demoGifsBilling != true)." >&2
-  echo "Restart Next with PROSEFIELD_DEMO_GIFS=1 and ALLOW_EMULATORS=1 (see REQUIREMENTS above)." >&2
-  exit 1
-fi
+# Extractable for unit tests (same idea as stop.sh ownership helpers).
+assert_demo_gifs_billing_ready() {
+  local health_json
+  health_json="$(curl -fsS "${APP_URL%/}/api/health" || true)"
+  if [[ -z "${health_json}" ]]; then
+    echo "App not reachable at ${APP_URL}/api/health. Start Next with PROSEFIELD_DEMO_GIFS=1 first." >&2
+    return 1
+  fi
+  if ! printf '%s' "${health_json}" | grep -q '"demoGifsBilling"[[:space:]]*:[[:space:]]*true'; then
+    echo "Next at ${APP_URL} is not in demo GIF billing mode (health.demoGifsBilling != true)." >&2
+    echo "Restart Next with PROSEFIELD_DEMO_GIFS=1 and ALLOW_EMULATORS=1 (see REQUIREMENTS above)." >&2
+    return 1
+  fi
+  return 0
+}
+assert_demo_gifs_billing_ready
 
 docker run --rm --network host \
   "${USER_ARGS[@]}" \

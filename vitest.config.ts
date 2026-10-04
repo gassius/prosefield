@@ -47,6 +47,7 @@ export default defineConfig({
         "src/components/auth/use-sign-out.ts",
         "src/app/(workspace)/documents/trial/page.tsx",
         "src/app/(account)/billing/status/billing-status-client.tsx",
+        "src/app/api/health/route.ts",
         "src/components/ui/accordion.tsx",
         "src/components/ui/sheet.tsx",
         "src/components/ui/dropdown-menu.tsx",

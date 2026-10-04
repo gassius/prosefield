@@ -33,4 +33,20 @@ describe("GET /api/health", () => {
     const body = (await response.json()) as { demoGifsBilling: boolean };
     expect(body.demoGifsBilling).toBe(true);
   });
+
+  it("reports demoGifsBilling false when flag is on but allow-list fails (VERCEL=1)", async () => {
+    // Bite G9: health must use && (flag AND allow-list), not ||.
+    vi.stubEnv("PROSEFIELD_DEMO_GIFS", "1");
+    vi.stubEnv("VERCEL", "1");
+    vi.stubEnv("ALLOW_EMULATORS", "1");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_URL", "http://127.0.0.1:3000");
+    vi.stubEnv("FIREBASE_AUTH_EMULATOR_HOST", "127.0.0.1:9099");
+    vi.stubEnv("FIRESTORE_EMULATOR_HOST", "127.0.0.1:8080");
+
+    const { GET } = await import("@/app/api/health/route");
+    const response = GET();
+    const body = (await response.json()) as { demoGifsBilling: boolean };
+    expect(body.demoGifsBilling).toBe(false);
+  });
 });
