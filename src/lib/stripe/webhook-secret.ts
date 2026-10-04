@@ -73,7 +73,7 @@ export async function printWebhookSecret(
 /** Log a setup failure without ever printing secret-shaped tokens. */
 export function logStripeSetupFailure(
   error: unknown,
-  errorLog: (message: string) => void = console.error,
+  errorLog: (message: string) => void,
 ): void {
   const message = formatUnknownError(error);
   errorLog(`stripe:setup failed: ${scrubStripeSecrets(message)}`);

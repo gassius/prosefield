@@ -156,6 +156,18 @@ describe("customers", () => {
       getOrCreateStripeCustomer({ uid: "uid_2", email: "new@b.co" }),
     ).resolves.toBe("cus_brand");
     expect(set).toHaveBeenCalled();
+    // P4: create-branch users/{uid} payload must not write email or password.
+    const userCreate = set.mock.calls.find(
+      (call) =>
+        call[1] &&
+        typeof call[1] === "object" &&
+        "stripeCustomerId" in (call[1] as object) &&
+        !("uid" in (call[1] as object)),
+    )?.[1] as Record<string, unknown> | undefined;
+    expect(userCreate).toBeTruthy();
+    expect(userCreate).not.toHaveProperty("email");
+    expect(userCreate).not.toHaveProperty("password");
+    expect(JSON.stringify(userCreate)).not.toContain("new@b.co");
   });
 
   it("still returns customer id when email update fails with a Stripe code", async () => {

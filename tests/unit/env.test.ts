@@ -265,6 +265,32 @@ describe("env schema", () => {
     }
   });
 
+  it("rejects key versions above uint32 max and non-integers (B2i/MF5)", () => {
+    const aboveMax = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEY_VERSION: "4294967296", // 2^32
+    });
+    expect(aboveMax.success).toBe(false);
+
+    const aliasRisk = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEY_VERSION: "4294967297", // 2^32+1
+    });
+    expect(aliasRisk.success).toBe(false);
+
+    const nonInt = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEY_VERSION: "1.5",
+    });
+    expect(nonInt.success).toBe(false);
+
+    const okMax = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEY_VERSION: "4294967295", // 2^32-1
+    });
+    expect(okMax.success).toBe(true);
+  });
+
   it("rejects non-canonical / URL-safe KEK base64 (env.ts canonical check)", () => {
     // 32 raw bytes → standard base64 is padded; base64url drops padding / uses -_.
     const urlSafe = Buffer.alloc(32, 0xcd).toString("base64url");

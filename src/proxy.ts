@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { CSRF_COOKIE_NAME } from "@/features/auth/constants";
 import {
@@ -14,8 +15,9 @@ function createCsrfToken(): string {
   return Buffer.from(bytes).toString("base64url");
 }
 
+/** 128-bit CSP nonce (base64 of 16 random bytes — not a UUID string). */
 function createNonce(): string {
-  return Buffer.from(crypto.randomUUID()).toString("base64");
+  return randomBytes(16).toString("base64");
 }
 
 /**
@@ -61,8 +63,10 @@ export function proxy(request: NextRequest) {
     allowEmulatorOrigins: shouldAllowEmulatorCspOrigins(),
   });
 
+  // Forward CSP on the request so Next can stamp matching script nonces.
+  // Do not set a parallel x-nonce header — nothing reads it; Next takes the
+  // nonce from the CSP itself.
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("Content-Security-Policy", csp);
 
   const response = NextResponse.next({

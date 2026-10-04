@@ -803,6 +803,75 @@ describe("documents repository", () => {
     expect(txUpdate).toHaveBeenCalled();
   });
 
+  it("RN2: legacy rename encrypts off-spec content verbatim (not re-parsed)", async () => {
+    const { renameDocument } = await import("@/features/documents/repository");
+    const { decryptDocumentFields } = await import("@/lib/crypto/envelope");
+
+    const evil = JSON.stringify({
+      type: "doc",
+      content: [{ type: "codeBlock", content: [] }],
+    });
+
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "rn2-legacy",
+      data: () => ({
+        ownerId: "u1",
+        title: "Old legacy",
+        content: evil,
+      }),
+    });
+    // Return value after write is secondary — the bite is on the tx payload.
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "rn2-legacy",
+      data: () => ({
+        ownerId: "u1",
+        keyVersion: 1,
+        wrappedDataKey: "placeholder",
+        titleCipher: { ciphertext: "t", iv: "i", tag: "g" },
+        contentCipher: { ciphertext: "c", iv: "i", tag: "g" },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+
+    await renameDocument({
+      documentId: "rn2-legacy",
+      ownerId: "u1",
+      title: "New legacy title",
+    });
+
+    const payload = txUpdate.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+    expect(payload).toBeTruthy();
+    expect(typeof payload.title).not.toBe("string");
+    expect(typeof payload.content).not.toBe("string");
+    expect(payload).toHaveProperty("contentCipher");
+    expect(payload).toHaveProperty("titleCipher");
+
+    const decrypted = await decryptDocumentFields({
+      uid: "u1",
+      docId: "rn2-legacy",
+      fields: {
+        keyVersion: payload.keyVersion as number,
+        wrappedDataKey: payload.wrappedDataKey as string,
+        titleCipher: payload.titleCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+        contentCipher: payload.contentCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+      },
+    });
+    expect(decrypted.content).toBe(evil);
+    expect(decrypted.content).not.toBe(JSON.stringify(EMPTY_DOCUMENT_CONTENT));
+    expect(decrypted.title).toBe("New legacy title");
+  });
+
   it("P1–P3: rename/migrate never empty off-spec content; malformed fails closed", async () => {
     const { renameDocument, migrateLegacyDocument, getDocumentById } =
       await import("@/features/documents/repository");
@@ -937,6 +1006,103 @@ describe("documents repository", () => {
         title: "Nope",
       }),
     ).toBeNull();
+  });
+
+  it("MF1: malformed envelope with plaintext fails closed on read (never returns plaintext)", async () => {
+    const { getDocumentById } = await import(
+      "@/features/documents/repository"
+    );
+    const { encryptDocumentFields } = await import("@/lib/crypto/envelope");
+
+    const offSpec = await encryptDocumentFields({
+      uid: "u1",
+      docId: "mf1",
+      title: "Hidden",
+      content: JSON.stringify({
+        type: "doc",
+        content: [{ type: "codeBlock", content: [] }],
+      }),
+    });
+    const leakedTitle = "LEAKED-PLAINTEXT-TITLE";
+    const leakedContent = JSON.stringify({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "LEAKED-PLAINTEXT-BODY" }],
+        },
+      ],
+    });
+
+    // Partial envelope + plaintext siblings (string keyVersion makes it malformed).
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "mf1",
+      data: () => ({
+        ownerId: "u1",
+        keyVersion: "1",
+        wrappedDataKey: offSpec.wrappedDataKey,
+        titleCipher: offSpec.titleCipher,
+        contentCipher: offSpec.contentCipher,
+        title: leakedTitle,
+        content: leakedContent,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    const txCallsBefore = runTransaction.mock.calls.length;
+    const record = await getDocumentById("mf1");
+    expect(record?.contentAllowed).toBe(false);
+    expect(record?.title).not.toBe(leakedTitle);
+    expect(record?.title).toBe("Untitled document");
+    expect(JSON.stringify(record)).not.toContain("LEAKED-PLAINTEXT");
+    expect(runTransaction.mock.calls.length).toBe(txCallsBefore);
+  });
+
+  it("MF5: non-integer keyVersion is malformed and fail-closed on read", async () => {
+    const { getDocumentById } = await import(
+      "@/features/documents/repository"
+    );
+    const { encryptDocumentFields, isEncryptedDocumentData } = await import(
+      "@/lib/crypto/envelope"
+    );
+
+    const fields = await encryptDocumentFields({
+      uid: "u1",
+      docId: "mf5",
+      title: "T",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+    });
+    const floatVersion = {
+      ...fields,
+      keyVersion: 1.5,
+      title: "should-not-surface",
+      content: JSON.stringify({
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "float-leak" }],
+          },
+        ],
+      }),
+    };
+    expect(isEncryptedDocumentData(floatVersion)).toBe(false);
+
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "mf5",
+      data: () => ({
+        ownerId: "u1",
+        ...floatVersion,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    const record = await getDocumentById("mf5");
+    expect(record?.contentAllowed).toBe(false);
+    expect(JSON.stringify(record)).not.toContain("float-leak");
+    expect(record?.title).not.toBe("should-not-surface");
   });
 
   it("covers list malformed/empty-title, update malformed, migrate no-plaintext, rename empty legacy", async () => {

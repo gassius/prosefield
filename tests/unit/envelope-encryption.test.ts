@@ -220,6 +220,33 @@ describe("envelope encryption", () => {
     await expect(provider.unwrapDataKey(wrapped, 1, aad("dek"))).rejects.toThrow();
   });
 
+  it("DevKeyProvider DEK-wrap AAD binds uid/docId/field (W1/W2)", async () => {
+    const provider = new DevKeyProvider({
+      keyVersion: 1,
+      currentKek: Buffer.alloc(32, 0x66),
+    });
+    const wrapped = await provider.wrapDataKey(
+      generateDataKey(),
+      aad("dek", 1),
+    );
+    // Wrong field name in AAD must fail unwrap (W1: setAAD dropped / W2: constant AAD).
+    await expect(
+      provider.unwrapDataKey(wrapped, 1, aad("title", 1)),
+    ).rejects.toThrow();
+    // Wrong doc binding (other docId) must fail.
+    await expect(
+      provider.unwrapDataKey(
+        wrapped,
+        1,
+        buildAad({ uid: "u", docId: "other-doc", field: "dek", keyVersion: 1 }),
+      ),
+    ).rejects.toThrow();
+    // Matching AAD still unwraps.
+    await expect(
+      provider.unwrapDataKey(wrapped, 1, aad("dek", 1)),
+    ).resolves.toBeInstanceOf(Uint8Array);
+  });
+
   it("supports key-version rotation via previous KEK", async () => {
     const oldKek = Buffer.alloc(32, 0x11);
     const newKek = Buffer.alloc(32, 0x22);

@@ -82,6 +82,27 @@ describe("proxy CSRF cookie Secure / x-forwarded-proto", () => {
     expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
   });
 
+  it("issues a fresh unpredictable 128-bit nonce per request (N1)", () => {
+    const extractNonce = (csp: string | null) => {
+      const match = csp?.match(/'nonce-([^']+)'/);
+      expect(match?.[1]).toBeTruthy();
+      return match![1]!;
+    };
+
+    const first = proxy(new NextRequest("https://app.example/"));
+    const second = proxy(new NextRequest("https://app.example/"));
+    const nonceA = extractNonce(first.headers.get("Content-Security-Policy"));
+    const nonceB = extractNonce(second.headers.get("Content-Security-Policy"));
+
+    expect(nonceA).not.toBe(nonceB);
+    for (const nonce of [nonceA, nonceB]) {
+      const decoded = Buffer.from(nonce, "base64");
+      expect(decoded.byteLength).toBeGreaterThanOrEqual(16);
+      // Round-trip: canonical base64 of ≥16 random bytes (not a UUID string).
+      expect(decoded.toString("base64")).toBe(nonce);
+    }
+  });
+
   it("forces Secure CSRF cookie in production when APP_URL is https", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("APP_URL", "https://app.example");

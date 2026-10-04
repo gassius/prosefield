@@ -779,6 +779,65 @@ describe("documents guard chain (emulators)", () => {
     expect(JSON.stringify(loaded?.content)).toContain(secretText);
   });
 
+  it("legacy rename keeps off-spec content verbatim (RN2)", async () => {
+    const email = `docs-legacy-rn2-${randomUUID()}@example.com`;
+    const { localId: uid } = await establishSession(email);
+    await seedActiveSubscription(uid);
+    const { getAdminFirestore } = await import("@/lib/firebase/admin");
+    const { renameDocumentAction } = await import(
+      "@/features/documents/actions"
+    );
+    const { decryptDocumentFields } = await import("@/lib/crypto/envelope");
+    const { FieldValue } = await import("firebase-admin/firestore");
+
+    const evil = JSON.stringify({
+      type: "doc",
+      content: [{ type: "codeBlock", content: [] }],
+    });
+    const ref = getAdminFirestore().collection("documents").doc();
+    await ref.set({
+      ownerId: uid,
+      title: "Legacy off-spec",
+      content: evil,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const renamed = await renameDocumentAction({
+      documentId: ref.id,
+      title: "Renamed legacy",
+    });
+    expect(renamed.ok).toBe(true);
+
+    const raw = await ref.get();
+    const data = raw.data() ?? {};
+    expect(data).toHaveProperty("contentCipher");
+    expect(data).not.toHaveProperty("content");
+    expect(data).not.toHaveProperty("title");
+    expect(JSON.stringify(data)).not.toContain("codeBlock");
+
+    const decrypted = await decryptDocumentFields({
+      uid,
+      docId: ref.id,
+      fields: {
+        keyVersion: data.keyVersion as number,
+        wrappedDataKey: data.wrappedDataKey as string,
+        titleCipher: data.titleCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+        contentCipher: data.contentCipher as {
+          ciphertext: string;
+          iv: string;
+          tag: string;
+        },
+      },
+    });
+    expect(decrypted.content).toBe(evil);
+    expect(decrypted.title).toBe("Renamed legacy");
+  });
+
   it("migrates legacy plaintext on explicit migrate (not on plain read)", async () => {
     const email = `docs-migrate-${randomUUID()}@example.com`;
     const { localId: uid } = await establishSession(email);
