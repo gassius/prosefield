@@ -61,8 +61,20 @@ async function assertCspClean(
   expect(csp).not.toMatch(/script-src[^;]*'unsafe-inline'/);
 
   const headerNonce = extractNonce(csp);
+  // Browsers hide the nonce *content* attribute from getAttribute / CSS; assert
+  // against the response HTML and the IDL `.nonce` property instead.
+  const html = await response!.text();
+  const htmlNonceRe = new RegExp(
+    `<script[^>]*\\snonce=["']${headerNonce.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}["']`,
+    "i",
+  );
+  expect(html).toMatch(htmlNonceRe);
+
   const scriptNonces = await page.locator("script[nonce]").evaluateAll((nodes) =>
-    nodes.map((n) => n.getAttribute("nonce") ?? ""),
+    nodes.map((n) => {
+      const el = n as HTMLScriptElement;
+      return el.nonce || "";
+    }),
   );
   expect(scriptNonces.length).toBeGreaterThan(0);
   for (const nonce of scriptNonces) {
