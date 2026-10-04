@@ -134,6 +134,9 @@ async function waitForEditor() {
   });
 }
 
+/** App-surface CTA — visible when landing Pricing nav is hidden. */
+const APP_LEAVE_LINK = "Start your first page";
+
 function renderTrial() {
   return render(
     <TrialWorkspace
@@ -142,6 +145,7 @@ function renderTrial() {
         kind: "logged_in",
         uid: "uid-trial",
         email: "trial@example.com",
+        displayName: null,
         subscriptionActive: false,
       }}
       ctaHref="/subscribe"
@@ -440,7 +444,7 @@ describe("TrialEditor locks and leave guard", () => {
     await user.type(title, "Leave stash");
     await user.tab();
 
-    await user.click(screen.getByRole("link", { name: "Pricing" }));
+    await user.click(screen.getByRole("link", { name: APP_LEAVE_LINK }));
     const leaveModal = await screen.findByTestId("trial-leave-modal");
     await user.click(
       within(leaveModal).getByRole("button", {
@@ -461,7 +465,7 @@ describe("TrialEditor locks and leave guard", () => {
     renderTrial();
     await waitForEditor();
     expect(screen.queryByTestId("trial-leave-modal")).toBeNull();
-    await user.click(screen.getByRole("link", { name: "Pricing" }));
+    await user.click(screen.getByRole("link", { name: APP_LEAVE_LINK }));
     expect(screen.queryByTestId("trial-leave-modal")).toBeNull();
   });
 
@@ -473,7 +477,7 @@ describe("TrialEditor locks and leave guard", () => {
     await user.clear(title);
     await user.type(title, "Cancel leave");
     await user.tab();
-    await user.click(screen.getByRole("link", { name: "Pricing" }));
+    await user.click(screen.getByRole("link", { name: APP_LEAVE_LINK }));
     expect(await screen.findByTestId("trial-leave-modal")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     await waitFor(() => {
@@ -495,12 +499,12 @@ describe("TrialEditor locks and leave guard", () => {
     await user.type(title, "Dirty now");
     await user.tab();
 
-    await user.click(screen.getByRole("link", { name: "Pricing" }));
+    await user.click(screen.getByRole("link", { name: APP_LEAVE_LINK }));
     expect(await screen.findByTestId("trial-leave-modal")).toBeVisible();
     await user.click(screen.getByTestId("trial-leave-anyway"));
     await waitFor(() => {
       expect(readTrialDraft("uid-trial")).toBeNull();
-      expect(push).toHaveBeenCalledWith("/#pricing");
+      expect(push).toHaveBeenCalledWith("/subscribe");
     });
     const afterLeave = dispatchBeforeUnload();
     expect(afterLeave.defaultPrevented).toBe(false);

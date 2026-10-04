@@ -162,12 +162,15 @@ test.describe("accessibility smoke", () => {
       await editable.click();
       await page.keyboard.type("A11y leave draft body");
       await expect(page.getByText("Unsaved changes")).toBeVisible();
-      // Pricing is in the desktop nav; open the mobile menu at 375.
+      // surface=app: CTA is the leave-guard link (in Sheet below sm).
       if (width < 640) {
         await page.getByRole("button", { name: "Open menu" }).click();
-        await page.getByRole("link", { name: "Pricing" }).click();
+        await page.getByRole("link", { name: "Start your first page" }).click();
       } else {
-        await page.getByRole("link", { name: "Pricing" }).first().click();
+        await page
+          .getByRole("link", { name: "Start your first page" })
+          .first()
+          .click();
       }
       await expect(page.getByTestId("trial-leave-modal")).toBeVisible();
       await expectNoSeriousOrCritical(page);

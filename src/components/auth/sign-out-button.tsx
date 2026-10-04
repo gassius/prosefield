@@ -9,6 +9,7 @@ type SignOutButtonProps = {
   className?: string;
 };
 
+/** Thin wrapper around {@link useSignOut} (leave-guard + draft clear live in the hook). */
 export function SignOutButton({ className }: SignOutButtonProps) {
   const { signOut, pending, error } = useSignOut();
 

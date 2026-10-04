@@ -1,7 +1,7 @@
 /**
- * Client-side cleanup that runs after a successful sign-out (and can be
- * reused by #29's shared `use-sign-out` hook). Keeps trial-draft clearing
- * out of individual buttons so every surface clears the stash.
+ * Client-side cleanup that runs after a successful sign-out from
+ * {@link useSignOut}. Keeps trial-draft clearing in one place so every
+ * surface (AccountMenu desktop/Sheet, SignOutButton) clears the stash.
  *
  * Never logs draft contents.
  */

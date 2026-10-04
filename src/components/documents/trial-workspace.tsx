@@ -33,7 +33,11 @@ export function TrialWorkspace({
 
   return (
     <UnsavedLeaveGuardProvider onDiscard={onDiscard}>
-      <SiteHeader accountState={accountState} ctaHref={ctaHref} />
+      <SiteHeader
+        accountState={accountState}
+        ctaHref={ctaHref}
+        surface="app"
+      />
       <PageMain>
         <TrialEditor uid={uid} />
       </PageMain>

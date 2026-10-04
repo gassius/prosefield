@@ -1,10 +1,13 @@
 import { test, expect } from "@playwright/test";
 import {
   expectSignedIn,
-  lookupUidByEmail,
+  expectSignedOut,
   registerViaUi,
   resetEmulators,
   seedSubscriptionProjection,
+  signOutViaMobileSheet,
+  signOutViaUi,
+  lookupUidByEmail,
   uniqueEmail,
 } from "./helpers";
 
@@ -137,7 +140,8 @@ test("leave-anyway discards the trial draft", async ({ page }) => {
   await page.locator("[contenteditable='true']").click();
   await page.keyboard.type("Gone soon");
 
-  await page.getByRole("link", { name: "Pricing" }).first().click();
+  // surface=app hides landing Pricing; CTA remains a leave-guard entry.
+  await page.getByRole("link", { name: "Start your first page" }).first().click();
   await expect(page.getByTestId("trial-leave-modal")).toBeVisible();
   await page.getByTestId("trial-leave-anyway").click();
 
@@ -148,4 +152,44 @@ test("leave-anyway discards the trial draft", async ({ page }) => {
   await expect(page.locator("[contenteditable='true']")).not.toHaveText(
     /Gone soon/,
   );
+});
+
+async function dirtyTrialDraft(page: import("@playwright/test").Page) {
+  const title = page.getByLabel("Document title");
+  await title.fill("Unsaved before sign-out");
+  await title.blur();
+  await page.locator("[contenteditable='true']").click();
+  await page.keyboard.type("Guard this draft");
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+}
+
+test("sign-out with unsaved changes opens leave modal at 1280", async ({
+  page,
+}) => {
+  const email = uniqueEmail("funnel-signout-1280");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openTrialEditor(page, email);
+  await dirtyTrialDraft(page);
+
+  await signOutViaUi(page);
+  await expect(page.getByTestId("trial-leave-modal")).toBeVisible();
+  await page.getByTestId("trial-leave-anyway").click();
+  await expect(page).toHaveURL("/");
+  await expectSignedOut(page);
+});
+
+test("sign-out with unsaved changes opens leave modal at 375 via Sheet", async ({
+  page,
+}) => {
+  const email = uniqueEmail("funnel-signout-375");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openTrialEditor(page, email);
+  await dirtyTrialDraft(page);
+
+  await page.setViewportSize({ width: 375, height: 900 });
+  await signOutViaMobileSheet(page);
+  await expect(page.getByTestId("trial-leave-modal")).toBeVisible();
+  await page.getByTestId("trial-leave-anyway").click();
+  await expect(page).toHaveURL("/");
+  await expectSignedOut(page);
 });
