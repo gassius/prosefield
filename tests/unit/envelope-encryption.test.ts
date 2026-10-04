@@ -265,4 +265,92 @@ describe("envelope encryption", () => {
     });
     expect(getKeyProvider()).toBeInstanceOf(KmsKeyProvider);
   });
+
+  it("covers DevKeyProvider / KmsKeyProvider error paths and previous KEK wiring", async () => {
+    expect(
+      () =>
+        new DevKeyProvider({
+          keyVersion: 1,
+          currentKek: Buffer.alloc(16),
+        }),
+    ).toThrow(/32 bytes/);
+
+    const kek = Buffer.alloc(32, 0x33);
+    const provider = new DevKeyProvider({ keyVersion: 1, currentKek: kek });
+    const wrapped = await provider.wrapDataKey(generateDataKey());
+    await expect(provider.unwrapDataKey(wrapped, 9)).rejects.toThrow(
+      /No KEK registered/,
+    );
+    await expect(provider.unwrapDataKey(Buffer.alloc(4), 1)).rejects.toThrow(
+      /truncated/,
+    );
+    const mismatched = Buffer.from(wrapped);
+    mismatched[0] = 2;
+    await expect(provider.unwrapDataKey(mismatched, 1)).rejects.toThrow(
+      /version mismatch/,
+    );
+
+    expect(() => new KmsKeyProvider({ encrypt: async () => ({ ciphertext: new Uint8Array() }), decrypt: async () => ({ plaintext: new Uint8Array() }) }, "   ", 1)).toThrow(
+      /GCP_KMS_KEY_NAME/,
+    );
+    const kms = new KmsKeyProvider(
+      {
+        encrypt: async ({ plaintext }) => ({ ciphertext: plaintext }),
+        decrypt: async ({ ciphertext }) => ({ plaintext: ciphertext }),
+      },
+      "projects/p/locations/l/keyRings/r/cryptoKeys/k",
+      1,
+    );
+    await expect(kms.unwrapDataKey(Buffer.from([1]), 1)).rejects.toThrow(
+      /truncated/,
+    );
+    const okWrap = await kms.wrapDataKey(generateDataKey());
+    const badVer = Buffer.from(okWrap);
+    badVer[0] = 9;
+    await expect(kms.unwrapDataKey(badVer, 1)).rejects.toThrow(/version mismatch/);
+
+    __resetKeyProviderForTests();
+    process.env.DOCUMENT_ENCRYPTION_PROVIDER = "dev";
+    process.env.DOCUMENT_ENCRYPTION_KEY_VERSION = "2";
+    process.env.DOCUMENT_ENCRYPTION_KEK = assembleLocalDevEncryptionKek();
+    process.env.DOCUMENT_ENCRYPTION_KEK_PREVIOUS = Buffer.alloc(32, 0x11).toString(
+      "base64",
+    );
+    __resetEnvCacheForTests();
+    const withPrev = getKeyProvider();
+    expect(withPrev.keyVersion).toBe(2);
+
+    __resetKeyProviderForTests();
+    process.env.DOCUMENT_ENCRYPTION_KEK = Buffer.alloc(8).toString("base64");
+    __resetEnvCacheForTests();
+    expect(() => getKeyProvider()).toThrow(/32 bytes/);
+  });
+
+  it("isEncryptedDocumentData rejects incomplete cipher packages", async () => {
+    const { isEncryptedDocumentData } = await import("@/lib/crypto/envelope");
+    expect(isEncryptedDocumentData({})).toBe(false);
+    expect(
+      isEncryptedDocumentData({
+        keyVersion: 1,
+        wrappedDataKey: "x",
+        titleCipher: null,
+        contentCipher: { ciphertext: "a", iv: "b", tag: "c" },
+      }),
+    ).toBe(false);
+    expect(
+      isEncryptedDocumentData({
+        keyVersion: 1,
+        wrappedDataKey: "x",
+        titleCipher: { ciphertext: "a", iv: "b", tag: 3 },
+        contentCipher: { ciphertext: "a", iv: "b", tag: "c" },
+      }),
+    ).toBe(false);
+    expect(
+      encryptAesGcm(Buffer.from("buf"), generateDataKey(), buildAad({
+        uid: "u",
+        docId: "d",
+        field: "content",
+      })).ciphertext.length,
+    ).toBeGreaterThan(0);
+  });
 });

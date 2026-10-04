@@ -566,4 +566,274 @@ describe("documents repository", () => {
     expect(renamedEmptyAfter?.title).toBe("Untitled document");
     expect(refUpdate).not.toHaveBeenCalled();
   });
+
+  it("update/rename from legacy plaintext and empty encrypted title", async () => {
+    const { Timestamp } = await import("firebase-admin/firestore");
+    const {
+      updateDocumentContent,
+      renameDocument,
+      migrateLegacyDocument,
+    } = await import("@/features/documents/repository");
+    const { encryptDocumentFields } = await import("@/lib/crypto/envelope");
+
+    const storedUpdatedAt = Timestamp.fromDate(
+      new Date("2026-08-01T00:00:00.000Z"),
+    );
+
+    // Legacy plaintext update path (title string, no cipher fields).
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "legacy1",
+      data: () => ({
+        ownerId: "u1",
+        title: "Legacy",
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      }),
+    });
+    const afterLegacyFields = await encryptedFields("u1", "legacy1", "Legacy");
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "legacy1",
+      data: () => ({
+        ownerId: "u1",
+        ...afterLegacyFields,
+        updatedAt: storedUpdatedAt,
+      }),
+    });
+    const updatedLegacy = await updateDocumentContent({
+      documentId: "legacy1",
+      ownerId: "u1",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(updatedLegacy?.title).toBe("Legacy");
+
+    // Legacy plaintext rename path.
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "legacy2",
+      data: () => ({
+        ownerId: "u1",
+        title: "Old",
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      }),
+    });
+    const renamedLegacyFields = await encryptedFields(
+      "u1",
+      "legacy2",
+      "New title",
+    );
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "legacy2",
+      data: () => ({
+        ownerId: "u1",
+        ...renamedLegacyFields,
+        updatedAt: storedUpdatedAt,
+      }),
+    });
+    const renamedLegacy = await renameDocument({
+      documentId: "legacy2",
+      ownerId: "u1",
+      title: "New title",
+    });
+    expect(renamedLegacy?.title).toBe("New title");
+
+    // Empty encrypted title falls back to default during update.
+    const emptyTitleFields = await encryptDocumentFields({
+      uid: "u1",
+      docId: "d-empty",
+      title: "",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+    });
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d-empty",
+      data: () => ({ ownerId: "u1", ...emptyTitleFields }),
+    });
+    const afterEmpty = await encryptDocumentFields({
+      uid: "u1",
+      docId: "d-empty",
+      title: "Untitled document",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+    });
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d-empty",
+      data: () => ({
+        ownerId: "u1",
+        ...afterEmpty,
+        updatedAt: storedUpdatedAt,
+      }),
+    });
+    const updatedEmptyTitle = await updateDocumentContent({
+      documentId: "d-empty",
+      ownerId: "u1",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(updatedEmptyTitle?.title).toBe("Untitled document");
+
+    // migrateLegacyDocument no-ops when already encrypted or missing/wrong owner.
+    const alreadyEncrypted = await encryptedFields("u1", "d1");
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => ({ ownerId: "u1", ...alreadyEncrypted }),
+    });
+    expect(
+      await migrateLegacyDocument({
+        id: "d1",
+        ownerId: "u1",
+        title: "T",
+        content: EMPTY_DOCUMENT_CONTENT,
+        contentAllowed: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).toBe(false);
+
+    txGet.mockResolvedValueOnce({ exists: false });
+    expect(
+      await migrateLegacyDocument({
+        id: "missing",
+        ownerId: "u1",
+        title: "T",
+        content: EMPTY_DOCUMENT_CONTENT,
+        contentAllowed: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).toBe(false);
+
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d1",
+      data: () => ({
+        ownerId: "other",
+        title: "T",
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      }),
+    });
+    expect(
+      await migrateLegacyDocument({
+        id: "d1",
+        ownerId: "u1",
+        title: "T",
+        content: EMPTY_DOCUMENT_CONTENT,
+        contentAllowed: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).toBe(false);
+
+    // Legacy update when title is not a string → default title.
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "legacy3",
+      data: () => ({
+        ownerId: "u1",
+        title: 42,
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      }),
+    });
+    const legacy3Fields = await encryptedFields(
+      "u1",
+      "legacy3",
+      "Untitled document",
+    );
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "legacy3",
+      data: () => ({
+        ownerId: "u1",
+        ...legacy3Fields,
+        updatedAt: storedUpdatedAt,
+      }),
+    });
+    const updatedNonStringTitle = await updateDocumentContent({
+      documentId: "legacy3",
+      ownerId: "u1",
+      content: EMPTY_DOCUMENT_CONTENT,
+    });
+    expect(updatedNonStringTitle?.title).toBe("Untitled document");
+
+    // Migration throw on read is swallowed (best-effort).
+    runTransaction.mockRejectedValueOnce(new Error("migrate boom"));
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "legacy-boom",
+      data: () => ({
+        ownerId: "u1",
+        title: "Boom",
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    const { getDocumentById } = await import(
+      "@/features/documents/repository"
+    );
+    const boom = await getDocumentById("legacy-boom");
+    expect(boom?.title).toBe("Boom");
+    expect(boom?.contentAllowed).toBe(true);
+
+    // Encrypted doc with empty title decrypts to the default.
+    const emptyTitleRead = await encryptDocumentFields({
+      uid: "u1",
+      docId: "empty-title-read",
+      title: "",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+    });
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "empty-title-read",
+      data: () => ({
+        ownerId: "u1",
+        ...emptyTitleRead,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    const emptyTitleDoc = await getDocumentById("empty-title-read");
+    expect(emptyTitleDoc?.title).toBe("Untitled document");
+
+    // migrate when snap.data() is undefined / non-string title.
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "mig-undef",
+      data: () => undefined,
+    });
+    expect(
+      await migrateLegacyDocument({
+        id: "mig-undef",
+        ownerId: "u1",
+        title: "T",
+        content: EMPTY_DOCUMENT_CONTENT,
+        contentAllowed: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).toBe(false);
+
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "mig-title",
+      data: () => ({
+        ownerId: "u1",
+        title: 7,
+        content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      }),
+    });
+    expect(
+      await migrateLegacyDocument({
+        id: "mig-title",
+        ownerId: "u1",
+        title: "T",
+        content: EMPTY_DOCUMENT_CONTENT,
+        contentAllowed: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).toBe(true);
+    expect(txUpdate).toHaveBeenCalled();
+  });
 });

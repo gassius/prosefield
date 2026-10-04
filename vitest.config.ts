@@ -46,7 +46,11 @@ export default defineConfig({
         "src/proxy.ts",
       ],
       // Client Firebase bootstrap is browser-only; covered indirectly by E2E.
-      exclude: ["src/lib/firebase/client.ts"],
+      // types.ts is type-only (no runtime statements beyond the server-only import).
+      exclude: [
+        "src/lib/firebase/client.ts",
+        "src/lib/crypto/types.ts",
+      ],
       thresholds: {
         // Ratcheted to measured Component+coverage on main (PR #21 / 92149a7):
         // ~99.65% lines/statements, ~98.26% branches, 100% functions.

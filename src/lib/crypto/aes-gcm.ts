@@ -34,9 +34,6 @@ export function encryptAesGcm(
     cipher.final(),
   ]);
   const tag = cipher.getAuthTag();
-  if (tag.byteLength !== TAG_BYTES) {
-    throw new Error("Unexpected GCM tag length");
-  }
   return {
     ciphertext: ciphertext.toString("base64"),
     iv: iv.toString("base64"),

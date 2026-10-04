@@ -42,6 +42,18 @@ describe("redactForLog", () => {
     expect(redacted.items[1]).toEqual({ password: "[REDACTED]" });
   });
 
+  it("handles null, bigint, depth limit, and unknown types", () => {
+    expect(redactForLog(null)).toBeNull();
+    expect(redactForLog(undefined)).toBeUndefined();
+    expect(redactForLog(10n)).toBe("10");
+    expect(redactForLog(Symbol("x"))).toBe("[REDACTED]");
+    let deep: unknown = { email: "a@b.co" };
+    for (let i = 0; i < 10; i += 1) {
+      deep = { nest: deep };
+    }
+    expect(JSON.stringify(redactForLog(deep))).toContain("[REDACTED]");
+  });
+
   it("lists the minimal PII inventory", () => {
     const fields = PII_INVENTORY.map((row) => row.field);
     expect(fields).toContain("email");

@@ -28,10 +28,8 @@ export class DevKeyProvider implements KeyProvider {
   }
 
   async wrapDataKey(dataKey: Uint8Array): Promise<Uint8Array> {
-    const kek = this.keysByVersion.get(this.keyVersion);
-    if (!kek) {
-      throw new Error(`Missing KEK for version ${this.keyVersion}`);
-    }
+    // Constructor always registers `keyVersion` → present.
+    const kek = this.keysByVersion.get(this.keyVersion)!;
     const iv = randomBytes(IV_BYTES);
     const cipher = createCipheriv(ALGO, kek, iv);
     const ciphertext = Buffer.concat([

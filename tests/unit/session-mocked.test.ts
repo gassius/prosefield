@@ -213,4 +213,38 @@ describe("session helpers (mocked admin)", () => {
     await revokeUserSessions("uid-1");
     expect(revokeRefreshTokens).toHaveBeenCalledWith("uid-1");
   });
+
+  it("clears the session cookie and covers isSecureCookieRequest edge cases", async () => {
+    const {
+      clearSessionCookie,
+      setSessionCookie,
+      isSecureCookieRequest,
+      SESSION_COOKIE_NAME,
+    } = await import("@/features/auth/session");
+
+    await setSessionCookie("to-clear", new Request("https://app.example/"));
+    await clearSessionCookie(new Request("https://app.example/"));
+    expect(__getCookieRecord(SESSION_COOKIE_NAME)).toMatchObject({
+      value: "",
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      maxAge: 0,
+    });
+
+    await clearSessionCookie();
+    expect(__getCookieRecord(SESSION_COOKIE_NAME)?.maxAge).toBe(0);
+
+    // Malformed Request.url → fall through to APP_URL (localhost → insecure).
+    expect(
+      isSecureCookieRequest({
+        url: "not-a-url",
+        headers: { get: () => null },
+      } as unknown as Request),
+    ).toBe(false);
+
+    expect(isSecureCookieRequest(new Request("https://app.example/"))).toBe(
+      true,
+    );
+  });
 });

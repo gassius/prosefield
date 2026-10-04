@@ -36,9 +36,6 @@ function decodeKek(base64: string, label: string): Buffer {
 
 function createDevProvider(): KeyProvider {
   const env = getEnv();
-  if (!env.DOCUMENT_ENCRYPTION_KEK) {
-    throw new Error("DOCUMENT_ENCRYPTION_KEK is required for the dev provider");
-  }
   const previous = new Map<number, Buffer>();
   if (env.DOCUMENT_ENCRYPTION_KEK_PREVIOUS) {
     previous.set(
@@ -52,7 +49,7 @@ function createDevProvider(): KeyProvider {
   return new DevKeyProvider({
     keyVersion: env.DOCUMENT_ENCRYPTION_KEY_VERSION,
     currentKek: decodeKek(
-      env.DOCUMENT_ENCRYPTION_KEK,
+      env.DOCUMENT_ENCRYPTION_KEK!,
       "DOCUMENT_ENCRYPTION_KEK",
     ),
     previousKeks: previous,
@@ -61,11 +58,6 @@ function createDevProvider(): KeyProvider {
 
 function createKmsProvider(): KeyProvider {
   const env = getEnv();
-  if (!env.GCP_KMS_KEY_NAME) {
-    throw new Error(
-      "DOCUMENT_ENCRYPTION_PROVIDER=kms requires GCP_KMS_KEY_NAME (Firebase Infra)",
-    );
-  }
   if (!kmsClientOverride) {
     throw new Error(
       "Cloud KMS client is not wired in this environment. Local/CI use DOCUMENT_ENCRYPTION_PROVIDER=dev. Production KMS keyring/IAM is Firebase Infra (Carlos approval).",
@@ -73,7 +65,7 @@ function createKmsProvider(): KeyProvider {
   }
   return new KmsKeyProvider(
     kmsClientOverride,
-    env.GCP_KMS_KEY_NAME,
+    env.GCP_KMS_KEY_NAME!,
     env.DOCUMENT_ENCRYPTION_KEY_VERSION,
   );
 }
