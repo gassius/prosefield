@@ -920,3 +920,32 @@ describe("bash -n", () => {
     }
   });
 });
+
+describe("demo-gifs.sh billing + encode", () => {
+  const demoGifsSh = readFileSync(
+    path.join(root, "scripts/demo-gifs.sh"),
+    "utf8",
+  );
+
+  it("starts the loopback stripe-prices mock and sets demo GIF billing env", () => {
+    expect(demoGifsSh).toMatch(/PROSEFIELD_DEMO_GIFS=1/);
+    expect(demoGifsSh).toMatch(/stripe-prices-mock-server\.mjs/);
+    expect(demoGifsSh).toMatch(/STRIPE_API_HOST='127\.0\.0\.1'/);
+    expect(demoGifsSh).toMatch(/STRIPE_API_PORT='12111'/);
+    expect(demoGifsSh).toMatch(/STRIPE_API_PROTOCOL='http'/);
+    // Assembled fragments — no contiguous sk_test_/whsec_ token in source.
+    expect(demoGifsSh).not.toMatch(/sk_test_[A-Za-z0-9]+/);
+    expect(demoGifsSh).not.toMatch(/whsec_[A-Za-z0-9]+/);
+    expect(demoGifsSh).toMatch(/SK_PREFIX='sk_test'/);
+    expect(demoGifsSh).toMatch(/demogifsrecording01/);
+  });
+
+  it("encodes 800px-wide GIFs at real playback fps (no frame-duplication slowdown)", () => {
+    expect(demoGifsSh).toMatch(/scale=800:-1/);
+    expect(demoGifsSh).not.toMatch(/scale=540:-1/);
+    expect(demoGifsSh).toMatch(/fps=8/);
+    // Bite: setpts / minterpolate / frame-duplication tricks must stay out.
+    expect(demoGifsSh).not.toMatch(/setpts/);
+    expect(demoGifsSh).not.toMatch(/minterpolate/);
+  });
+});
