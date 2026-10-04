@@ -146,12 +146,14 @@ describe("AuthForm", () => {
 
     render(createElement(AuthForm, { mode: "register", nextPath: "/subscribe" }));
     await user.type(screen.getByLabelText(siteCopy.auth.emailLabel), "weak@example.com");
-    await user.type(screen.getByLabelText(siteCopy.auth.passwordLabel), "12345678");
+    const passwordInput = screen.getByLabelText(siteCopy.auth.passwordLabel);
+    await user.type(passwordInput, "12345678");
     await user.click(
       screen.getByRole("button", { name: siteCopy.auth.registerSubmit }),
     );
 
-    expect(await screen.findByText(siteCopy.auth.passwordHint)).toBeInTheDocument();
+    expect(passwordInput).toHaveAttribute("aria-invalid", "true");
+    expect(passwordInput.getAttribute("aria-describedby")).toMatch(/-error$/);
     expect(signIn).not.toHaveBeenCalled();
   });
 
@@ -168,7 +170,8 @@ describe("AuthForm", () => {
       screen.getByRole("button", { name: siteCopy.auth.registerSubmit }),
     );
 
-    expect(await screen.findByText(siteCopy.auth.passwordHint)).toBeInTheDocument();
+    expect(passwordInput).toHaveAttribute("aria-invalid", "true");
+    expect(passwordInput.getAttribute("aria-describedby")).toMatch(/-error$/);
     expect(registerAction).not.toHaveBeenCalled();
     expect(signIn).not.toHaveBeenCalled();
   });
@@ -178,12 +181,14 @@ describe("AuthForm", () => {
     render(createElement(AuthForm, { mode: "register", nextPath: "/subscribe" }));
 
     await user.type(screen.getByLabelText(siteCopy.auth.emailLabel), "six@example.com");
-    await user.type(screen.getByLabelText(siteCopy.auth.passwordLabel), "123456");
+    const passwordInput = screen.getByLabelText(siteCopy.auth.passwordLabel);
+    await user.type(passwordInput, "123456");
     await user.click(
       screen.getByRole("button", { name: siteCopy.auth.registerSubmit }),
     );
 
-    expect(await screen.findByText(siteCopy.auth.passwordHint)).toBeInTheDocument();
+    expect(passwordInput).toHaveAttribute("aria-invalid", "true");
+    expect(passwordInput.getAttribute("aria-describedby")).toMatch(/-error$/);
     expect(registerAction).not.toHaveBeenCalled();
     expect(signIn).not.toHaveBeenCalled();
   });
@@ -193,5 +198,26 @@ describe("AuthForm", () => {
     expect(screen.getByLabelText(siteCopy.auth.passwordLabel)).not.toHaveAttribute(
       "minLength",
     );
+  });
+
+  it("allows login with a short password without password field error", async () => {
+    const user = userEvent.setup();
+    getIdToken.mockResolvedValue("id-token");
+    signIn.mockResolvedValue({
+      user: { getIdToken },
+    });
+    signOut.mockResolvedValue(undefined);
+
+    render(createElement(AuthForm, { mode: "login", nextPath: "/subscribe" }));
+
+    await user.type(screen.getByLabelText(siteCopy.auth.emailLabel), "short@example.com");
+    const passwordInput = screen.getByLabelText(siteCopy.auth.passwordLabel);
+    await user.type(passwordInput, "123456");
+    await user.click(screen.getByRole("button", { name: siteCopy.auth.loginSubmit }));
+
+    expect(signIn).toHaveBeenCalled();
+    expect(registerAction).not.toHaveBeenCalled();
+    expect(passwordInput).not.toHaveAttribute("aria-invalid");
+    expect(passwordInput.getAttribute("aria-describedby")).not.toMatch(/-error$/);
   });
 });
