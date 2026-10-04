@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "@/lib/zod";
 import { siteCopy } from "@/content/site";
 import { registerPasswordSchema } from "@/features/auth/password";
 

@@ -28,12 +28,18 @@ async function installCspViolationCapture(page: Page): Promise<string[]> {
   });
   await page.addInitScript(() => {
     document.addEventListener("securitypolicyviolation", (event) => {
+      const detail = [
+        event.violatedDirective,
+        event.blockedURI,
+        event.sourceFile || "",
+        String(event.lineNumber || ""),
+      ].join(":");
       (
         window as unknown as { __cspViolations?: string[] }
       ).__cspViolations = [
         ...((window as unknown as { __cspViolations?: string[] })
           .__cspViolations ?? []),
-        `${event.violatedDirective}:${event.blockedURI}`,
+        detail,
       ];
     });
   });
@@ -81,13 +87,16 @@ async function assertCspClean(
     expect(nonce).toBe(headerNonce);
   }
 
-  const pageViolations = await page.evaluate(
-    () =>
+  // Only count violations from this navigation (clear after reading).
+  const pageViolations = await page.evaluate(() => {
+    const list =
       (window as unknown as { __cspViolations?: string[] }).__cspViolations ??
-      [],
-  );
+      [];
+    (window as unknown as { __cspViolations?: string[] }).__cspViolations = [];
+    return list;
+  });
   expect(pageViolations).toEqual([]);
-  expect(consoleViolations).toEqual([]);
+  expect(consoleViolations.splice(0)).toEqual([]);
   return headerNonce;
 }
 

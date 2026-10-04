@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { ZodError } from "zod";
+import { ZodError } from "@/lib/zod";
 import {
   requireActiveSubscription,
   requireSession,
