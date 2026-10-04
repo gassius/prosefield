@@ -47,14 +47,18 @@ docker run --rm --network host \
 encode_gif() {
   local src="$1"
   local dest="$2"
-  local palette
+  local palette trimmed
   palette="$(mktemp /tmp/prosefield-palette-XXXXXX.png)"
+  trimmed="$(mktemp /tmp/prosefield-trim-XXXXXX.webm)"
+  # Drop the blank first frames Playwright often records before paint.
+  ffmpeg -y -ss 0.45 -i "$src" -c:v libvpx -crf 12 -b:v 1M -an "$trimmed" </dev/null
   # Small, fast-loading GIFs for README (540px wide, 8 fps).
-  ffmpeg -y -i "$src" -vf "fps=8,scale=540:-1:flags=lanczos,palettegen=stats_mode=diff" -update 1 "$palette" </dev/null
-  ffmpeg -y -i "$src" -i "$palette" -lavfi "fps=8,scale=540:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5" -loop 0 "$dest" </dev/null
-  rm -f "$palette"
+  ffmpeg -y -i "$trimmed" -vf "fps=8,scale=540:-1:flags=lanczos,palettegen=stats_mode=diff" -update 1 "$palette" </dev/null
+  ffmpeg -y -i "$trimmed" -i "$palette" -lavfi "fps=8,scale=540:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5" -loop 0 "$dest" </dev/null
+  rm -f "$palette" "$trimmed"
   echo "wrote $dest ($(wc -c <"$dest") bytes)"
 }
+
 
 map_clip() {
   local name="$1"

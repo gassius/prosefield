@@ -35,8 +35,15 @@ if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]] \
   exit 1
 fi
 
+# WSL2: repo on /mnt/c (or other Windows drives) is slow and breaks file watching.
+if [[ "$ROOT" == /mnt/* ]]; then
+  fail "Repo path on /mnt/…" \
+    "Clone into the Linux filesystem (e.g. ~/prosefield), not /mnt/c/…. See https://learn.microsoft.com/en-us/windows/wsl/filesystems"
+fi
+
 required_node="$(tr -d '[:space:]' <"$ROOT/.nvmrc")"
 required_node="${required_node#v}"
+
 
 # --- git ---
 if command -v git >/dev/null 2>&1; then
@@ -72,15 +79,16 @@ fi
 # --- Docker daemon ---
 if ! command -v docker >/dev/null 2>&1; then
   fail "Docker" \
-    "Install Docker Desktop (or Docker Engine) and start it: https://docs.docker.com/get-docker/"
+    "Install Docker Desktop (WSL2 backend) or Docker Engine inside WSL2, then start it: https://docs.docker.com/get-docker/"
 else
   if docker info >/dev/null 2>&1; then
     pass "Docker (daemon running)"
   else
     fail "Docker daemon" \
-      "Start Docker Desktop (or the Docker daemon), then retry: https://docs.docker.com/get-docker/"
+      "Start Docker Desktop (WSL2 backend) or the Docker Engine daemon in WSL2: https://docs.docker.com/engine/install/"
   fi
 fi
+
 
 # --- Docker Compose v2 (`docker compose`) ---
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then

@@ -4,7 +4,7 @@ Answers to the three take-home questions. Edit freely before submission.
 
 ## 1. How does your app determine whether a user is an active subscriber?
 
-Entitlement is **server-side only**. After Firebase Auth establishes a session cookie (`__session`), document and workspace guards load the user’s subscription **projection** from Firestore (`subscriptions/{uid}`) and treat the user as entitled only when `status` is `active` (or the equivalent allowed statuses the projection maps from Stripe).
+Entitlement is **server-side only**. After Firebase Auth establishes a session cookie (`__session`), document and workspace guards load the user’s subscription **projection** from Firestore (`subscriptions/{uid}`) and treat the user as entitled only when `status` is `active` (`isEntitledStatus` / `ENTITLED_SUBSCRIPTION_STATUS` — no other Stripe statuses grant access).
 
 That projection is written by:
 

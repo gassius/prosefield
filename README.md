@@ -4,7 +4,7 @@ A local-first writing workspace: register, subscribe, and keep pages with less f
 
 ## Demo
 
-Regenerate with `pnpm demo:gifs` (Docker + ffmpeg).
+Regenerate with `pnpm demo:gifs` while the app and emulators are already running (Docker + ffmpeg; prefer a production `pnpm build && pnpm start` so the Next.js dev indicator is absent).
 
 ![Landing](docs/demo/01-landing.gif)
 
@@ -14,7 +14,9 @@ Regenerate with `pnpm demo:gifs` (Docker + ffmpeg).
 
 ## Quick start
 
-Works on **macOS**, **Linux**, and **Windows via WSL2** (Ubuntu) with [Docker Desktop’s WSL2 backend](https://docs.docker.com/desktop/features/wsl/). On Windows, follow Microsoft’s [WSL install guide](https://learn.microsoft.com/en-us/windows/wsl/install) and run every command **inside WSL2** — not PowerShell or Git Bash.
+Works on **macOS**, **Linux**, and **Windows via WSL2** (Ubuntu) with [Docker Desktop’s WSL2 backend](https://docs.docker.com/desktop/features/wsl/) **or** [Docker Engine inside WSL2](https://docs.docker.com/engine/install/). On Windows, follow Microsoft’s [WSL install guide](https://learn.microsoft.com/en-us/windows/wsl/install) and run every command **inside WSL2** — not PowerShell or Git Bash. Clone into the Linux filesystem (for example `~/prosefield`), **not** `/mnt/c/…`.
+
+The under-15-minute path assumes **Docker, Node (via nvm), and git are already installed**. Installing WSL2 or Docker Desktop for the first time is separate (large downloads / reboot) and is not counted in that budget. CI’s fresh-start job times a cold pnpm store (no cache) plus image build on a runner that already has Docker and Node.
 
 1. **Clone**
 
@@ -22,6 +24,8 @@ Works on **macOS**, **Linux**, and **Windows via WSL2** (Ubuntu) with [Docker De
    git clone https://github.com/gassius/prosefield.git
    cd prosefield
    ```
+
+   On WSL2: `git clone … ~/prosefield && cd ~/prosefield`.
 
 2. **Check** your machine (prints pass/fail; stops with install links if something is missing)
 
@@ -36,6 +40,8 @@ Works on **macOS**, **Linux**, and **Windows via WSL2** (Ubuntu) with [Docker De
    ```
 
 Open http://localhost:3000. Stop with `bash scripts/stop.sh`.
+
+After sign-up, `/subscribe` shows **Billing is not configured** when using default `.env.example` placeholders (no real Stripe keys). Use **Try the editor** for a trial draft, or follow [Manual Stripe test payment (4242)](#manual-stripe-test-payment-4242) for a real test-card unlock. Playwright and the demo GIFs **mock** payment by seeding emulator entitlement — never commit real keys.
 
 ## Let your agent set up and run this project
 
@@ -61,7 +67,7 @@ If you prefer not to use `scripts/start.sh`, you need:
 
 Nothing else is needed on the host. Emulators run only inside Docker (no global `firebase-tools`).
 
-Windows: use **WSL2 only** ([install guide](https://learn.microsoft.com/en-us/windows/wsl/install)). `scripts/check.sh` refuses native Windows shells (Git Bash/MSYS) and points you at WSL2.
+Windows: use **WSL2 only** ([install guide](https://learn.microsoft.com/en-us/windows/wsl/install)). Clone under `~/…`, not `/mnt/c/…`. Docker Desktop’s WSL2 backend or Docker Engine inside WSL2 both work. `scripts/check.sh` refuses native Windows shells (Git Bash/MSYS) and fails if the repo path is on `/mnt/…`.
 
 ## Manual start (optional)
 
@@ -167,9 +173,14 @@ See also Architecture §16.
 
 ## AI usage and manual verification
 
-Agents and AI assistants helped scaffold tests, docs, and repetitive wiring. Every acceptance path was checked against Architecture v1.0 and Art Direction v1.1, with CI (unit, coverage, Playwright + axe, visual) and manual passes for landing, auth, mocked pay, and document CRUD. Contiguous fake Stripe secrets are never committed; gitleaks stays green; the nonce CSP remains strict.
+Agents and AI assistants helped scaffold tests, docs, and repetitive wiring. Generated output was reviewed against Architecture v1.0 and Art Direction v1.1. CI covers unit, coverage, Playwright + axe, and visual regression. Contiguous fake Stripe secrets are never committed; gitleaks and the nonce CSP stay strict.
 
-**Manual checks before calling ship done:** Quick Start on a clean machine (&lt; 15 min), register → try editor → mocked or 4242 pay → create/edit/save/rename/delete, sign out/in persistence, and a delayed-webhook glance via session-sync if using real Stripe CLI.
+**Carlos — confirm before ship** (checklist; do not treat as already done):
+
+- [ ] Quick Start on a machine that already has Docker / nvm Node / git (&lt; 15 min cold install)
+- [ ] Register → try editor → mocked or 4242 pay → create / edit / save / rename / delete
+- [ ] Sign out / in persistence
+- [ ] Delayed-webhook glance via session-sync when using real Stripe CLI
 
 ## Credits
 
@@ -183,10 +194,10 @@ Time log template (Carlos fills hours): [`docs/time-log.md`](docs/time-log.md).
 
 | Command | Purpose |
 |---|---|
-| `bash scripts/check.sh` | Requirements check (no installs) |
-| `bash scripts/start.sh` | Check + install + backend + host `pnpm dev` |
-| `bash scripts/stop.sh` | Stop host frontend + `docker compose down` |
-| `pnpm demo:gifs` | Regenerate README demo GIFs (Docker) |
+| `bash scripts/check.sh` / `pnpm check` | Requirements check (no installs) |
+| `bash scripts/start.sh` / `pnpm start:local` | Check + install + backend + host `pnpm dev` |
+| `bash scripts/stop.sh` / `pnpm stop:local` | Stop host frontend process group + `docker compose down` |
+| `pnpm demo:gifs` | Regenerate README demo GIFs (app + emulators must already be up; Docker + ffmpeg) |
 | `pnpm dev` | Next.js frontend on the host |
 | `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm build` | Static checks |
 | `pnpm test:component` | React Testing Library component suite (jsdom) |

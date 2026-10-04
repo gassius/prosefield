@@ -34,11 +34,20 @@ fi
 export PROSEFIELD_CHECK_FOR_START=1
 bash "$ROOT/scripts/check.sh"
 
-# Enable pnpm via Corepack when needed (user-local; not a system package manager install).
+# Enable pnpm via Corepack only when we can write shims next to Node (nvm-local).
+# Never run `corepack enable` against an unwritable system Node prefix.
 if ! command -v pnpm >/dev/null 2>&1; then
   if command -v corepack >/dev/null 2>&1; then
-    corepack enable >/dev/null
-    corepack prepare pnpm@10.32.1 --activate >/dev/null
+    node_bin="$(command -v node)"
+    node_dir="$(dirname "$node_bin")"
+    if [[ -w "$node_dir" ]]; then
+      corepack enable >/dev/null
+      corepack prepare pnpm@10.32.1 --activate >/dev/null
+    else
+      echo "pnpm is missing and Corepack cannot write shims in ${node_dir} (not writable)." >&2
+      echo "Install Node via nvm, then retry — or install pnpm yourself without system-wide changes." >&2
+      exit 1
+    fi
   else
     echo "pnpm is not available and Corepack is missing. Fix with scripts/check.sh." >&2
     exit 1
@@ -59,18 +68,27 @@ frontend_healthy() {
   curl -fsS "${APP_URL%/}/api/health" >/dev/null 2>&1
 }
 
+# True when pid file points at a live process that looks like our session leader.
 dev_pid_running() {
-  [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null
+  [[ -f "$PID_FILE" ]] || return 1
+  local pid
+  pid="$(tr -d '[:space:]' <"$PID_FILE")"
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  local args
+  args="$(ps -o args= -p "$pid" 2>/dev/null || true)"
+  printf '%s' "$args" | grep -Eqi '(pnpm|next)'
 }
 
 if frontend_healthy; then
   echo "Frontend already responding at ${APP_URL}"
 elif dev_pid_running; then
-  echo "Waiting for existing frontend (pid $(cat "$PID_FILE"))…"
+  echo "Waiting for existing frontend (pid $(tr -d '[:space:]' <"$PID_FILE"))…"
   bash "$ROOT/scripts/wait-for-url.sh" "$APP_URL" 90
 else
-  # Host frontend (default path). Compose `app` profile is optional and not used here.
-  nohup pnpm dev --hostname 127.0.0.1 --port 3000 >"$LOG_FILE" 2>&1 &
+  # Own process group so stop.sh can TERM/KILL the whole tree (pnpm + next).
+  # setsid makes $! the session/process-group leader.
+  setsid nohup pnpm dev --hostname 127.0.0.1 --port 3000 >"$LOG_FILE" 2>&1 </dev/null &
   echo $! >"$PID_FILE"
   bash "$ROOT/scripts/wait-for-url.sh" "$APP_URL" 90
 fi
@@ -84,6 +102,8 @@ Prosefield is running.
 Stop with:  bash scripts/stop.sh
 Logs:       ${LOG_FILE}
 
-Sign up at ${APP_URL}/register. Stripe Checkout is mocked in automated tests;
-for a real test-card payment see README → Manual Stripe test payment (4242).
+Sign up at ${APP_URL}/register. With default .env placeholders, /subscribe shows
+"Billing is not configured" (no real Stripe keys). Use Try the editor for a trial
+draft, or see README → Manual Stripe test payment (4242). Tests/demos mock pay
+via the emulator — never commit real keys.
 EOF

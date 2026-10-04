@@ -47,10 +47,17 @@ describe("README technical sections (P5a / P5b)", () => {
     expect(quick).not.toMatch(/\.nvmrc/);
     expect(quick).toMatch(/WSL2/);
     expect(quick).toMatch(/learn\.microsoft\.com\/en-us\/windows\/wsl\/install/);
+    expect(quick).toMatch(/already installed/i);
+    expect(quick).toMatch(/Billing is not configured/);
+    expect(quick).toMatch(/~\//);
 
     expect(text).toMatch(/docs\/demo\/01-landing\.gif/);
     expect(text).toMatch(/AGENT_SETUP\.md/);
+    expect(text).toMatch(/pnpm check/);
+    expect(text).toMatch(/pnpm start:local/);
+    expect(text).toMatch(/pnpm stop:local/);
   });
+
 
   it("manual start (below the fold) still documents nvm, host pnpm dev, and Compose backend", () => {
     const text = readme();
@@ -111,14 +118,17 @@ describe("README technical sections (P5a / P5b)", () => {
     expect(section).toMatch(/FEATURE_CUSTOMER_PORTAL/);
   });
 
-  it("includes tradeoffs, AI usage, and credits sections", () => {
+  it("includes tradeoffs, AI usage checklist for Carlos, and credits", () => {
     const text = readme();
     expect(text).toMatch(/## Tradeoffs and “With another day”/);
     expect(text).toMatch(/## AI usage and manual verification/);
+    expect(text).toMatch(/Carlos — confirm before ship/);
+    expect(text).toMatch(/do not treat as already done/);
     expect(text).toMatch(/## Credits/);
     expect(text).toMatch(/docs\/time-log\.md/);
     expect(text).toMatch(/docs\/write-up\.md/);
   });
+
 
   it("Stripe 4242 section uses Compose app+stripe profiles without host pnpm dev", () => {
     const text = readme();
