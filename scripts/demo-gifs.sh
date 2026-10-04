@@ -49,9 +49,9 @@ encode_gif() {
   local dest="$2"
   local palette
   palette="$(mktemp /tmp/prosefield-palette-XXXXXX.png)"
-  # Small, fast-loading GIFs for README.
-  ffmpeg -y -i "$src" -vf "fps=10,scale=720:-1:flags=lanczos,palettegen=stats_mode=diff" "$palette" </dev/null
-  ffmpeg -y -i "$src" -i "$palette" -lavfi "fps=10,scale=720:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5" -loop 0 "$dest" </dev/null
+  # Small, fast-loading GIFs for README (540px wide, 8 fps).
+  ffmpeg -y -i "$src" -vf "fps=8,scale=540:-1:flags=lanczos,palettegen=stats_mode=diff" -update 1 "$palette" </dev/null
+  ffmpeg -y -i "$src" -i "$palette" -lavfi "fps=8,scale=540:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5" -loop 0 "$dest" </dev/null
   rm -f "$palette"
   echo "wrote $dest ($(wc -c <"$dest") bytes)"
 }
