@@ -31,7 +31,13 @@ describe("AccountMenu", () => {
 
   it("opens with Space and signs out from the menuitem", async () => {
     const user = userEvent.setup();
-    render(createElement(AccountMenu, { label: "writer@example.com" }));
+    render(
+      createElement(
+        "header",
+        null,
+        createElement(AccountMenu, { label: "writer@example.com" }),
+      ),
+    );
 
     const trigger = screen.getByRole("button", {
       name: siteCopy.header.accountMenu,
@@ -39,6 +45,8 @@ describe("AccountMenu", () => {
     trigger.focus();
     await user.keyboard(" ");
     expect(trigger).toHaveAttribute("aria-expanded", "true");
+    // Non-modal menu must not aria-hide the header (axe aria-hidden-focus).
+    expect(trigger.closest("header")).not.toHaveAttribute("aria-hidden", "true");
     await user.click(
       screen.getByRole("menuitem", { name: siteCopy.header.signOut }),
     );

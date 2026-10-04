@@ -22,7 +22,8 @@ export function AccountMenu({ label, className }: AccountMenuProps) {
 
   return (
     <span className={cn("inline-flex flex-col items-end gap-1", className)}>
-      <DropdownMenu>
+      {/* modal=false: avoid aria-hidden on the header while the trigger stays focusable (axe aria-hidden-focus). */}
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger
           className={cn(
             buttonVariants({ variant: "ghost", size: "sm" }),
