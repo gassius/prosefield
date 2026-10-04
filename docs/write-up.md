@@ -23,4 +23,4 @@ So access unlocks when Stripe confirms the session, even if the webhook is late 
 
 Why: a single authorisation and crypto boundary is testable, keeps ciphertext worthless if the database is copied across users, and matches the assignment’s demand for server-validated sessions and server-side subscription gating. Trade-off: no offline or real-time client sync — accepted for this scope.
 
-This was implemented after the original agentic implementation that stored documents unencrypted in Firestore. It was implemented with PR [#28](https://github.com/gassius/prosefield/pull/28).
+Added in PR [#28](https://github.com/gassius/prosefield/pull/28); the first implementation stored documents unencrypted in Firestore.

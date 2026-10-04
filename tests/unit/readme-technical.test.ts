@@ -26,18 +26,20 @@ function pnpmScriptNames(text: string): string[] {
 }
 
 describe("README technical sections (P5a / P5b)", () => {
-  it("opens with pitch, demo GIFs, three-step Quick Start, then agent setup", () => {
+  it("opens with pitch, agent setup, three-step Quick Start, then demo GIFs", () => {
     const text = readme();
-    const pitchIdx = text.indexOf("local-first writing workspace");
-    const demoIdx = text.indexOf("## Demo");
+    const pitchIdx = text.indexOf("A writing workspace");
+    const agentIdx = text.indexOf(
+      "## Let your agent set up and run this project (locally)",
+    );
     const quickIdx = text.indexOf("## Quick start");
-    const agentIdx = text.indexOf("## Let your agent set up and run this project");
+    const demoIdx = text.indexOf("## Demo");
     expect(pitchIdx).toBeGreaterThan(-1);
-    expect(demoIdx).toBeGreaterThan(pitchIdx);
-    expect(quickIdx).toBeGreaterThan(demoIdx);
-    expect(agentIdx).toBeGreaterThan(quickIdx);
+    expect(agentIdx).toBeGreaterThan(pitchIdx);
+    expect(quickIdx).toBeGreaterThan(agentIdx);
+    expect(demoIdx).toBeGreaterThan(quickIdx);
 
-    const quickEnd = text.indexOf("## Let your agent");
+    const quickEnd = text.indexOf("## Demo");
     const quick = text.slice(quickIdx, quickEnd);
     expect(quick).toMatch(/bash scripts\/check\.sh/);
     expect(quick).toMatch(/bash scripts\/start\.sh/);
@@ -125,7 +127,8 @@ describe("README technical sections (P5a / P5b)", () => {
     expect(text).toMatch(/Carlos — confirm before ship/);
     expect(text).toMatch(/do not treat as already done/);
     expect(text).toMatch(/## Credits/);
-    expect(text).toMatch(/docs\/time-log\.md/);
+    expect(text).not.toMatch(/docs\/time-log\.md/);
+    expect(text).not.toMatch(/docs\/screenshots\//);
     expect(text).toMatch(/docs\/write-up\.md/);
   });
 
