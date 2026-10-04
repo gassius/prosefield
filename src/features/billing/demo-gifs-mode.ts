@@ -3,13 +3,11 @@ import "server-only";
 /**
  * Demo GIF recording helpers.
  *
- * When `PROSEFIELD_DEMO_GIFS=1`, apply non-placeholder Stripe fixtures and
- * point the SDK at the loopback prices mock (same shape as CI visual E2E).
- * Never touches real Stripe keys or accounts.
- *
- * Inert when `VERCEL_ENV=production` — a mistaken flag on a real deploy must
- * not rewrite billing credentials. Does not alter `isBillingConfigured`; after
- * fixtures apply, that helper returns true via normal non-placeholder checks.
+ * `PROSEFIELD_DEMO_GIFS=1` applies non-placeholder Stripe fixtures and points
+ * the SDK at the loopback prices mock — only on a strict local allow-list.
+ * Anywhere else (Vercel, self-hosted production, non-loopback hosts) the flag
+ * throws so startup exits non-zero. Never redirects real Stripe keys to
+ * loopback. Does not alter `isBillingConfigured` itself.
  */
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
@@ -31,6 +29,13 @@ export const DEMO_GIFS_STRIPE_PRICE_ID = [
 
 const PLACEHOLDER_MARKERS = ["replaceme"] as const;
 
+export class DemoGifsBillingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DemoGifsBillingError";
+  }
+}
+
 function isBlank(value: string | undefined): boolean {
   return value === undefined || value.trim() === "";
 }
@@ -43,23 +48,92 @@ function looksPlaceholder(value: string | undefined): boolean {
   return PLACEHOLDER_MARKERS.some((marker) => trimmed.includes(marker));
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  return LOOPBACK_HOSTS.has(hostname);
+}
+
+/** `host:port` or bare host — host part must be loopback. */
+function emulatorHostIsLoopback(value: string | undefined): boolean {
+  if (isBlank(value)) {
+    return false;
+  }
+  const raw = value!.trim();
+  let host = raw;
+  if (raw.startsWith("[")) {
+    const end = raw.indexOf("]");
+    host = end >= 0 ? raw.slice(1, end) : raw;
+  } else {
+    // IPv4 / hostname: take segment before first colon (port).
+    const colon = raw.indexOf(":");
+    host = colon >= 0 ? raw.slice(0, colon) : raw;
+  }
+  return isLoopbackHostname(host);
+}
+
+function appUrlIsLoopback(appUrl: string | undefined): boolean {
+  if (isBlank(appUrl)) {
+    return false;
+  }
+  try {
+    return isLoopbackHostname(new URL(appUrl!.trim()).hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
- * True only for local/CI demo GIF recording. Always false on Vercel production.
+ * Strict local allow-list for demo GIF billing fixtures.
+ * All must hold: no Vercel, emulator-capable env, loopback emulators + APP_URL.
+ */
+export function isDemoGifsLocalAllowList(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): boolean {
+  // Any non-blank VERCEL means we are on the Vercel platform (preview/prod/dev).
+  if (!isBlank(env.VERCEL)) {
+    return false;
+  }
+  const emulatorCapable =
+    env.ALLOW_EMULATORS === "1" || env.NODE_ENV !== "production";
+  if (!emulatorCapable) {
+    return false;
+  }
+  if (!emulatorHostIsLoopback(env.FIREBASE_AUTH_EMULATOR_HOST)) {
+    return false;
+  }
+  if (!emulatorHostIsLoopback(env.FIRESTORE_EMULATOR_HOST)) {
+    return false;
+  }
+  if (!appUrlIsLoopback(env.APP_URL)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * True only when the flag is set and the local allow-list holds.
+ * If the flag is set outside that allow-list, throws (fail closed / loud).
+ * Flag unset → false (no throw).
  */
 export function isDemoGifsBillingMode(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ): boolean {
-  if (env.VERCEL_ENV === "production") {
+  if (env.PROSEFIELD_DEMO_GIFS !== "1") {
     return false;
   }
-  return env.PROSEFIELD_DEMO_GIFS === "1";
+  if (!isDemoGifsLocalAllowList(env)) {
+    throw new DemoGifsBillingError(
+      "PROSEFIELD_DEMO_GIFS=1 is only allowed for local emulator demo GIF recording (VERCEL unset, ALLOW_EMULATORS=1 or non-production NODE_ENV, loopback APP_URL and emulator hosts). Refusing to start.",
+    );
+  }
+  return true;
 }
 
 /**
  * Apply demo Stripe fixtures + loopback API host when demo GIF mode is on.
- * No-op (and returns false) when the switch is off or inert in production.
- * Overwrites blank/placeholder Stripe keys only — never clobbers real-looking
- * non-placeholder values already set by the operator.
+ * - Flag off → no-op (false).
+ * - Flag on outside allow-list → throws.
+ * - Non-placeholder Stripe credentials present → throws (never redirect real keys).
+ * - Blank/placeholder Stripe vars on the allow-list → filled with demo fixtures.
  */
 export function applyDemoGifsBillingEnv(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
@@ -68,26 +142,23 @@ export function applyDemoGifsBillingEnv(
     return false;
   }
 
-  if (looksPlaceholder(env.STRIPE_SECRET_KEY)) {
-    env.STRIPE_SECRET_KEY = DEMO_GIFS_STRIPE_SECRET_KEY;
-  }
-  if (looksPlaceholder(env.STRIPE_WEBHOOK_SECRET)) {
-    env.STRIPE_WEBHOOK_SECRET = DEMO_GIFS_STRIPE_WEBHOOK_SECRET;
-  }
-  if (looksPlaceholder(env.STRIPE_PRICE_ID)) {
-    env.STRIPE_PRICE_ID = DEMO_GIFS_STRIPE_PRICE_ID;
+  const stripeValues = [
+    env.STRIPE_SECRET_KEY,
+    env.STRIPE_WEBHOOK_SECRET,
+    env.STRIPE_PRICE_ID,
+  ];
+  if (stripeValues.some((value) => !looksPlaceholder(value))) {
+    throw new DemoGifsBillingError(
+      "PROSEFIELD_DEMO_GIFS=1 refuses to point non-placeholder Stripe credentials at the loopback mock. Unset real Stripe keys (use placeholders) or unset PROSEFIELD_DEMO_GIFS.",
+    );
   }
 
-  const host = env.STRIPE_API_HOST?.trim();
-  if (!host || !LOOPBACK_HOSTS.has(host)) {
-    env.STRIPE_API_HOST = "127.0.0.1";
-  }
-  if (isBlank(env.STRIPE_API_PORT)) {
-    env.STRIPE_API_PORT = "12111";
-  }
-  if (isBlank(env.STRIPE_API_PROTOCOL)) {
-    env.STRIPE_API_PROTOCOL = "http";
-  }
+  env.STRIPE_SECRET_KEY = DEMO_GIFS_STRIPE_SECRET_KEY;
+  env.STRIPE_WEBHOOK_SECRET = DEMO_GIFS_STRIPE_WEBHOOK_SECRET;
+  env.STRIPE_PRICE_ID = DEMO_GIFS_STRIPE_PRICE_ID;
+  env.STRIPE_API_HOST = "127.0.0.1";
+  env.STRIPE_API_PORT = "12111";
+  env.STRIPE_API_PROTOCOL = "http";
 
   return true;
 }

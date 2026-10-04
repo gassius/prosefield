@@ -926,26 +926,44 @@ describe("demo-gifs.sh billing + encode", () => {
     path.join(root, "scripts/demo-gifs.sh"),
     "utf8",
   );
+  const demoGifsCode = codeWithoutComments(demoGifsSh);
 
-  it("starts the loopback stripe-prices mock and sets demo GIF billing env", () => {
-    expect(demoGifsSh).toMatch(/PROSEFIELD_DEMO_GIFS=1/);
-    expect(demoGifsSh).toMatch(/stripe-prices-mock-server\.mjs/);
-    expect(demoGifsSh).toMatch(/STRIPE_API_HOST='127\.0\.0\.1'/);
-    expect(demoGifsSh).toMatch(/STRIPE_API_PORT='12111'/);
-    expect(demoGifsSh).toMatch(/STRIPE_API_PROTOCOL='http'/);
+  it("exports PROSEFIELD_DEMO_GIFS and starts the loopback stripe-prices mock", () => {
+    // Bite M14: must match the real export line, not a header comment.
+    expect(demoGifsCode).toMatch(/^\s*export PROSEFIELD_DEMO_GIFS=1\s*$/m);
+    expect(demoGifsCode).toMatch(/stripe-prices-mock-server\.mjs/);
+    expect(demoGifsCode).toMatch(/STRIPE_API_HOST='127\.0\.0\.1'/);
+    expect(demoGifsCode).toMatch(/STRIPE_API_PORT='12111'/);
+    expect(demoGifsCode).toMatch(/STRIPE_API_PROTOCOL='http'/);
     // Assembled fragments — no contiguous sk_test_/whsec_ token in source.
-    expect(demoGifsSh).not.toMatch(/sk_test_[A-Za-z0-9]+/);
-    expect(demoGifsSh).not.toMatch(/whsec_[A-Za-z0-9]+/);
-    expect(demoGifsSh).toMatch(/SK_PREFIX='sk_test'/);
-    expect(demoGifsSh).toMatch(/demogifsrecording01/);
+    expect(demoGifsCode).not.toMatch(/sk_test_[A-Za-z0-9]+/);
+    expect(demoGifsCode).not.toMatch(/whsec_[A-Za-z0-9]+/);
+    expect(demoGifsCode).toMatch(/SK_PREFIX='sk_test'/);
+    expect(demoGifsCode).toMatch(/demogifsrecording01/);
+    // Fail fast when Next was not started with the demo flag.
+    expect(demoGifsCode).toMatch(/demoGifsBilling/);
+  });
+
+  it("tracks mock PID via mktemp and verifies cmdline before kill", () => {
+    expect(demoGifsCode).toMatch(/mktemp/);
+    expect(demoGifsCode).not.toMatch(
+      /PROSEFIELD_DEMO_STRIPE_MOCK_PID|\/tmp\/prosefield-demo-stripe-mock\.pid/,
+    );
+    expect(demoGifsCode).toMatch(/MOCK_PID=/);
+    expect(demoGifsCode).toMatch(/ps -o args=/);
+    expect(demoGifsCode).toMatch(/stripe-prices-mock-server\.mjs/);
+    // Kill only after cmdline ownership check.
+    expect(demoGifsCode.indexOf("ps -o args=")).toBeLessThan(
+      demoGifsCode.indexOf('kill "${MOCK_PID}"'),
+    );
   });
 
   it("encodes 800px-wide GIFs at real playback fps (no frame-duplication slowdown)", () => {
-    expect(demoGifsSh).toMatch(/scale=800:-1/);
-    expect(demoGifsSh).not.toMatch(/scale=540:-1/);
-    expect(demoGifsSh).toMatch(/fps=8/);
+    expect(demoGifsCode).toMatch(/scale=800:-1/);
+    expect(demoGifsCode).not.toMatch(/scale=540:-1/);
+    expect(demoGifsCode).toMatch(/fps=8/);
     // Bite: setpts / minterpolate / frame-duplication tricks must stay out.
-    expect(demoGifsSh).not.toMatch(/setpts/);
-    expect(demoGifsSh).not.toMatch(/minterpolate/);
+    expect(demoGifsCode).not.toMatch(/setpts/);
+    expect(demoGifsCode).not.toMatch(/minterpolate/);
   });
 });

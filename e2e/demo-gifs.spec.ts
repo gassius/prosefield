@@ -57,8 +57,7 @@ test.use({
   },
   viewport: { width: 1280, height: 720 },
   reducedMotion: "reduce",
-  // A little slower so viewers can follow key screens (GIF encodes at real fps).
-  launchOptions: { slowMo: 120 },
+  // slowMo lives on the playwright.config demo-gifs project only (no duplicate).
 });
 
 test("01-landing", async ({ page }) => {

@@ -10,24 +10,25 @@ export async function register() {
       });
     // Mutate process.env so Admin SDK + client public config see emulator hosts.
     applyLocalDevDefaultsToProcessEnv();
-    // Demo GIF recording: optional non-placeholder Stripe fixtures + loopback
-    // mock host. No-op unless PROSEFIELD_DEMO_GIFS=1; inert on Vercel production.
-    const { applyDemoGifsBillingEnv } = await import(
-      "@/features/billing/demo-gifs-mode"
-    );
-    const demoGifsBilling = applyDemoGifsBillingEnv();
     const { logInfo, logError } = await import("@/lib/logger");
     if (usingDefaults) {
       logInfo(
         "[env] Using built-in local defaults for missing variables. Copy .env.example to .env to customize (required for Stripe CLI / production builds).",
       );
     }
-    if (demoGifsBilling) {
-      logInfo(
-        "[env] Demo GIF billing fixtures active (loopback Stripe mock; no real keys).",
-      );
-    }
     try {
+      // Demo GIF recording: optional fixtures + loopback mock. Throws (fail
+      // closed) when PROSEFIELD_DEMO_GIFS=1 outside the local allow-list.
+      // Must run before assertStartupEnv so placeholders are filled first.
+      const { applyDemoGifsBillingEnv } = await import(
+        "@/features/billing/demo-gifs-mode"
+      );
+      const demoGifsBilling = applyDemoGifsBillingEnv();
+      if (demoGifsBilling) {
+        logInfo(
+          "[env] Demo GIF billing fixtures active (loopback Stripe mock; no real keys).",
+        );
+      }
       const { assertStartupEnv } = await import("@/lib/startup-env");
       // Fail closed at startup: refuse to serve when production env is invalid
       // (e.g. emulator hosts without ALLOW_EMULATORS=1).

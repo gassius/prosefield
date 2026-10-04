@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Record demo journeys with Playwright (Docker) and emit optimised GIFs under docs/demo/.
-# Not part of the visual-regression gate. Requires: Docker, running app + emulators, ffmpeg.
+# Not part of the visual-regression gate. Requires: Docker, ffmpeg, emulators up, and a
+# Next process already started with the demo GIF billing env (see REQUIREMENTS below).
 #
-# Starts the loopback stripe-prices mock and expects the Next process to run with
-# PROSEFIELD_DEMO_GIFS=1 (plus ALLOW_EMULATORS=1 for production `pnpm start`) so
-# instrumentation applies non-placeholder Stripe fixtures. No real Stripe keys.
+# This script starts the loopback stripe-prices mock for Playwright's host network.
+# It does NOT start Next — PROSEFIELD_DEMO_GIFS must be in the Next process env.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -47,27 +47,69 @@ export STRIPE_PRICE_ID='price_demogifsrecording01'
 export STRIPE_API_HOST='127.0.0.1'
 export STRIPE_API_PORT='12111'
 export STRIPE_API_PROTOCOL='http'
+# Documented for operators; Next must be started with this export in ITS env
+# (this shell export does not reach an already-running Next process).
 export PROSEFIELD_DEMO_GIFS=1
 
-MOCK_PID_FILE="${PROSEFIELD_DEMO_STRIPE_MOCK_PID:-/tmp/prosefield-demo-stripe-mock.pid}"
+cat <<EOF
+demo:gifs REQUIREMENTS — start Next with these in the same process env, then re-run:
+  export PROSEFIELD_DEMO_GIFS=1
+  export ALLOW_EMULATORS=1
+  export APP_URL='${APP_URL}'
+  export FIREBASE_AUTH_EMULATOR_HOST='127.0.0.1:9099'
+  export FIRESTORE_EMULATOR_HOST='127.0.0.1:8080'
+  # Placeholder Stripe keys in .env are fine; do not set real Stripe keys.
+  # Prefer: ALLOW_EMULATORS=1 PROSEFIELD_DEMO_GIFS=1 pnpm build && pnpm start
+EOF
+
+# Only kill a mock PID this run started (mktemp + cmdline check — never a fixed /tmp path).
+MOCK_PID=""
+MOCK_PID_FILE=""
 cleanup_mock() {
-  if [ -f "$MOCK_PID_FILE" ]; then
-    kill "$(cat "$MOCK_PID_FILE")" 2>/dev/null || true
-    rm -f "$MOCK_PID_FILE"
+  if [[ -z "${MOCK_PID}" ]]; then
+    [[ -n "${MOCK_PID_FILE}" ]] && rm -f "${MOCK_PID_FILE}"
+    return 0
   fi
+  if ! kill -0 "${MOCK_PID}" 2>/dev/null; then
+    rm -f "${MOCK_PID_FILE}"
+    return 0
+  fi
+  local args=""
+  args="$(ps -o args= -p "${MOCK_PID}" 2>/dev/null || true)"
+  if [[ "${args}" != *stripe-prices-mock-server.mjs* ]]; then
+    echo "Refusing to signal pid ${MOCK_PID}: cmdline is not stripe-prices-mock-server.mjs" >&2
+    rm -f "${MOCK_PID_FILE}"
+    return 0
+  fi
+  kill "${MOCK_PID}" 2>/dev/null || true
+  rm -f "${MOCK_PID_FILE}"
 }
 trap cleanup_mock EXIT
 
-# Reuse a healthy mock when already listening; otherwise start one.
+# Reuse a healthy mock when already listening; otherwise start one and track its PID.
 if ! curl -fsS "http://${STRIPE_API_HOST}:${STRIPE_API_PORT}/v1/prices/${STRIPE_PRICE_ID}" >/dev/null 2>&1; then
+  MOCK_PID_FILE="$(mktemp "${TMPDIR:-/tmp}/prosefield-demo-stripe-mock.XXXXXX.pid")"
   node "$ROOT/scripts/stripe-prices-mock-server.mjs" &
-  echo $! >"$MOCK_PID_FILE"
+  MOCK_PID=$!
+  echo "${MOCK_PID}" >"${MOCK_PID_FILE}"
   for _ in $(seq 1 50); do
     if curl -fsS "http://${STRIPE_API_HOST}:${STRIPE_API_PORT}/v1/prices/${STRIPE_PRICE_ID}" >/dev/null 2>&1; then
       break
     fi
     sleep 0.1
   done
+fi
+
+# Fail fast if the running Next process was not started with demo GIF billing.
+health_json="$(curl -fsS "${APP_URL%/}/api/health" || true)"
+if [[ -z "${health_json}" ]]; then
+  echo "App not reachable at ${APP_URL}/api/health. Start Next with PROSEFIELD_DEMO_GIFS=1 first." >&2
+  exit 1
+fi
+if ! printf '%s' "${health_json}" | grep -q '"demoGifsBilling"[[:space:]]*:[[:space:]]*true'; then
+  echo "Next at ${APP_URL} is not in demo GIF billing mode (health.demoGifsBilling != true)." >&2
+  echo "Restart Next with PROSEFIELD_DEMO_GIFS=1 and ALLOW_EMULATORS=1 (see REQUIREMENTS above)." >&2
+  exit 1
 fi
 
 docker run --rm --network host \

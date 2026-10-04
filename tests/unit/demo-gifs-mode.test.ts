@@ -4,8 +4,10 @@ import {
   DEMO_GIFS_STRIPE_PRICE_ID,
   DEMO_GIFS_STRIPE_SECRET_KEY,
   DEMO_GIFS_STRIPE_WEBHOOK_SECRET,
+  DemoGifsBillingError,
   applyDemoGifsBillingEnv,
   isDemoGifsBillingMode,
+  isDemoGifsLocalAllowList,
 } from "@/features/billing/demo-gifs-mode";
 import {
   FAKE_STRIPE_PRICE_ID,
@@ -13,25 +15,170 @@ import {
   FAKE_STRIPE_WEBHOOK_SECRET,
 } from "../fixtures/stripe";
 
-describe("isDemoGifsBillingMode", () => {
-  it("is off by default", () => {
-    expect(isDemoGifsBillingMode({})).toBe(false);
+/** Happy path for `pnpm start` + `demo:gifs` (production Node + emulators). */
+function allowedDemoEnv(
+  overrides: Record<string, string | undefined> = {},
+): Record<string, string | undefined> {
+  return {
+    PROSEFIELD_DEMO_GIFS: "1",
+    ALLOW_EMULATORS: "1",
+    NODE_ENV: "production",
+    APP_URL: "http://127.0.0.1:3000",
+    FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1:9099",
+    FIRESTORE_EMULATOR_HOST: "127.0.0.1:8080",
+    STRIPE_SECRET_KEY: localDevDefaults.STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SECRET: localDevDefaults.STRIPE_WEBHOOK_SECRET,
+    STRIPE_PRICE_ID: localDevDefaults.STRIPE_PRICE_ID,
+    ...overrides,
+  };
+}
+
+describe("isDemoGifsLocalAllowList", () => {
+  it("accepts local production+emulators recording env", () => {
+    expect(isDemoGifsLocalAllowList(allowedDemoEnv())).toBe(true);
   });
 
-  it("is on when PROSEFIELD_DEMO_GIFS=1 outside production", () => {
+  it("accepts non-production without ALLOW_EMULATORS when hosts are loopback", () => {
     expect(
-      isDemoGifsBillingMode({ PROSEFIELD_DEMO_GIFS: "1", VERCEL_ENV: "preview" }),
+      isDemoGifsLocalAllowList(
+        allowedDemoEnv({
+          ALLOW_EMULATORS: undefined,
+          NODE_ENV: "development",
+        }),
+      ),
     ).toBe(true);
-    expect(isDemoGifsBillingMode({ PROSEFIELD_DEMO_GIFS: "1" })).toBe(true);
   });
 
-  it("is inert when VERCEL_ENV=production even if the flag is set", () => {
+  it("rejects when VERCEL is set", () => {
+    expect(isDemoGifsLocalAllowList(allowedDemoEnv({ VERCEL: "1" }))).toBe(
+      false,
+    );
+  });
+
+  it("rejects self-hosted production without ALLOW_EMULATORS", () => {
     expect(
-      isDemoGifsBillingMode({
-        PROSEFIELD_DEMO_GIFS: "1",
-        VERCEL_ENV: "production",
-      }),
+      isDemoGifsLocalAllowList(
+        allowedDemoEnv({
+          ALLOW_EMULATORS: undefined,
+          NODE_ENV: "production",
+        }),
+      ),
     ).toBe(false);
+  });
+
+  it("rejects non-loopback APP_URL or emulator hosts", () => {
+    expect(
+      isDemoGifsLocalAllowList(
+        allowedDemoEnv({ APP_URL: "https://prosefield.example" }),
+      ),
+    ).toBe(false);
+    expect(
+      isDemoGifsLocalAllowList(
+        allowedDemoEnv({
+          FIREBASE_AUTH_EMULATOR_HOST: "auth.internal:9099",
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isDemoGifsLocalAllowList(
+        allowedDemoEnv({ FIRESTORE_EMULATOR_HOST: undefined }),
+      ),
+    ).toBe(false);
+  });
+
+  it("accepts bracketed loopback IPv6 emulator hosts and localhost APP_URL", () => {
+    expect(
+      isDemoGifsLocalAllowList(
+        allowedDemoEnv({
+          APP_URL: "http://localhost:3000",
+          FIREBASE_AUTH_EMULATOR_HOST: "[::1]:9099",
+          FIRESTORE_EMULATOR_HOST: "[::1]:8080",
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("accepts bare loopback emulator host without a port", () => {
+    expect(
+      isDemoGifsLocalAllowList(
+        allowedDemoEnv({
+          FIREBASE_AUTH_EMULATOR_HOST: "127.0.0.1",
+          FIRESTORE_EMULATOR_HOST: "localhost",
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects malformed APP_URL and broken IPv6 emulator host brackets", () => {
+    expect(
+      isDemoGifsLocalAllowList(allowedDemoEnv({ APP_URL: "not-a-url" })),
+    ).toBe(false);
+    expect(
+      isDemoGifsLocalAllowList(
+        allowedDemoEnv({ FIREBASE_AUTH_EMULATOR_HOST: "[::1" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("rejects blank APP_URL", () => {
+    expect(
+      isDemoGifsLocalAllowList(allowedDemoEnv({ APP_URL: undefined })),
+    ).toBe(false);
+    expect(isDemoGifsLocalAllowList(allowedDemoEnv({ APP_URL: "  " }))).toBe(
+      false,
+    );
+  });
+});
+
+describe("isDemoGifsBillingMode", () => {
+  it("is off when the flag is unset (no throw)", () => {
+    expect(isDemoGifsBillingMode({})).toBe(false);
+    expect(
+      isDemoGifsBillingMode(allowedDemoEnv({ PROSEFIELD_DEMO_GIFS: undefined })),
+    ).toBe(false);
+  });
+
+  it("is on for the allowed local recording case", () => {
+    expect(isDemoGifsBillingMode(allowedDemoEnv())).toBe(true);
+  });
+
+  it("throws on Vercel preview / production / development", () => {
+    for (const vercelEnv of ["preview", "production", "development"] as const) {
+      expect(() =>
+        isDemoGifsBillingMode(
+          allowedDemoEnv({ VERCEL: "1", VERCEL_ENV: vercelEnv }),
+        ),
+      ).toThrow(DemoGifsBillingError);
+    }
+  });
+
+  it("throws on self-hosted production without ALLOW_EMULATORS", () => {
+    expect(() =>
+      isDemoGifsBillingMode(
+        allowedDemoEnv({
+          ALLOW_EMULATORS: undefined,
+          NODE_ENV: "production",
+          APP_URL: "https://prosefield.example",
+          FIREBASE_AUTH_EMULATOR_HOST: undefined,
+          FIRESTORE_EMULATOR_HOST: undefined,
+        }),
+      ),
+    ).toThrow(DemoGifsBillingError);
+  });
+
+  it("throws when APP_URL or emulator hosts are not loopback", () => {
+    expect(() =>
+      isDemoGifsBillingMode(
+        allowedDemoEnv({ APP_URL: "https://app.example.com" }),
+      ),
+    ).toThrow(DemoGifsBillingError);
+    expect(() =>
+      isDemoGifsBillingMode(
+        allowedDemoEnv({
+          FIREBASE_AUTH_EMULATOR_HOST: "10.0.0.2:9099",
+        }),
+      ),
+    ).toThrow(DemoGifsBillingError);
   });
 });
 
@@ -47,45 +194,41 @@ describe("applyDemoGifsBillingEnv", () => {
     expect(env).not.toHaveProperty("STRIPE_API_HOST");
   });
 
-  it("is inert in Vercel production (does not rewrite keys)", () => {
-    const env = {
-      PROSEFIELD_DEMO_GIFS: "1",
+  it("throws (does not rewrite) when the flag is set on Vercel production", () => {
+    const env = allowedDemoEnv({
+      VERCEL: "1",
       VERCEL_ENV: "production",
-      STRIPE_SECRET_KEY: localDevDefaults.STRIPE_SECRET_KEY,
-      STRIPE_WEBHOOK_SECRET: localDevDefaults.STRIPE_WEBHOOK_SECRET,
-      STRIPE_PRICE_ID: localDevDefaults.STRIPE_PRICE_ID,
-    };
-    expect(applyDemoGifsBillingEnv(env)).toBe(false);
+    });
+    expect(() => applyDemoGifsBillingEnv(env)).toThrow(DemoGifsBillingError);
     expect(env.STRIPE_SECRET_KEY).toBe(localDevDefaults.STRIPE_SECRET_KEY);
   });
 
-  it("applies non-placeholder fixtures and loopback mock host in demo mode", () => {
-    const env: Record<string, string | undefined> = {
-      PROSEFIELD_DEMO_GIFS: "1",
-      STRIPE_SECRET_KEY: localDevDefaults.STRIPE_SECRET_KEY,
-      STRIPE_WEBHOOK_SECRET: localDevDefaults.STRIPE_WEBHOOK_SECRET,
-      STRIPE_PRICE_ID: localDevDefaults.STRIPE_PRICE_ID,
-    };
-    expect(applyDemoGifsBillingEnv(env)).toBe(true);
-    expect(env.STRIPE_SECRET_KEY).toBe(DEMO_GIFS_STRIPE_SECRET_KEY);
-    expect(env.STRIPE_WEBHOOK_SECRET).toBe(DEMO_GIFS_STRIPE_WEBHOOK_SECRET);
-    expect(env.STRIPE_PRICE_ID).toBe(DEMO_GIFS_STRIPE_PRICE_ID);
-    expect(env.STRIPE_API_HOST).toBe("127.0.0.1");
-    expect(env.STRIPE_API_PORT).toBe("12111");
-    expect(env.STRIPE_API_PROTOCOL).toBe("http");
-    expect(env.STRIPE_SECRET_KEY).not.toContain("replaceme");
+  it("throws on Vercel preview instead of enabling fixtures", () => {
+    const env = allowedDemoEnv({ VERCEL: "1", VERCEL_ENV: "preview" });
+    expect(() => applyDemoGifsBillingEnv(env)).toThrow(DemoGifsBillingError);
+    expect(env.STRIPE_SECRET_KEY).toBe(localDevDefaults.STRIPE_SECRET_KEY);
   });
 
-  it("treats blank Stripe keys as placeholders and resets non-loopback API host", () => {
-    const env: Record<string, string | undefined> = {
+  it("throws on self-hosted production so blank Stripe vars still fail closed", () => {
+    const env = {
       PROSEFIELD_DEMO_GIFS: "1",
+      NODE_ENV: "production",
+      APP_URL: "https://prosefield.example",
+      STRIPE_SECRET_KEY: "",
+      STRIPE_WEBHOOK_SECRET: undefined,
+      STRIPE_PRICE_ID: "   ",
+    };
+    expect(() => applyDemoGifsBillingEnv(env)).toThrow(DemoGifsBillingError);
+    expect(env.STRIPE_SECRET_KEY).toBe("");
+    expect(env).not.toHaveProperty("STRIPE_API_HOST");
+  });
+
+  it("applies fixtures on the allowed local path (including blanks)", () => {
+    const env = allowedDemoEnv({
       STRIPE_SECRET_KEY: "   ",
       STRIPE_WEBHOOK_SECRET: undefined,
       STRIPE_PRICE_ID: "",
-      STRIPE_API_HOST: "evil.example.com",
-      STRIPE_API_PORT: "",
-      STRIPE_API_PROTOCOL: "  ",
-    };
+    });
     expect(applyDemoGifsBillingEnv(env)).toBe(true);
     expect(env.STRIPE_SECRET_KEY).toBe(DEMO_GIFS_STRIPE_SECRET_KEY);
     expect(env.STRIPE_WEBHOOK_SECRET).toBe(DEMO_GIFS_STRIPE_WEBHOOK_SECRET);
@@ -95,41 +238,35 @@ describe("applyDemoGifsBillingEnv", () => {
     expect(env.STRIPE_API_PROTOCOL).toBe("http");
   });
 
-  it("does not clobber non-placeholder Stripe values already set", () => {
-    const env: Record<string, string | undefined> = {
-      PROSEFIELD_DEMO_GIFS: "1",
+  it("applies fixtures when keys are placeholders on the allow-list", () => {
+    const env = allowedDemoEnv();
+    expect(applyDemoGifsBillingEnv(env)).toBe(true);
+    expect(env.STRIPE_SECRET_KEY).toBe(DEMO_GIFS_STRIPE_SECRET_KEY);
+    expect(env.STRIPE_SECRET_KEY).not.toContain("replaceme");
+  });
+
+  it("refuses non-placeholder Stripe keys (never redirect real keys to loopback)", () => {
+    const env = allowedDemoEnv({
       STRIPE_SECRET_KEY: FAKE_STRIPE_SECRET_KEY,
       STRIPE_WEBHOOK_SECRET: FAKE_STRIPE_WEBHOOK_SECRET,
       STRIPE_PRICE_ID: FAKE_STRIPE_PRICE_ID,
-      STRIPE_API_HOST: "127.0.0.1",
-      STRIPE_API_PORT: "9999",
-      STRIPE_API_PROTOCOL: "http",
-    };
-    expect(applyDemoGifsBillingEnv(env)).toBe(true);
+    });
+    expect(() => applyDemoGifsBillingEnv(env)).toThrow(DemoGifsBillingError);
     expect(env.STRIPE_SECRET_KEY).toBe(FAKE_STRIPE_SECRET_KEY);
-    expect(env.STRIPE_API_PORT).toBe("9999");
+    expect(env).not.toHaveProperty("STRIPE_API_HOST");
   });
 
   it("makes isBillingConfigured true after applying demo fixtures", async () => {
     vi.resetModules();
-    const envBag = {
-      ...localDevDefaults,
-      FEATURE_CUSTOMER_PORTAL: false as const,
-      PROSEFIELD_DEMO_GIFS: "1",
-    };
-    const mutable: Record<string, string | undefined> = {
-      ...Object.fromEntries(
-        Object.entries(localDevDefaults).map(([k, v]) => [k, String(v)]),
-      ),
-      PROSEFIELD_DEMO_GIFS: "1",
-    };
+    const mutable = allowedDemoEnv();
     expect(applyDemoGifsBillingEnv(mutable)).toBe(true);
     const { isBillingConfigured } = await import(
       "@/features/billing/configured"
     );
     expect(
       isBillingConfigured({
-        ...envBag,
+        ...localDevDefaults,
+        FEATURE_CUSTOMER_PORTAL: false,
         STRIPE_SECRET_KEY: mutable.STRIPE_SECRET_KEY!,
         STRIPE_WEBHOOK_SECRET: mutable.STRIPE_WEBHOOK_SECRET!,
         STRIPE_PRICE_ID: mutable.STRIPE_PRICE_ID!,
@@ -153,9 +290,15 @@ describe("demo-gifs instrumentation wiring", () => {
     vi.stubEnv("NEXT_RUNTIME", "nodejs");
     vi.stubEnv("NODE_ENV", "test");
 
-    const assertStartupEnv = vi.fn(async () => undefined);
+    const callOrder: string[] = [];
+    const assertStartupEnv = vi.fn(async () => {
+      callOrder.push("assert");
+    });
     const applyLocalDevDefaultsToProcessEnv = vi.fn();
-    const applyDemoGifsBillingEnvMock = vi.fn(() => true);
+    const applyDemoGifsBillingEnvMock = vi.fn(() => {
+      callOrder.push("demo");
+      return true;
+    });
     const infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
 
     vi.doMock("@/lib/startup-env", () => ({ assertStartupEnv }));
@@ -177,9 +320,41 @@ describe("demo-gifs instrumentation wiring", () => {
     expect(applyLocalDevDefaultsToProcessEnv).toHaveBeenCalledTimes(1);
     expect(applyDemoGifsBillingEnvMock).toHaveBeenCalledTimes(1);
     expect(assertStartupEnv).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(["demo", "assert"]);
     expect(infoSpy).toHaveBeenCalledWith(
       expect.stringMatching(/Demo GIF billing fixtures/i),
     );
+  });
+
+  it("register exits non-zero when demo GIF mode throws (disallowed env)", async () => {
+    vi.stubEnv("NEXT_RUNTIME", "nodejs");
+    vi.stubEnv("NODE_ENV", "test");
+
+    const assertStartupEnv = vi.fn(async () => undefined);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((() => undefined) as unknown as (
+        code?: string | number | null | undefined,
+      ) => never);
+
+    vi.doMock("@/lib/startup-env", () => ({ assertStartupEnv }));
+    vi.doMock("@/lib/env-defaults", () => ({
+      localDevDefaults: {},
+      applyLocalDevDefaultsToProcessEnv: vi.fn(),
+    }));
+    vi.doMock("@/features/billing/demo-gifs-mode", () => ({
+      applyDemoGifsBillingEnv: () => {
+        throw new DemoGifsBillingError("disallowed");
+      },
+    }));
+
+    const { register } = await import("../../src/instrumentation");
+    await register();
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(assertStartupEnv).not.toHaveBeenCalled();
+    expect(JSON.stringify(errorSpy.mock.calls[0])).toMatch(/disallowed|DemoGifs/i);
   });
 
   it("register skips demo fixtures banner when apply returns false", async () => {
