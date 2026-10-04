@@ -35,10 +35,7 @@ export function AccountMenu({ label, className }: AccountMenuProps) {
         <DropdownMenuContent align="end">
           <DropdownMenuItem
             disabled={pending}
-            onSelect={(event) => {
-              // Keep the menu mounted until the async sign-out finishes so the
-              // disabled state and error alert remain reachable.
-              event.preventDefault();
+            onSelect={() => {
               void signOut();
             }}
           >

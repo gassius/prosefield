@@ -67,5 +67,5 @@ export function useSignOut() {
     }
   }
 
-  return { signOut, pending, error, clearError: () => setError(null) };
+  return { signOut, pending, error };
 }
