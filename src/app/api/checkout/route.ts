@@ -6,6 +6,7 @@ import {
   CheckoutError,
   createCheckoutSession,
 } from "@/features/billing/checkout";
+import { resolveCheckoutCancelPath } from "@/features/billing/checkout-cancel-path";
 import { getEnv } from "@/lib/env";
 
 export const runtime = "nodejs";
@@ -15,10 +16,24 @@ function wantsJson(request: Request): boolean {
   return accept.includes("application/json");
 }
 
+async function readCancelPath(request: Request): Promise<string | undefined> {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    return undefined;
+  }
+  try {
+    const body = (await request.json()) as { cancelPath?: unknown };
+    return typeof body.cancelPath === "string" ? body.cancelPath : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * POST /api/checkout — create a Stripe Checkout Session and redirect (303).
  * 409 path: redirect to /documents when a non-terminal subscription exists.
  * JSON/fetch clients get 401 when unauthenticated (not 303 to login).
+ * Optional JSON body `{ cancelPath }` selects an allow-listed cancel_url.
  */
 export async function POST(request: Request) {
   if (!assertValidOrigin(request)) {
@@ -26,6 +41,7 @@ export async function POST(request: Request) {
   }
 
   const env = getEnv();
+  const cancelPath = resolveCheckoutCancelPath(await readCancelPath(request));
 
   try {
     const session = await requireSession({ checkRevoked: true });
@@ -33,6 +49,7 @@ export async function POST(request: Request) {
     const { url } = await createCheckoutSession({
       uid: session.uid,
       email,
+      cancelPath,
     });
     if (wantsJson(request)) {
       return NextResponse.json({ url });

@@ -41,7 +41,12 @@ describe("CheckoutButton", () => {
   it("redirects to login on 401 unauthenticated", async () => {
     const fetchMock = vi.fn(
       async (_url: string, init?: RequestInit) => {
-        expect(init?.headers).toEqual({ accept: "application/json" });
+        const headers = init?.headers as Record<string, string>;
+        expect(headers.accept).toBe("application/json");
+        expect(headers["content-type"]).toBe("application/json");
+        expect(JSON.parse(String(init?.body))).toEqual({
+          cancelPath: "/subscribe",
+        });
         return new Response(null, { status: 401 });
       },
     );

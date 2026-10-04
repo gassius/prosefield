@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { CheckoutButton } from "@/components/billing/checkout-button";
 import { PageMain } from "@/components/layout/page-main";
 import { SiteHeader } from "@/components/marketing/site-header";
+import { buttonVariants } from "@/components/ui/button";
 import { siteCopy } from "@/content/site";
 import {
   ctaDestinationForState,
@@ -9,6 +11,7 @@ import {
 } from "@/features/auth/guards";
 import { isBillingConfigured, BILLING_NOT_CONFIGURED_MESSAGE } from "@/features/billing/configured";
 import { getPlan } from "@/features/billing/plan";
+import { cn } from "@/lib/utils";
 import { redirect } from "next/navigation";
 
 export default async function SubscribePage({
@@ -55,6 +58,16 @@ export default async function SubscribePage({
               <CheckoutButton label={siteCopy.subscribe.checkoutCta} />
             </div>
           )}
+          <Link
+            href="/documents/trial"
+            className={cn(
+              buttonVariants({ variant: "link" }),
+              "text-muted-foreground mt-4 inline-flex h-auto self-start px-0",
+            )}
+            data-testid="try-editor-before-subscribe"
+          >
+            {siteCopy.subscribe.tryEditorCta}
+          </Link>
           <p className="text-muted-foreground mt-4 text-sm">
             {plan.checkoutReassurance}
           </p>

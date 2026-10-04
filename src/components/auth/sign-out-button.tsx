@@ -4,8 +4,10 @@ import { AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { useUnsavedLeaveGuard } from "@/components/documents/unsaved-leave-guard";
 import { siteCopy } from "@/content/site";
 import { CSRF_COOKIE_NAME, CSRF_HEADER_NAME } from "@/features/auth/constants";
+import { clearTrialDraft } from "@/features/documents/trial-draft-stash";
 
 type SignOutFailureLog = {
   event: "sign_out_failed";
@@ -26,14 +28,17 @@ function logSignOutFailure(detail: SignOutFailureLog): void {
 
 type SignOutButtonProps = {
   className?: string;
+  /** When set, clears the uid-scoped trial draft stash after a successful sign-out. */
+  trialUid?: string;
 };
 
-export function SignOutButton({ className }: SignOutButtonProps) {
+export function SignOutButton({ className, trialUid }: SignOutButtonProps) {
   const router = useRouter();
+  const leaveGuard = useUnsavedLeaveGuard();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function onClick() {
+  async function performSignOut() {
     setPending(true);
     setError(null);
     try {
@@ -59,6 +64,9 @@ export function SignOutButton({ className }: SignOutButtonProps) {
         setError(siteCopy.auth.signOutError);
         return;
       }
+      if (trialUid) {
+        clearTrialDraft(trialUid);
+      }
       router.replace("/");
       router.refresh();
     } catch {
@@ -67,6 +75,16 @@ export function SignOutButton({ className }: SignOutButtonProps) {
     } finally {
       setPending(false);
     }
+  }
+
+  function onClick() {
+    if (leaveGuard?.isDirty) {
+      leaveGuard.requestLeave(() => {
+        void performSignOut();
+      });
+      return;
+    }
+    void performSignOut();
   }
 
   return (

@@ -12,6 +12,7 @@ describe("resolveNextPath", () => {
   it("accepts allow-listed paths", () => {
     expect(resolveNextPath("/subscribe")).toBe("/subscribe");
     expect(resolveNextPath("/documents")).toBe("/documents");
+    expect(resolveNextPath("/documents/trial")).toBe("/documents/trial");
   });
 
   it("rejects open redirects and falls back", () => {

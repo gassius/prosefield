@@ -5,14 +5,28 @@ import { useEffect, useState, useEffectEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { siteCopy } from "@/content/site";
 import { pollBillingStatus } from "@/features/billing/actions";
+import { persistStashedTrialDraft } from "@/features/documents/persist-trial-draft";
 
 const POLL_INTERVAL_MS = 2_000;
 const POLL_MAX_MS = 30_000;
 
 type StatusPhase = "pending" | "delayed" | "failed" | "active";
 
+async function navigateAfterActive(
+  router: ReturnType<typeof useRouter>,
+  uid: string,
+) {
+  const persisted = await persistStashedTrialDraft(uid);
+  if (persisted.ok) {
+    router.replace(`/documents/${persisted.documentId}`);
+    return;
+  }
+  router.replace("/documents");
+}
+
 export function BillingStatusClient(props: {
   initialView: "pending" | "failed" | "active";
+  uid: string;
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<StatusPhase>(
@@ -23,20 +37,22 @@ export function BillingStatusClient(props: {
         : "pending",
   );
 
-  const onPollResult = useEffectEvent((status: "pending" | "active" | "failed") => {
-    if (status === "active") {
-      setPhase("active");
-      router.replace("/documents");
-      return;
-    }
-    if (status === "failed") {
-      setPhase("failed");
-    }
-  });
+  const onPollResult = useEffectEvent(
+    async (status: "pending" | "active" | "failed") => {
+      if (status === "active") {
+        setPhase("active");
+        await navigateAfterActive(router, props.uid);
+        return;
+      }
+      if (status === "failed") {
+        setPhase("failed");
+      }
+    },
+  );
 
   useEffect(() => {
     if (props.initialView === "active") {
-      router.replace("/documents");
+      void navigateAfterActive(router, props.uid);
       return;
     }
     if (props.initialView === "failed") {
@@ -56,7 +72,7 @@ export function BillingStatusClient(props: {
         if (cancelled) {
           return;
         }
-        onPollResult(result.status);
+        await onPollResult(result.status);
         if (result.status === "active" || result.status === "failed") {
           return;
         }
@@ -83,7 +99,7 @@ export function BillingStatusClient(props: {
         clearTimeout(timeoutId);
       }
     };
-  }, [props.initialView, router]);
+  }, [props.initialView, props.uid, router]);
 
   if (phase === "failed") {
     return (

@@ -23,6 +23,8 @@ import { cn } from "@/lib/utils";
 type SiteHeaderProps = {
   accountState: AccountState;
   ctaHref: CtaDestination;
+  /** When set (trial editor), SignOut clears the uid-scoped draft stash. */
+  trialUid?: string;
 };
 
 const navLinks = [
@@ -34,7 +36,7 @@ const navLinks = [
 /** Tailwind `sm` breakpoint — close the mobile Sheet when the viewport widens past it. */
 export const MOBILE_NAV_MAX_WIDTH_PX = 639;
 
-export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
+export function SiteHeader({ accountState, ctaHref, trialUid }: SiteHeaderProps) {
   const [open, setOpen] = useState(false);
   const loggedIn = accountState.kind !== "logged_out";
 
@@ -79,7 +81,7 @@ export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
               <span className="text-muted-foreground max-w-[12rem] truncate text-sm">
                 {accountState.email || siteCopy.header.signedInFallback}
               </span>
-              <SignOutButton />
+              <SignOutButton trialUid={trialUid} />
             </>
           ) : (
             <Link
@@ -136,7 +138,7 @@ export function SiteHeader({ accountState, ctaHref }: SiteHeaderProps) {
                   <p className="text-muted-foreground truncate text-sm">
                     {accountState.email || siteCopy.header.signedInFallback}
                   </p>
-                  <SignOutButton />
+                  <SignOutButton trialUid={trialUid} />
                 </>
               ) : (
                 <Link

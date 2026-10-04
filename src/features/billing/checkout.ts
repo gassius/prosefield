@@ -4,6 +4,10 @@ import {
   BILLING_NOT_CONFIGURED_MESSAGE,
   isBillingConfigured,
 } from "@/features/billing/configured";
+import {
+  resolveCheckoutCancelPath,
+  type CheckoutCancelPath,
+} from "@/features/billing/checkout-cancel-path";
 import { getOrCreateStripeCustomer } from "@/features/billing/customers";
 import {
   isNonTerminalSubscriptionStatus,
@@ -30,6 +34,8 @@ export class CheckoutError extends Error {
 export async function createCheckoutSession(input: {
   uid: string;
   email: string;
+  /** When set (and allow-listed), Stripe cancel returns here instead of /subscribe. */
+  cancelPath?: CheckoutCancelPath | string | null;
 }): Promise<{ url: string; sessionId: string }> {
   if (!isBillingConfigured()) {
     throw new CheckoutError(BILLING_NOT_CONFIGURED_MESSAGE, "not_configured");
@@ -76,6 +82,7 @@ export async function createCheckoutSession(input: {
     return { url: reusable.url, sessionId: reusable.id };
   }
 
+  const cancelPath = resolveCheckoutCancelPath(input.cancelPath);
   const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     customer: customerId,
@@ -85,7 +92,7 @@ export async function createCheckoutSession(input: {
       metadata: { firebaseUid: input.uid },
     },
     success_url: `${env.APP_URL}/billing/status?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${env.APP_URL}/subscribe`,
+    cancel_url: `${env.APP_URL}${cancelPath}`,
     integration_identifier: "prosefield",
   });
 

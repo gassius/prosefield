@@ -115,4 +115,32 @@ test.describe("accessibility smoke", () => {
     await expect(page.getByRole("heading", { name: /Delete/ })).toBeVisible();
     await expectNoSeriousOrCritical(page);
   });
+
+  for (const width of [375, 768, 1280] as const) {
+    test(`trial subscribe and leave modals ${width}px`, async ({ page }) => {
+      await resetEmulators();
+      await page.setViewportSize({ width, height: 900 });
+      const email = uniqueEmail(`a11y-trial-${width}`);
+      await registerViaUi(page, email, "password-123");
+      await expectSignedIn(page, email);
+      await page.goto("/documents/trial");
+      await expect(page.getByLabel("Document title")).toBeVisible();
+      await expectNoSeriousOrCritical(page);
+
+      await page.getByRole("button", { name: "Save" }).click();
+      await expect(page.getByTestId("trial-subscribe-modal")).toBeVisible();
+      await expectNoSeriousOrCritical(page);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("trial-subscribe-modal")).toHaveCount(0);
+
+      const title = page.getByLabel("Document title");
+      await title.fill("A11y leave draft");
+      await title.blur();
+      await page.getByRole("link", { name: "Pricing" }).first().click();
+      await expect(page.getByTestId("trial-leave-modal")).toBeVisible();
+      await expectNoSeriousOrCritical(page);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("trial-leave-modal")).toHaveCount(0);
+    });
+  }
 });

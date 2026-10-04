@@ -31,6 +31,7 @@ export const PASSWORD_POLICY_GRANDFATHER_BEFORE_MS = Date.parse(
 export const NEXT_PATH_ALLOW_LIST = [
   "/subscribe",
   "/documents",
+  "/documents/trial",
 ] as const;
 
 export type AllowedNextPath = (typeof NEXT_PATH_ALLOW_LIST)[number];

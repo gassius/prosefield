@@ -206,12 +206,22 @@ export const siteCopy = {
      */
     checkoutConflict:
       "You already have a subscription on this account. If your last payment didn't go through, check your email from Stripe to update your card — then refresh this page once it's paid.",
+    /** Secondary CTA under the primary checkout button (conversion funnel). */
+    tryEditorCta: "Check the Editor before subscribing",
   },
   documents: {
     upgradeTitle: "Subscribe to start writing",
     upgradeBody:
       "Your own private document library with headings, lists, quotes, and emphasis.",
     upgradeCta: "Continue to secure checkout",
+    trialSubscribeModalTitle: "Subscribe to keep writing",
+    trialSubscribeModalBody:
+      "Save, create, and delete unlock with a subscription. Your draft stays on this device until you check out.",
+    trialLeaveModalTitle: "Subscribe so you don’t lose your draft",
+    trialLeaveModalBody:
+      "You have unsaved writing in the trial editor. Subscribe to keep it, or leave and discard it.",
+    trialLeaveAnyway: "Leave anyway",
+    trialSubscribeCta: "Continue to secure checkout",
     listHeading: "Documents",
     newDocument: "New document",
     emptyTitle: "Your first page is waiting.",
