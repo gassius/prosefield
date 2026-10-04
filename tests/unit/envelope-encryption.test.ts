@@ -407,6 +407,30 @@ describe("envelope encryption", () => {
     expect(getKeyProvider()).toBeInstanceOf(KmsKeyProvider);
   });
 
+  it("getKeyProvider decodeKek rejects wrong-length current and previous KEKs", async () => {
+    const { getEnv } = await import("@/lib/env");
+    __resetKeyProviderForTests();
+    const env = getEnv();
+    const originalKek = env.DOCUMENT_ENCRYPTION_KEK;
+    (env as { DOCUMENT_ENCRYPTION_KEK?: string }).DOCUMENT_ENCRYPTION_KEK =
+      Buffer.alloc(16).toString("base64");
+    expect(() => getKeyProvider()).toThrow(
+      /DOCUMENT_ENCRYPTION_KEK must be standard base64 for exactly 32 bytes/,
+    );
+    (env as { DOCUMENT_ENCRYPTION_KEK?: string }).DOCUMENT_ENCRYPTION_KEK =
+      originalKek;
+    __resetKeyProviderForTests();
+
+    (env as { DOCUMENT_ENCRYPTION_KEK_PREVIOUS?: string }).DOCUMENT_ENCRYPTION_KEK_PREVIOUS =
+      Buffer.alloc(8).toString("base64");
+    expect(() => getKeyProvider()).toThrow(
+      /DOCUMENT_ENCRYPTION_KEK_PREVIOUS must be standard base64 for exactly 32 bytes/,
+    );
+    delete (env as { DOCUMENT_ENCRYPTION_KEK_PREVIOUS?: string })
+      .DOCUMENT_ENCRYPTION_KEK_PREVIOUS;
+    __resetKeyProviderForTests();
+  });
+
   it("covers DevKeyProvider / KmsKeyProvider error paths", async () => {
     expect(
       () =>

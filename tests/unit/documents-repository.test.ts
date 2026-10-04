@@ -981,6 +981,22 @@ describe("documents repository", () => {
           }),
         },
         {
+          id: "list-plain",
+          data: () => ({
+            ownerId: "u1",
+            title: "Plain title",
+            updatedAt: new Date(),
+          }),
+        },
+        {
+          id: "list-no-owner",
+          data: () => ({
+            ownerId: 99,
+            title: "NoOwner",
+            updatedAt: new Date(),
+          }),
+        },
+        {
           id: "list-boom",
           data: () => ({
             ownerId: "u1",
@@ -998,6 +1014,8 @@ describe("documents repository", () => {
       "Untitled document",
       "Untitled document",
       "Untitled document",
+      "Plain title",
+      "NoOwner",
       "Untitled document",
     ]);
 
@@ -1083,6 +1101,24 @@ describe("documents repository", () => {
       title: "New",
     });
     expect(renamed?.title).toBe("New");
+
+    // Title-only legacy (no content field) → empty doc body on migrate (line 262).
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      id: "mig-title-only",
+      data: () => ({ ownerId: "u1", title: "TitleOnly" }),
+    });
+    expect(
+      await migrateLegacyDocument({
+        id: "mig-title-only",
+        ownerId: "u1",
+        title: "TitleOnly",
+        content: EMPTY_DOCUMENT_CONTENT,
+        contentAllowed: true,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ).toBe(true);
 
     // Object-shaped legacy content is serialised verbatim (legacyContentString).
     txGet.mockResolvedValueOnce({

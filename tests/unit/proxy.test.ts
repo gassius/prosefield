@@ -91,4 +91,15 @@ describe("proxy CSRF cookie Secure / x-forwarded-proto", () => {
     expect(csrfSecure(request)).toBe(true);
     vi.unstubAllEnvs();
   });
+
+  it("falls through when production APP_URL is malformed", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_URL", ":::not-a-url:::");
+    const request = new NextRequest("http://app.example/", {
+      headers: { "x-forwarded-proto": "http" },
+    });
+    // Catch on new URL(APP_URL) must not throw; forwarded-proto decides Secure.
+    expect(csrfSecure(request)).toBe(false);
+    vi.unstubAllEnvs();
+  });
 });

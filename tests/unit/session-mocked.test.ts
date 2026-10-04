@@ -271,4 +271,35 @@ describe("session helpers (mocked admin)", () => {
       true,
     );
   });
+
+  it("falls through when production APP_URL is malformed", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_URL", ":::not-a-url:::");
+    const { isSecureCookieRequest } = await import("@/features/auth/session");
+    expect(
+      isSecureCookieRequest(
+        new Request("http://app.example/api/session", {
+          headers: { "x-forwarded-proto": "http" },
+        }),
+      ),
+    ).toBe(false);
+    vi.unstubAllEnvs();
+  });
+
+  it("returns false when fallback APP_URL cannot be parsed", async () => {
+    const { getEnv, __resetEnvCacheForTests } = await import("@/lib/env");
+    const { isSecureCookieRequest } = await import("@/features/auth/session");
+    __resetEnvCacheForTests();
+    const env = getEnv();
+    const original = env.APP_URL;
+    // No request → APP_URL fallback; non-local https → Secure.
+    (env as { APP_URL: string }).APP_URL = "https://app.example";
+    expect(isSecureCookieRequest()).toBe(true);
+    (env as { APP_URL: string }).APP_URL = "http://app.example";
+    expect(isSecureCookieRequest()).toBe(false);
+    // Defensive catch: schema normally prevents this; mutate cached env.
+    (env as { APP_URL: string }).APP_URL = ":::bad:::";
+    expect(isSecureCookieRequest()).toBe(false);
+    (env as { APP_URL: string }).APP_URL = original;
+  });
 });

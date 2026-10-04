@@ -265,6 +265,38 @@ describe("env schema", () => {
     }
   });
 
+  it("rejects non-canonical / URL-safe KEK base64 (env.ts canonical check)", () => {
+    // 32 raw bytes → standard base64 is padded; base64url drops padding / uses -_.
+    const urlSafe = Buffer.alloc(32, 0xcd).toString("base64url");
+    expect(urlSafe).not.toBe(Buffer.alloc(32, 0xcd).toString("base64"));
+
+    const kek = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEK: urlSafe,
+    });
+    expect(kek.success).toBe(false);
+    if (!kek.success) {
+      expect(
+        kek.error.issues.some((issue) =>
+          String(issue.message).includes("canonical"),
+        ),
+      ).toBe(true);
+    }
+
+    const previous = envSchema.safeParse({
+      ...validEnv,
+      DOCUMENT_ENCRYPTION_KEK_PREVIOUS: urlSafe,
+    });
+    expect(previous.success).toBe(false);
+    if (!previous.success) {
+      expect(
+        previous.error.issues.some((issue) =>
+          String(issue.message).includes("canonical"),
+        ),
+      ).toBe(true);
+    }
+  });
+
   describe("mergeEnvSource local defaults", () => {
     it("fills blanks outside production so bare pnpm dev can start", () => {
       vi.stubEnv("NODE_ENV", "development");
