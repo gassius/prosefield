@@ -45,7 +45,7 @@ describe("redactForLog", () => {
   it("handles null, bigint, depth limit, and unknown types", () => {
     expect(redactForLog(null)).toBeNull();
     expect(redactForLog(undefined)).toBeUndefined();
-    expect(redactForLog(10n)).toBe("10");
+    expect(redactForLog(BigInt(10))).toBe("10");
     expect(redactForLog(Symbol("x"))).toBe("[REDACTED]");
     let deep: unknown = { email: "a@b.co" };
     for (let i = 0; i < 10; i += 1) {
