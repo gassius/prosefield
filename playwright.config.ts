@@ -33,7 +33,7 @@ export default defineConfig({
     {
       name: "e2e",
       testMatch: /.*\.(spec|test)\.ts/,
-      testIgnore: [/visual\.spec\.ts$/, /a11y\.spec\.ts$/],
+      testIgnore: [/visual\.spec\.ts$/, /a11y\.spec\.ts$/, /demo-gifs\.spec\.ts$/],
       use: { ...devices["Desktop Chrome"] },
     },
     {
@@ -47,6 +47,16 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1440, height: 900 },
+      },
+    },
+    {
+      // README demo GIFs only — not CI visual gate; no tolerance/mask changes.
+      name: "demo-gifs",
+      testMatch: /demo-gifs\.spec\.ts$/,
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 720 },
+        video: { mode: "on", size: { width: 1280, height: 720 } },
       },
     },
   ],

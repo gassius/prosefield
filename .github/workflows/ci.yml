@@ -345,6 +345,143 @@ jobs:
           docker compose config -q
           docker compose --profile stripe config -q
 
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: shellcheck bash scripts
+        # koalaman/shellcheck:v0.11.0 pinned by digest. Glob so new scripts/*.sh are covered.
+        run: |
+          set -euo pipefail
+          files=(scripts/*.sh docker/*.sh)
+          docker run --rm -v "$PWD:/src" -w /src \
+            koalaman/shellcheck@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
+            -x "${files[@]}"
+
+  # macOS: exercise set -m / perl launch, lsof cwd, bash 3.2, BSD ps (no Docker).
+  ship-scripts-macos:
+    name: Ship scripts (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup pnpm
+        # pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        # actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Ship-scripts unit tests
+        run: pnpm exec vitest run tests/unit/ship-scripts.test.ts
+
+  fresh-start:
+    name: Fresh machine start
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup pnpm
+        # pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        # actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+          # No cache:pnpm — timing must include a cold store download.
+
+      - name: Timed check + clean start (idempotent)
+        env:
+          APP_URL: http://localhost:3000
+          # Force an empty pnpm store for honest cold-install timing.
+          npm_config_store_dir: ${{ runner.temp }}/pnpm-store-empty
+        run: |
+          set -euo pipefail
+          mkdir -p "${npm_config_store_dir}"
+          start_ts=$(date +%s)
+          bash scripts/check.sh
+          # Clean start path: no prior node_modules / .env / compose.
+          rm -rf node_modules .env .prosefield-dev.pid .prosefield-dev.log
+          docker compose --env-file .env.example down -v >/dev/null 2>&1 || true
+          bash scripts/start.sh
+          code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/)
+          test "$code" = "200"
+          # Emulator ports must be up (not just the landing page).
+          curl -fsS http://127.0.0.1:9099 >/dev/null
+          curl -fsS http://127.0.0.1:8080 >/dev/null
+          curl -fsS http://127.0.0.1:4000 >/dev/null
+          # Idempotence: second start must succeed while stack is already up.
+          bash scripts/start.sh
+          code2=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/)
+          test "$code2" = "200"
+          curl -fsS http://127.0.0.1:9099 >/dev/null
+          curl -fsS http://127.0.0.1:8080 >/dev/null
+          end_ts=$(date +%s)
+          elapsed=$((end_ts - start_ts))
+          echo "Fresh start elapsed_seconds=${elapsed}"
+          if [ "$elapsed" -gt 900 ]; then
+            echo "::error::Fresh start took ${elapsed}s (>15 min budget)"
+            exit 1
+          fi
+
+      - name: Stop stack and assert ports closed
+        if: always()
+        run: |
+          set -euo pipefail
+          bash scripts/stop.sh
+          test ! -f .prosefield-dev.pid
+          port_closed() {
+            local port="$1"
+            if command -v ss >/dev/null 2>&1; then
+              if ss -ltn "( sport = :${port} )" 2>/dev/null | grep -q ":${port}"; then
+                return 1
+              fi
+              return 0
+            fi
+            if (echo >/dev/tcp/127.0.0.1/"$port") >/dev/null 2>&1; then
+              return 1
+            fi
+            return 0
+          }
+          for port in 3000 4000 8080 9099; do
+            if ! port_closed "$port"; then
+              echo "::error::port ${port} still open after scripts/stop.sh"
+              exit 1
+            fi
+            echo "ok: port ${port} closed"
+          done
+          # Fail if compose itself errors (no vacuous || true).
+          compose_ids="$(docker compose ps -q)"
+          if [[ -n "$compose_ids" ]]; then
+            echo "::error::docker compose still has running services after scripts/stop.sh"
+            docker compose ps
+            exit 1
+          fi
+          echo "ok: docker compose ps empty"
+
   gitleaks:
     name: gitleaks
     runs-on: ubuntu-latest

@@ -1,17 +1,75 @@
 # Prosefield
 
-Local-first writing workspace. Specs live in [`docs/architecture.md`](docs/architecture.md) (v1.0) and [`docs/art-direction.md`](docs/art-direction.md) (v1.1).
+A local-first writing workspace: register, subscribe, and keep pages with less friction.
 
-## Prerequisites
+## Demo
 
-- **nvm** (recommended) — run `nvm install` at the repo root so the shell matches [`.nvmrc`](.nvmrc)
-- **Node** — exact version from [`.nvmrc`](.nvmrc) (`nvm install` reads it and switches)
-- **pnpm** — via Corepack (`corepack enable`)
-- **Docker + Compose** — required for the backend (Auth, Firestore, Emulator UI). The Emulator Suite runtime and `firebase-tools` stay inside the Compose image — **do not install the Firebase CLI on the host**.
+Regenerate with `pnpm demo:gifs` while the app and emulators are already running (Docker + ffmpeg; prefer a production `pnpm build && pnpm start` so the Next.js dev indicator is absent).
+
+![Landing](docs/demo/01-landing.gif)
+
+![Try the editor, register, and pay (mocked)](docs/demo/02-try-register-pay.gif)
+
+![Create, edit, save, rename, delete](docs/demo/03-document-crud.gif)
+
+## Quick start
+
+Works on **macOS**, **Linux**, and **Windows via WSL2** (Ubuntu) with [Docker Desktop’s WSL2 backend](https://docs.docker.com/desktop/features/wsl/) **or** [Docker Engine inside WSL2](https://docs.docker.com/engine/install/). On Windows, follow Microsoft’s [WSL install guide](https://learn.microsoft.com/en-us/windows/wsl/install) and run every command **inside WSL2** — not PowerShell or Git Bash. Clone into the Linux filesystem (for example `~/prosefield`), **not** `/mnt/c/…`.
+
+The under-15-minute path assumes **Docker, Node (via nvm), and git are already installed**. Installing WSL2 or Docker Desktop for the first time is separate (large downloads / reboot) and is not counted in that budget. CI’s fresh-start job times a cold pnpm store (no cache) plus image build on a runner that already has Docker and Node.
+
+1. **Clone**
+
+   ```bash
+   git clone https://github.com/gassius/prosefield.git
+   cd prosefield
+   ```
+
+   On WSL2: `git clone … ~/prosefield && cd ~/prosefield`.
+
+2. **Check** your machine (prints pass/fail; stops with install links if something is missing)
+
+   ```bash
+   bash scripts/check.sh
+   ```
+
+3. **Start** (installs project dependencies, starts the backend in Docker, runs the app)
+
+   ```bash
+   bash scripts/start.sh
+   ```
+
+Open http://localhost:3000. Stop with `bash scripts/stop.sh`.
+
+After sign-up, `/subscribe` shows **Billing is not configured** when using default `.env.example` placeholders (no real Stripe keys). Use **Try the editor** for a trial draft, or follow [Manual Stripe test payment (4242)](#manual-stripe-test-payment-4242) for a real test-card unlock. Playwright and the demo GIFs **mock** payment by seeding emulator entitlement — never commit real keys.
+
+## Let your agent set up and run this project
+
+Paste this into any coding agent (or point it at the raw file):
+
+```text
+Follow https://raw.githubusercontent.com/gassius/prosefield/main/AGENT_SETUP.md
+end to end. Stop and ask me before any system-wide install.
+```
+
+Full prompt: [`AGENT_SETUP.md`](AGENT_SETUP.md).
+
+---
+
+## Prerequisites (details)
+
+If you prefer not to use `scripts/start.sh`, you need:
+
+- **nvm** (recommended) so the shell matches [`.nvmrc`](.nvmrc)
+- **Node** — exact version from [`.nvmrc`](.nvmrc)
+- **pnpm** — enabled by the start script via Corepack when needed
+- **Docker + Compose v2** — required for Auth/Firestore. The Emulator Suite runtime and `firebase-tools` stay inside the Compose image — **do not install the Firebase CLI on the host**.
 
 Nothing else is needed on the host. Emulators run only inside Docker (no global `firebase-tools`).
 
-## Quick start
+Windows: use **WSL2 only** ([install guide](https://learn.microsoft.com/en-us/windows/wsl/install)). Clone under `~/…`, not `/mnt/c/…`. Docker Desktop’s WSL2 backend or Docker Engine inside WSL2 both work. `scripts/check.sh` refuses native Windows shells (Git Bash/MSYS) and fails if the repo path is on `/mnt/…`.
+
+## Manual start (optional)
 
 1. `nvm install` (reads [`.nvmrc`](.nvmrc) and switches to that Node)
 2. `corepack enable`
@@ -49,7 +107,7 @@ Prosefield is one **Next.js 16** App Router app (React 19, TypeScript strict):
 | Editor | Tiptap (JSON persistence, **manual** save) |
 | UI | Tailwind CSS 4 + minimal shadcn/ui, tokens from Art Direction v1.1 |
 
-**Surfaces:** a public marketing/pricing page, and an authenticated document workspace that only **active** subscribers can use. Server Actions and Route Handlers enforce sessions, entitlement, and all document CRUD. Details and trade-offs: [`docs/architecture.md`](docs/architecture.md).
+**Surfaces:** a public marketing/pricing page, and an authenticated document workspace that only **active** subscribers can use. Server Actions and Route Handlers enforce sessions, entitlement, and all document CRUD. Details and trade-offs: [`docs/architecture.md`](docs/architecture.md). Short answers to the take-home questions: [`docs/write-up.md`](docs/write-up.md).
 
 ### Emulator data
 
@@ -100,10 +158,46 @@ Playwright acceptance tests mock payment by seeding the Firestore entitlement pr
 - **No production deploy in the default path** — optional Firebase App Hosting is phase P6 and never blocks local acceptance.
 - **Non-goals** (out of scope): AI features, uploads/export, admin UI, email verification, dark mode, public API. See Architecture §2.3.
 
+## Tradeoffs and “With another day”
+
+See also Architecture §16.
+
+| Choice | Why | Cost |
+|---|---|---|
+| Docker-only Firebase emulators | Fresh machines need no Firebase project; can’t touch prod | First image pull; Docker required |
+| Server-only Firestore | One authorisation layer; deny-all rules | No realtime/offline client |
+| Session-sync on `/billing/status` | Unlock when webhooks lag | Extra Stripe retrieve path |
+| Manual save + restricted Tiptap | Honest UX matching Art Direction | Less “magic” than autosave |
+
+**With another day:** turn on Customer Portal behind the existing flag; finish optional Firebase App Hosting (P6) with budget alert and smoke test; tighten empty/error polish on billing edge cases; record a longer narrated demo.
+
+## AI usage and manual verification
+
+Agents and AI assistants helped scaffold tests, docs, and repetitive wiring. Generated output was reviewed against Architecture v1.0 and Art Direction v1.1. CI covers unit, coverage, Playwright + axe, and visual regression. Contiguous fake Stripe secrets are never committed; gitleaks and the nonce CSP stay strict.
+
+**Carlos — confirm before ship** (checklist; do not treat as already done):
+
+- [ ] Quick Start on a machine that already has Docker / nvm Node / git (&lt; 15 min cold install)
+- [ ] Register → try editor → mocked or 4242 pay → create / edit / save / rename / delete
+- [ ] Sign out / in persistence
+- [ ] Delayed-webhook glance via session-sync when using real Stripe CLI
+
+## Credits
+
+- Product and Art Direction: Carlos González Rico
+- Architecture v1.0 / delivery system: Engineer Supervisor + GasNet agents on the Prosefield Cursor Project
+- Stack: Next.js, Firebase Auth/Firestore, Stripe, Tiptap, Playwright, Vitest
+
+Time log template (Carlos fills hours): [`docs/time-log.md`](docs/time-log.md).
+
 ## Scripts
 
 | Command | Purpose |
 |---|---|
+| `bash scripts/check.sh` / `pnpm check` | Requirements check (no installs) |
+| `bash scripts/start.sh` / `pnpm start:local` | Check + install + backend + host `pnpm dev` |
+| `bash scripts/stop.sh` / `pnpm stop:local` | Stop host frontend process group + `docker compose down` |
+| `pnpm demo:gifs` | Regenerate README demo GIFs (app + emulators must already be up; Docker + ffmpeg) |
 | `pnpm dev` | Next.js frontend on the host |
 | `pnpm lint` / `pnpm typecheck` / `pnpm test` / `pnpm build` | Static checks |
 | `pnpm test:component` | React Testing Library component suite (jsdom) |
@@ -179,6 +273,8 @@ pnpm test:visual:update     # rewrite e2e/*-snapshots/ — review in the PR
 
 Update baselines only when the UI change is intentional. Do not regenerate to silence flakes.
 
+Demo GIFs (`pnpm demo:gifs`) are **not** part of the visual-regression gate.
+
 ### Optional `app` profile notes
 
 The Compose `app` service builds from [`docker/app.Dockerfile`](docker/app.Dockerfile): dependencies are installed at **image build** time (not on every start), the process runs as `APP_UID`/`APP_GID` (default `1000:1000` — set these to your host ids on Linux so bind-mounted `.next` is writable), and a healthcheck probes `/api/health` so `docker compose --profile app up -d --wait` waits for the Next.js server.
@@ -226,3 +322,8 @@ Minimal inventory: email and password stay in **Firebase Auth** only (email is n
 ### Passwords
 
 Passwords are handled only by **Firebase Auth**, which hashes them with **salted scrypt**. The app never stores, logs, or sends passwords anywhere else (Firestore, application logs, or analytics). Minimum-length enforcement is covered separately (ClickUp `869fbj5r7`).
+
+## Specs
+
+- [`docs/architecture.md`](docs/architecture.md) (v1.0)
+- [`docs/art-direction.md`](docs/art-direction.md) (v1.1)
