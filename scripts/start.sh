@@ -3,7 +3,8 @@
 # Idempotent. Never installs system-wide packages. Emulators stay in Docker only.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Physical path so symlink checkouts match stop.sh /proc and lsof cwd checks.
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT"
 
 PID_FILE="${PROSEFIELD_DEV_PID_FILE:-$ROOT/.prosefield-dev.pid}"

@@ -363,6 +363,34 @@ jobs:
             koalaman/shellcheck@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
             -x "${files[@]}"
 
+  # macOS: exercise set -m / perl launch, lsof cwd, bash 3.2, BSD ps (no Docker).
+  ship-scripts-macos:
+    name: Ship scripts (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        # actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup pnpm
+        # pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        # actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Ship-scripts unit tests
+        run: pnpm exec vitest run tests/unit/ship-scripts.test.ts
+
   fresh-start:
     name: Fresh machine start
     runs-on: ubuntu-latest
@@ -445,7 +473,9 @@ jobs:
             fi
             echo "ok: port ${port} closed"
           done
-          if [[ -n "$(docker compose ps -q 2>/dev/null || true)" ]]; then
+          # Fail if compose itself errors (no vacuous || true).
+          compose_ids="$(docker compose ps -q)"
+          if [[ -n "$compose_ids" ]]; then
             echo "::error::docker compose still has running services after scripts/stop.sh"
             docker compose ps
             exit 1

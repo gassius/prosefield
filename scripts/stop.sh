@@ -3,10 +3,15 @@
 # Only signals PIDs verified as this repo's dev server process group.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Physical path so symlink checkouts match /proc and lsof cwd (macOS /tmp → /private/tmp).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$ROOT"
 
 PID_FILE="${PROSEFIELD_DEV_PID_FILE:-$ROOT/.prosefield-dev.pid}"
+
+# Test seams (never set in production / CI start-stop):
+#   PROSEFIELD_STOP_DISABLE_PROC=1  — skip /proc cwd (force lsof / fail-safe path)
+#   PROSEFIELD_STOP_DISABLE_LSOF=1  — skip lsof cwd lookup
 
 # True when PID exists but is a zombie (exited; awaiting reaper). Counts as stopped.
 is_zombie() {
@@ -16,16 +21,41 @@ is_zombie() {
   [[ "$stat" == *Z* ]]
 }
 
+# Resolve a directory to its physical path for comparison.
+resolve_dir() {
+  local p="$1"
+  [[ -n "$p" ]] || return 0
+  if [[ -d "$p" ]]; then
+    (cd "$p" && pwd -P) 2>/dev/null || printf '%s' "$p"
+  else
+    printf '%s' "$p"
+  fi
+}
+
 # Resolve process cwd: Linux /proc, else macOS/BSD lsof. Never invent a match.
 process_cwd() {
   local pid="$1"
   local cwd=""
-  if [[ -e "/proc/${pid}/cwd" ]]; then
+  if [[ "${PROSEFIELD_STOP_DISABLE_PROC:-}" != "1" && -e "/proc/${pid}/cwd" ]]; then
     cwd="$(readlink -f "/proc/${pid}/cwd" 2>/dev/null || true)"
-  elif command -v lsof >/dev/null 2>&1; then
+  elif [[ "${PROSEFIELD_STOP_DISABLE_LSOF:-}" != "1" ]] && command -v lsof >/dev/null 2>&1; then
     cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n1 || true)"
   fi
+  if [[ -n "$cwd" ]]; then
+    cwd="$(resolve_dir "$cwd")"
+  fi
   printf '%s' "$cwd"
+}
+
+# True when we have a cwd lookup tool available (for clearer refuse messages).
+cwd_lookup_available() {
+  if [[ "${PROSEFIELD_STOP_DISABLE_PROC:-}" != "1" && -e /proc/self/cwd ]]; then
+    return 0
+  fi
+  if [[ "${PROSEFIELD_STOP_DISABLE_LSOF:-}" != "1" ]] && command -v lsof >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
 }
 
 # True when any non-zombie member of the process group is still alive.
@@ -64,7 +94,7 @@ is_our_dev_server() {
     fi
   fi
 
-  # Require cwd == ROOT (Linux /proc or macOS lsof). Never accept bare "dev" in args.
+  # Require physical cwd == ROOT (Linux /proc or macOS lsof). Never accept bare "dev".
   local cwd=""
   cwd="$(process_cwd "$pid")"
   cwd="${cwd%/}"
@@ -92,7 +122,11 @@ if [[ -f "$PID_FILE" ]]; then
     echo "Stale pid file (process ${pid} not running) — removing without signal."
     rm -f "$PID_FILE"
   elif ! is_our_dev_server "$pid"; then
-    echo "Pid ${pid} is not this repo's frontend (cmdline/cwd mismatch) — removing stale file, not signalling."
+    if ! cwd_lookup_available; then
+      echo "Pid ${pid}: cannot verify cwd (no /proc cwd, no lsof) and cmdline lacks this repo path — not signalling."
+    else
+      echo "Pid ${pid} is not this repo's frontend (cmdline/cwd mismatch) — removing stale file, not signalling."
+    fi
     rm -f "$PID_FILE"
   else
     pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]' || true)"

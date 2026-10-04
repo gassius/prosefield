@@ -13,9 +13,70 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const root = process.cwd();
+/** Physical repo root (matches stop.sh / start.sh `pwd -P`). */
+const rootPhysical = execFileSync("bash", ["-c", "pwd -P"], {
+  cwd: root,
+  encoding: "utf8",
+}).trim();
 const checkSh = path.join(root, "scripts/check.sh");
 const stopSh = path.join(root, "scripts/stop.sh");
 const startSh = path.join(root, "scripts/start.sh");
+
+function hasSetsid(): boolean {
+  return existsSync("/usr/bin/setsid") || existsSync("/bin/setsid");
+}
+
+/** Spawn a pnpm-named sleep leader (+ child) in its own process group. */
+function spawnDevGroupLeader(
+  childPidFile: string,
+  cwd: string,
+): ReturnType<typeof spawn> {
+  const inner = `sleep 300 & echo $! >'${childPidFile}'; exec -a 'pnpm dev --hostname 127.0.0.1 --port 3000' sleep 300`;
+  if (hasSetsid()) {
+    return spawn("setsid", ["bash", "-c", inner], {
+      cwd,
+      stdio: "ignore",
+      detached: false,
+    });
+  }
+  return spawn("bash", ["-c", `set -m; ${inner}`], {
+    cwd,
+    stdio: "ignore",
+    detached: false,
+  });
+}
+
+function waitForPnpmArgs(pid: number, childPidFile: string): void {
+  for (let i = 0; i < 50; i++) {
+    if (!existsSync(childPidFile)) {
+      execFileSync("sleep", ["0.1"]);
+      continue;
+    }
+    try {
+      const args = execFileSync("ps", ["-o", "args=", "-p", String(pid)], {
+        encoding: "utf8",
+      });
+      if (/pnpm/.test(args)) return;
+    } catch {
+      // not ready
+    }
+    execFileSync("sleep", ["0.1"]);
+  }
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    const stat = execFileSync("ps", ["-o", "stat=", "-p", String(pid)], {
+      encoding: "utf8",
+    }).trim();
+    // Zombies still pass kill(pid, 0); treat them as stopped.
+    if (!stat || stat.includes("Z")) return false;
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function read(rel: string): string {
   return readFileSync(path.join(root, rel), "utf8");
@@ -237,6 +298,7 @@ describe("P5b ship scripts inventory", () => {
     const stop = codeWithoutComments(read("scripts/stop.sh"));
     expect(stop).toMatch(/is_our_dev_server/);
     expect(stop).toMatch(/lsof -a -p/);
+    expect(stop).toMatch(/pwd -P/);
     expect(stop).toMatch(/pgid" == "\$pid"/);
     expect(stop.indexOf("is_our_dev_server")).toBeLessThan(
       stop.indexOf("kill -TERM"),
@@ -505,33 +567,9 @@ describe("stop.sh executable behaviour", () => {
     const pidFile = path.join(dir, "dev.pid");
     const childPidFile = path.join(dir, "child.pid");
 
-    // Match start.sh: setsid session leader (avoid Node detached+setsid clash).
-    const leader = spawn(
-      "setsid",
-      [
-        "bash",
-        "-c",
-        `sleep 300 & echo $! >'${childPidFile}'; exec -a 'pnpm dev --hostname 127.0.0.1 --port 3000' sleep 300`,
-      ],
-      { cwd: root, stdio: "ignore", detached: false },
-    );
+    const leader = spawnDevGroupLeader(childPidFile, rootPhysical);
     writeFileSync(pidFile, String(leader.pid));
-
-    for (let i = 0; i < 50; i++) {
-      if (!existsSync(childPidFile)) {
-        execFileSync("sleep", ["0.1"]);
-        continue;
-      }
-      try {
-        const args = execFileSync("ps", ["-o", "args=", "-p", String(leader.pid)], {
-          encoding: "utf8",
-        });
-        if (/pnpm/.test(args)) break;
-      } catch {
-        // not ready
-      }
-      execFileSync("sleep", ["0.1"]);
-    }
+    waitForPnpmArgs(leader.pid!, childPidFile);
     const childPid = Number(readFileSync(childPidFile, "utf8").trim());
 
     try {
@@ -551,7 +589,7 @@ describe("stop.sh executable behaviour", () => {
         }
       })();
       expect(leaderStat === "" || leaderStat.includes("Z")).toBe(true);
-      expect(() => process.kill(childPid, 0)).toThrow();
+      expect(processAlive(childPid)).toBe(false);
     } finally {
       try {
         leader.kill("SIGKILL");
@@ -568,6 +606,228 @@ describe("stop.sh executable behaviour", () => {
           } catch {
             // gone
           }
+        }
+      }
+    }
+  });
+
+  it("does not kill pnpm-named process in a foreign cwd (SP7)", () => {
+    const foreignDir = mkdtempSync(path.join(tmpdir(), "pf-stop-foreign-cwd-"));
+    junk.push(foreignDir);
+    const dir = mkdtempSync(path.join(tmpdir(), "pf-stop-sp7-"));
+    junk.push(dir);
+    const pidFile = path.join(dir, "dev.pid");
+    const victim = spawn(
+      "bash",
+      [
+        "-c",
+        "exec -a 'pnpm dev --hostname 127.0.0.1 --port 3000' sleep 120",
+      ],
+      { cwd: foreignDir, stdio: "ignore", detached: true },
+    );
+    writeFileSync(pidFile, String(victim.pid));
+    try {
+      // Ensure cmdline looks like pnpm before stop runs.
+      for (let i = 0; i < 30; i++) {
+        try {
+          const args = execFileSync(
+            "ps",
+            ["-o", "args=", "-p", String(victim.pid)],
+            { encoding: "utf8" },
+          );
+          if (/pnpm/.test(args)) break;
+        } catch {
+          // retry
+        }
+        execFileSync("sleep", ["0.05"]);
+      }
+      const out = execFileSync("bash", [stopSh], {
+        env: { ...stopEnv(), PROSEFIELD_DEV_PID_FILE: pidFile },
+        encoding: "utf8",
+      });
+      expect(out).toMatch(/cwd mismatch|not this repo's frontend/);
+      expect(existsSync(pidFile)).toBe(false);
+      expect(processAlive(victim.pid!)).toBe(true);
+    } finally {
+      try {
+        process.kill(victim.pid!, "SIGKILL");
+      } catch {
+        // already gone
+      }
+    }
+  });
+
+  it("lsof cwd path: stops ours and refuses foreign (SP8)", () => {
+    const foreignDir = mkdtempSync(path.join(tmpdir(), "pf-stop-sp8-foreign-"));
+    junk.push(foreignDir);
+    const stubDir = mkdtempSync(path.join(tmpdir(), "pf-stop-sp8-stubs-"));
+    junk.push(stubDir);
+    const pidFileOurs = path.join(stubDir, "ours.pid");
+    const pidFileForeign = path.join(stubDir, "foreign.pid");
+
+    const ours = spawn(
+      "bash",
+      [
+        "-c",
+        "exec -a 'pnpm dev --hostname 127.0.0.1 --port 3000' sleep 120",
+      ],
+      { cwd: rootPhysical, stdio: "ignore", detached: true },
+    );
+    const foreign = spawn(
+      "bash",
+      [
+        "-c",
+        "exec -a 'pnpm dev --hostname 127.0.0.1 --port 3000' sleep 120",
+      ],
+      { cwd: foreignDir, stdio: "ignore", detached: true },
+    );
+    writeFileSync(pidFileOurs, String(ours.pid));
+    writeFileSync(pidFileForeign, String(foreign.pid));
+
+    // lsof -Fn stub: n<path> for cwd. Broken s/^n// parse (SP8) would refuse ours.
+    writeStub(
+      stubDir,
+      "lsof",
+      `pid=""
+       while [[ \$# -gt 0 ]]; do
+         if [[ "\$1" == "-p" ]]; then pid="\$2"; shift 2; continue; fi
+         shift
+       done
+       case "\$pid" in
+         "${ours.pid}") printf 'n%s\\n' '${rootPhysical}' ;;
+         "${foreign.pid}") printf 'n%s\\n' '${foreignDir}' ;;
+         *) exit 1 ;;
+       esac`,
+    );
+
+    try {
+      const envBase = {
+        ...stopEnv(),
+        PATH: `${stubDir}:${process.env.PATH ?? ""}`,
+        PROSEFIELD_STOP_DISABLE_PROC: "1",
+      };
+
+      const outOurs = execFileSync("bash", [stopSh], {
+        env: { ...envBase, PROSEFIELD_DEV_PID_FILE: pidFileOurs },
+        encoding: "utf8",
+      });
+      expect(outOurs).toMatch(/Stopped frontend/);
+      expect(processAlive(ours.pid!)).toBe(false);
+
+      const outForeign = execFileSync("bash", [stopSh], {
+        env: { ...envBase, PROSEFIELD_DEV_PID_FILE: pidFileForeign },
+        encoding: "utf8",
+      });
+      expect(outForeign).toMatch(/cwd mismatch|not this repo's frontend/);
+      expect(processAlive(foreign.pid!)).toBe(true);
+    } finally {
+      for (const p of [ours.pid, foreign.pid]) {
+        if (!p) continue;
+        try {
+          process.kill(p, "SIGKILL");
+        } catch {
+          // gone
+        }
+      }
+    }
+  });
+
+  it("refuses to signal when cwd cannot be verified (SP9)", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "pf-stop-sp9-"));
+    junk.push(dir);
+    const stubDir = mkdtempSync(path.join(tmpdir(), "pf-stop-sp9-stubs-"));
+    junk.push(stubDir);
+    const pidFile = path.join(dir, "dev.pid");
+
+    // pnpm-named, cwd is ours, but no /proc and no lsof — must fail safe.
+    const victim = spawn(
+      "bash",
+      [
+        "-c",
+        "exec -a 'pnpm dev --hostname 127.0.0.1 --port 3000' sleep 120",
+      ],
+      { cwd: rootPhysical, stdio: "ignore", detached: true },
+    );
+    writeFileSync(pidFile, String(victim.pid));
+
+    // Private PATH without lsof (and DISABLE_PROC) so neither cwd tool works.
+    linkBins(stubDir, [
+      "bash",
+      "ps",
+      "tr",
+      "kill",
+      "sleep",
+      "cat",
+      "sed",
+      "head",
+      "grep",
+      "rm",
+      "printf",
+      "echo",
+      "true",
+      "false",
+      "test",
+      "[",
+      "env",
+      "dirname",
+      "basename",
+      "readlink",
+    ]);
+
+    try {
+      const out = execFileSync("bash", [stopSh], {
+        env: {
+          ...stopEnv(),
+          PATH: stubDir,
+          PROSEFIELD_STOP_DISABLE_PROC: "1",
+          PROSEFIELD_STOP_DISABLE_LSOF: "1",
+          PROSEFIELD_DEV_PID_FILE: pidFile,
+        },
+        encoding: "utf8",
+      });
+      expect(out).toMatch(/cannot verify cwd/);
+      expect(out).toMatch(/not signalling/);
+      expect(existsSync(pidFile)).toBe(false);
+      expect(processAlive(victim.pid!)).toBe(true);
+    } finally {
+      try {
+        process.kill(victim.pid!, "SIGKILL");
+      } catch {
+        // gone
+      }
+    }
+  });
+
+  it("matches physical paths when repo is reached via symlink (R5)", () => {
+    const linkParent = mkdtempSync(path.join(tmpdir(), "pf-stop-r5-"));
+    junk.push(linkParent);
+    const link = path.join(linkParent, "prosefield");
+    execFileSync("ln", ["-s", rootPhysical, link]);
+    const stopViaLink = path.join(link, "scripts/stop.sh");
+    const pidFile = path.join(linkParent, "dev.pid");
+    const childPidFile = path.join(linkParent, "child.pid");
+
+    const leader = spawnDevGroupLeader(childPidFile, rootPhysical);
+    writeFileSync(pidFile, String(leader.pid));
+    waitForPnpmArgs(leader.pid!, childPidFile);
+
+    try {
+      // Invoking stop.sh through the symlink must still resolve ROOT via pwd -P.
+      const out = execFileSync("bash", [stopViaLink], {
+        env: { ...stopEnv(), PROSEFIELD_DEV_PID_FILE: pidFile },
+        encoding: "utf8",
+      });
+      expect(out).toMatch(/Stopped frontend/);
+      expect(existsSync(pidFile)).toBe(false);
+      expect(processAlive(leader.pid!)).toBe(false);
+    } finally {
+      try {
+        process.kill(-(leader.pid!), "SIGKILL");
+      } catch {
+        try {
+          process.kill(leader.pid!, "SIGKILL");
+        } catch {
+          // gone
         }
       }
     }
