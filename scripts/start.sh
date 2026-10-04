@@ -10,6 +10,27 @@ PID_FILE="${PROSEFIELD_DEV_PID_FILE:-$ROOT/.prosefield-dev.pid}"
 LOG_FILE="${PROSEFIELD_DEV_LOG_FILE:-$ROOT/.prosefield-dev.log}"
 APP_URL="${APP_URL:-http://localhost:3000}"
 
+# Launch host frontend in its own process group so stop.sh can TERM/KILL the tree.
+# Prefer setsid (Linux). Fall back to bash monitor mode or perl setpgrp (macOS).
+prosefield_launch_dev_server() {
+  local log_file="$1"
+  local pid_file="$2"
+  if command -v setsid >/dev/null 2>&1; then
+    setsid nohup pnpm dev --hostname 127.0.0.1 --port 3000 >"$log_file" 2>&1 </dev/null &
+  else
+    # macOS has no util-linux setsid. Monitor mode gives the background job its own
+    # process group with pgid == $!. perl setpgrp is a second portable fallback.
+    set -m
+    if command -v perl >/dev/null 2>&1; then
+      perl -e 'setpgrp(0,0); open STDIN,"</dev/null"; open STDOUT,">",$ARGV[0]; open STDERR,">&STDOUT"; exec @ARGV[1..$#ARGV] or die $!' \
+        "$log_file" pnpm dev --hostname 127.0.0.1 --port 3000 &
+    else
+      nohup pnpm dev --hostname 127.0.0.1 --port 3000 >"$log_file" 2>&1 </dev/null &
+    fi
+  fi
+  echo $! >"$pid_file"
+}
+
 # Prefer nvm Node from .nvmrc when the active Node does not already match.
 # Do not call `nvm use` when Node already matches (CI setup-node / system Node) —
 # runners often have nvm.sh present without the .nvmrc version installed in nvm.
@@ -86,10 +107,7 @@ elif dev_pid_running; then
   echo "Waiting for existing frontend (pid $(tr -d '[:space:]' <"$PID_FILE"))…"
   bash "$ROOT/scripts/wait-for-url.sh" "$APP_URL" 90
 else
-  # Own process group so stop.sh can TERM/KILL the whole tree (pnpm + next).
-  # setsid makes $! the session/process-group leader.
-  setsid nohup pnpm dev --hostname 127.0.0.1 --port 3000 >"$LOG_FILE" 2>&1 </dev/null &
-  echo $! >"$PID_FILE"
+  prosefield_launch_dev_server "$LOG_FILE" "$PID_FILE"
   bash "$ROOT/scripts/wait-for-url.sh" "$APP_URL" 90
 fi
 

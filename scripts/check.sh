@@ -3,11 +3,12 @@
 # Exit 0 when every check passes; non-zero when anything is missing.
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
-
-# When set (used by start.sh), ports already serving our known health endpoints count as pass.
-FOR_START="${PROSEFIELD_CHECK_FOR_START:-0}"
+# Test override (unit tests); production always uses the repo containing this script.
+if [[ -n "${PROSEFIELD_CHECK_ROOT:-}" ]]; then
+  ROOT="$PROSEFIELD_CHECK_ROOT"
+else
+  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
 
 PASS=0
 FAIL=0
@@ -24,6 +25,9 @@ fail() {
   FAIL=$((FAIL + 1))
 }
 
+# When set (used by start.sh), ports already serving our known health endpoints count as pass.
+FOR_START="${PROSEFIELD_CHECK_FOR_START:-0}"
+
 # --- Refuse native Windows shells (Git Bash / MSYS); use WSL2 instead. ---
 uname_s="$(uname -s 2>/dev/null || true)"
 if [[ "${OSTYPE:-}" == msys* || "${OSTYPE:-}" == cygwin* ]] \
@@ -39,11 +43,14 @@ fi
 if [[ "$ROOT" == /mnt/* ]]; then
   fail "Repo path on /mnt/…" \
     "Clone into the Linux filesystem (e.g. ~/prosefield), not /mnt/c/…. See https://learn.microsoft.com/en-us/windows/wsl/filesystems"
+  printf '\n%d passed, %d failed.\n' "$PASS" "$FAIL"
+  exit 1
 fi
+
+cd "$ROOT"
 
 required_node="$(tr -d '[:space:]' <"$ROOT/.nvmrc")"
 required_node="${required_node#v}"
-
 
 # --- git ---
 if command -v git >/dev/null 2>&1; then
@@ -89,7 +96,6 @@ else
   fi
 fi
 
-
 # --- Docker Compose v2 (`docker compose`) ---
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   if docker compose version >/dev/null 2>&1; then
@@ -101,6 +107,15 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
 elif command -v docker >/dev/null 2>&1; then
   fail "Docker Compose v2" \
     "Start Docker first, then confirm Compose V2: https://docs.docker.com/compose/install/"
+fi
+
+# --- Dev-server process group path (start.sh) ---
+if command -v setsid >/dev/null 2>&1; then
+  pass "Dev-server process group: setsid"
+elif command -v perl >/dev/null 2>&1; then
+  pass "Dev-server process group: set -m + perl setpgrp (setsid unavailable — macOS/other)"
+else
+  pass "Dev-server process group: set -m (setsid/perl unavailable)"
 fi
 
 # --- Free ports (or already our services when FOR_START=1) ---

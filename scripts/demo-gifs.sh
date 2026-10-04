@@ -59,7 +59,6 @@ encode_gif() {
   echo "wrote $dest ($(wc -c <"$dest") bytes)"
 }
 
-
 map_clip() {
   local name="$1"
   local dest="$2"

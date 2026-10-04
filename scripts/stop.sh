@@ -16,6 +16,32 @@ is_zombie() {
   [[ "$stat" == *Z* ]]
 }
 
+# Resolve process cwd: Linux /proc, else macOS/BSD lsof. Never invent a match.
+process_cwd() {
+  local pid="$1"
+  local cwd=""
+  if [[ -e "/proc/${pid}/cwd" ]]; then
+    cwd="$(readlink -f "/proc/${pid}/cwd" 2>/dev/null || true)"
+  elif command -v lsof >/dev/null 2>&1; then
+    cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n1 || true)"
+  fi
+  printf '%s' "$cwd"
+}
+
+# True when any non-zombie member of the process group is still alive.
+group_has_live_members() {
+  local pgid="$1"
+  local p=""
+  while read -r p; do
+    p="$(printf '%s' "$p" | tr -d '[:space:]')"
+    [[ -n "$p" ]] || continue
+    if kill -0 "$p" 2>/dev/null && ! is_zombie "$p"; then
+      return 0
+    fi
+  done < <(ps -o pid= -g "$pgid" 2>/dev/null || true)
+  return 1
+}
+
 # Return 0 only when PID is alive (non-zombie) and belongs to this repo's frontend.
 is_our_dev_server() {
   local pid="$1"
@@ -38,24 +64,24 @@ is_our_dev_server() {
     fi
   fi
 
-  # Prefer cwd match to this repo (Linux /proc; macOS lacks it — then cmdline ROOT is enough).
-  if [[ -e "/proc/${pid}/cwd" ]]; then
-    local cwd=""
-    cwd="$(readlink -f "/proc/${pid}/cwd" 2>/dev/null || true)"
-    if [[ -n "$cwd" && "$cwd" != "$ROOT" ]]; then
-      if ! printf '%s' "$args" | grep -Fq "$ROOT"; then
-        return 1
-      fi
+  # Require cwd == ROOT (Linux /proc or macOS lsof). Never accept bare "dev" in args.
+  local cwd=""
+  cwd="$(process_cwd "$pid")"
+  cwd="${cwd%/}"
+  local root_n="${ROOT%/}"
+  if [[ -n "$cwd" ]]; then
+    if [[ "$cwd" != "$root_n" ]]; then
+      return 1
     fi
-  elif ! printf '%s' "$args" | grep -Fq "$ROOT"; then
-    if ! printf '%s' "$args" | grep -Eqi 'dev'; then
+  else
+    # No cwd available — require absolute ROOT in cmdline (not a "dev" substring).
+    if ! printf '%s' "$args" | grep -Fq "$ROOT"; then
       return 1
     fi
   fi
 
   return 0
 }
-
 
 if [[ -f "$PID_FILE" ]]; then
   pid="$(tr -d '[:space:]' <"$PID_FILE")"
@@ -70,11 +96,16 @@ if [[ -f "$PID_FILE" ]]; then
     rm -f "$PID_FILE"
   else
     pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d '[:space:]' || true)"
-    if [[ -z "$pgid" || ! "$pgid" =~ ^[0-9]+$ ]]; then
-      pgid="$pid"
+    # Signal the group only when the verified PID is the group leader (pgid == pid).
+    signal_group=0
+    if [[ -n "$pgid" && "$pgid" =~ ^[0-9]+$ && "$pgid" == "$pid" ]]; then
+      signal_group=1
     fi
-    # Signal the whole process group (pnpm + next child).
-    kill -TERM -- "-${pgid}" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    if [[ "$signal_group" -eq 1 ]]; then
+      kill -TERM -- "-${pgid}" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+    else
+      kill -TERM "$pid" 2>/dev/null || true
+    fi
     for _ in 1 2 3 4 5 6 7 8 9 10; do
       if ! kill -0 "$pid" 2>/dev/null || is_zombie "$pid"; then
         break
@@ -84,22 +115,32 @@ if [[ -f "$PID_FILE" ]]; then
     if kill -0 "$pid" 2>/dev/null && ! is_zombie "$pid"; then
       # Re-verify before KILL — never escalate against an unverified PID.
       if is_our_dev_server "$pid"; then
-        kill -KILL -- "-${pgid}" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+        if [[ "$signal_group" -eq 1 ]]; then
+          kill -KILL -- "-${pgid}" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+        else
+          kill -KILL "$pid" 2>/dev/null || true
+        fi
       else
         echo "Pid ${pid} no longer looks like our frontend after TERM — not sending KILL."
       fi
+    elif [[ "$signal_group" -eq 1 ]] && group_has_live_members "$pgid"; then
+      # Leader gone but children survived TERM — escalate KILL to the group.
+      kill -KILL -- "-${pgid}" 2>/dev/null || true
     fi
     if kill -0 "$pid" 2>/dev/null && ! is_zombie "$pid"; then
       echo "Warning: frontend pid ${pid} still alive after stop attempt." >&2
     else
-      echo "Stopped frontend process group (leader pid ${pid}, pgid ${pgid})."
+      if [[ "$signal_group" -eq 1 ]]; then
+        echo "Stopped frontend process group (leader pid ${pid}, pgid ${pgid})."
+      else
+        echo "Stopped frontend pid ${pid} (not group leader; pgid ${pgid:-unknown})."
+      fi
     fi
     rm -f "$PID_FILE"
   fi
 else
   echo "No frontend pid file — if pnpm dev is running elsewhere, stop it manually."
 fi
-
 
 if [[ "${PROSEFIELD_STOP_SKIP_COMPOSE:-}" == "1" ]]; then
   echo "Skipped compose down (PROSEFIELD_STOP_SKIP_COMPOSE=1)."
@@ -114,4 +155,3 @@ elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
 else
   echo "Docker not available — skipped compose down."
 fi
-

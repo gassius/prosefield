@@ -355,20 +355,13 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: shellcheck bash scripts
-        # koalaman/shellcheck:v0.11.0 pinned by digest.
-        uses: docker://koalaman/shellcheck@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
-        with:
-          args: >-
-            -x
-            scripts/check.sh
-            scripts/start.sh
-            scripts/stop.sh
-            scripts/demo-gifs.sh
-            scripts/require-docker.sh
-            scripts/wait-for-url.sh
-            scripts/test-visual.sh
-            scripts/playwright-image.sh
-            docker/emulators-entrypoint.sh
+        # koalaman/shellcheck:v0.11.0 pinned by digest. Glob so new scripts/*.sh are covered.
+        run: |
+          set -euo pipefail
+          files=(scripts/*.sh docker/*.sh)
+          docker run --rm -v "$PWD:/src" -w /src \
+            koalaman/shellcheck@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d \
+            -x "${files[@]}"
 
   fresh-start:
     name: Fresh machine start
@@ -445,14 +438,19 @@ jobs:
             fi
             return 0
           }
-          for port in 3000 8080 9099; do
+          for port in 3000 4000 8080 9099; do
             if ! port_closed "$port"; then
               echo "::error::port ${port} still open after scripts/stop.sh"
               exit 1
             fi
             echo "ok: port ${port} closed"
           done
-
+          if [[ -n "$(docker compose ps -q 2>/dev/null || true)" ]]; then
+            echo "::error::docker compose still has running services after scripts/stop.sh"
+            docker compose ps
+            exit 1
+          fi
+          echo "ok: docker compose ps empty"
 
   gitleaks:
     name: gitleaks

@@ -21,6 +21,14 @@ function read(rel: string): string {
   return readFileSync(path.join(root, rel), "utf8");
 }
 
+/** Non-comment source lines (ST3/ST5 must fail if only comments/banner match). */
+function codeWithoutComments(src: string): string {
+  return src
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
+}
+
 function requiredNode(): string {
   return readFileSync(path.join(root, ".nvmrc"), "utf8")
     .trim()
@@ -31,6 +39,19 @@ function writeStub(dir: string, name: string, body: string): void {
   const file = path.join(dir, name);
   writeFileSync(file, `#!/usr/bin/env bash\nset -euo pipefail\n${body}\n`);
   chmodSync(file, 0o755);
+}
+
+/** Symlink host tools into dir; never include setsid (macOS PATH simulation). */
+function linkBins(dir: string, names: string[]): void {
+  for (const bin of names) {
+    if (bin === "setsid") continue;
+    const src = existsSync(`/usr/bin/${bin}`)
+      ? `/usr/bin/${bin}`
+      : `/bin/${bin}`;
+    if (existsSync(src)) {
+      execFileSync("ln", ["-sf", src, path.join(dir, bin)]);
+    }
+  }
 }
 
 type StubOpts = {
@@ -80,7 +101,6 @@ function makeStubs(opts: StubOpts = {}): {
       'if [[ "${1:-}" == "info" ]]; then echo "Cannot connect" >&2; exit 1; fi; exit 0',
     );
   }
-  // docker === "missing": no docker stub; PATH excludes host docker via custom root below.
 
   if (opts.portBusy != null) {
     const port = opts.portBusy;
@@ -102,14 +122,8 @@ function makeStubs(opts: StubOpts = {}): {
     writeStub(stubDir, "curl", "exit 0");
   }
 
-  // Hide host docker/lsof when we need a controlled environment: put stubs first.
-  // For "missing" docker, also insert a fake `command`? Instead use a wrapper PATH
-  // that only includes stubDir + /bin (coreutils) — host docker often lives in /usr/bin.
   let pathValue = `${stubDir}:/bin:/usr/bin`;
   if (docker === "missing") {
-    // Provide coreutils via /bin only; shadow /usr/bin/docker by not including it…
-    // Ubuntu puts docker in /usr/bin. Use stubDir + /bin and copy-needed via real path
-    // by creating symlinks for grep/sed/head/tr/uname into stubDir from /usr/bin.
     for (const bin of [
       "grep",
       "sed",
@@ -144,7 +158,6 @@ function makeStubs(opts: StubOpts = {}): {
     PATH: pathValue,
   };
   delete env.MSYSTEM;
-  // Keep OSTYPE as linux so we don't false-positive Windows detection.
   env.OSTYPE = "linux-gnu";
 
   return { stubDir, env };
@@ -192,16 +205,44 @@ describe("P5b ship scripts inventory", () => {
     ).toBe(false);
   });
 
-  it("start.sh uses setsid; stop.sh verifies before kill -TERM/--KILL", () => {
-    const start = read("scripts/start.sh");
-    const stop = read("scripts/stop.sh");
-    expect(start).toMatch(/setsid/);
-    expect(start).toMatch(/127\.0\.0\.1/);
-    expect(stop).toMatch(/is_our_dev_server/);
-    expect(stop).toMatch(/kill -TERM --/);
-    expect(stop.indexOf("is_our_dev_server")).toBeLessThan(
-      stop.indexOf("kill -TERM --"),
+  it("start.sh launch binds --hostname 127.0.0.1 (not only Emulator UI banner)", () => {
+    const code = codeWithoutComments(read("scripts/start.sh"));
+    // ST3: binding to 0.0.0.0 must fail — banner 127.0.0.1:4000 alone is insufficient.
+    expect(code).toMatch(/pnpm dev --hostname 127\.0\.0\.1 --port 3000/);
+    const weakened = code.replace(
+      /pnpm dev --hostname 127\.0\.0\.1 --port 3000/g,
+      "pnpm dev --hostname 0.0.0.0 --port 3000",
     );
+    expect(weakened).not.toMatch(/--hostname 127\.0\.0\.1/);
+  });
+
+  it("start.sh process-group launch is real code (setsid + fallbacks; not only comments)", () => {
+    const code = codeWithoutComments(read("scripts/start.sh"));
+    // ST5: removing setsid from the launch must fail this assert.
+    expect(code).toMatch(/\bsetsid\b/);
+    expect(code).toMatch(/setpgrp/);
+    expect(code).toMatch(/\bset -m\b/);
+    expect(code).toMatch(/prosefield_launch_dev_server/);
+    const withoutSetsidLaunch = code.replace(
+      /setsid nohup pnpm dev --hostname 127\.0\.0\.1 --port 3000[^\n]*/g,
+      "nohup pnpm dev --hostname 127.0.0.1 --port 3000 >\"$log_file\" 2>&1 </dev/null &",
+    );
+    // Comment-only mention would still leave \bsetsid\b from the command -v check —
+    // require the actual setsid launch form.
+    expect(code).toMatch(/setsid nohup pnpm dev --hostname 127\.0\.0\.1/);
+    expect(withoutSetsidLaunch).not.toMatch(/setsid nohup pnpm dev/);
+  });
+
+  it("stop.sh verifies ownership before signalling; group only when pgid==pid", () => {
+    const stop = codeWithoutComments(read("scripts/stop.sh"));
+    expect(stop).toMatch(/is_our_dev_server/);
+    expect(stop).toMatch(/lsof -a -p/);
+    expect(stop).toMatch(/pgid" == "\$pid"/);
+    expect(stop.indexOf("is_our_dev_server")).toBeLessThan(
+      stop.indexOf("kill -TERM"),
+    );
+    // Must not accept bare "dev" as ownership on macOS fallback.
+    expect(stop).not.toMatch(/grep -Eqi 'dev'/);
   });
 
   it("docs contracts: AGENT_SETUP WSL home, write-up active-only, time-log template", () => {
@@ -221,6 +262,7 @@ describe("check.sh executable behaviour (stubbed PATH)", () => {
     expect(result.status).toBe(0);
     expect(result.out).toMatch(/PASS {2}Node\.js/);
     expect(result.out).toMatch(/PASS {2}Docker/);
+    expect(result.out).toMatch(/PASS {2}Dev-server process group:/);
     expect(result.out).toMatch(/0 failed/);
   });
 
@@ -244,6 +286,16 @@ describe("check.sh executable behaviour (stubbed PATH)", () => {
     expect(result.out).toMatch(/WSL2/);
   });
 
+  it("exits non-zero when repo root is under /mnt/*", () => {
+    const { stubDir, env } = makeStubs({ docker: "ok" });
+    junk.push(stubDir);
+    const result = runCheck(env, {
+      PROSEFIELD_CHECK_ROOT: "/mnt/c/Users/demo/prosefield",
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.out).toMatch(/FAIL {2}Repo path on \/mnt/);
+  });
+
   it("exits non-zero when Docker daemon is down", () => {
     const { stubDir, env } = makeStubs({ docker: "daemon-down" });
     junk.push(stubDir);
@@ -255,8 +307,6 @@ describe("check.sh executable behaviour (stubbed PATH)", () => {
   it("exits non-zero when Docker CLI is missing", () => {
     const { stubDir, env } = makeStubs({ docker: "ok" });
     junk.push(stubDir);
-    // Shadow `command -v docker` by sourcing check.sh under a bash function override.
-    // (Host images often ship /bin/docker, so PATH alone cannot hide the CLI.)
     const wrapper = `
       command() {
         if [[ "\$1" == "-v" && "\$2" == "docker" ]]; then
@@ -284,7 +334,6 @@ describe("check.sh executable behaviour (stubbed PATH)", () => {
     expect(out).toMatch(/get-docker|Install Docker/i);
   });
 
-
   it("exits non-zero when port 3000 is busy (foreign)", () => {
     const { stubDir, env } = makeStubs({
       docker: "ok",
@@ -307,6 +356,69 @@ describe("check.sh executable behaviour (stubbed PATH)", () => {
     const result = runCheck(env, { PROSEFIELD_CHECK_FOR_START: "1" });
     expect(result.status).not.toBe(0);
     expect(result.out).toMatch(/FAIL {2}Port 3000/);
+  });
+
+  it("reports perl setpgrp path when setsid is absent from PATH", () => {
+    const stubDir = mkdtempSync(path.join(tmpdir(), "pf-check-nosetsid-"));
+    junk.push(stubDir);
+    const nodeVer = requiredNode();
+    writeStub(stubDir, "git", 'echo "git version 2.43.0"');
+    writeStub(stubDir, "node", `echo "v${nodeVer}"`);
+    writeStub(stubDir, "pnpm", 'echo "10.32.1"');
+    writeStub(
+      stubDir,
+      "docker",
+      'case "${1:-}" in info) exit 0 ;; compose) echo "2.38.2"; exit 0 ;; *) exit 0 ;; esac',
+    );
+    writeStub(stubDir, "ss", "exit 0");
+    writeStub(stubDir, "curl", "exit 0");
+    // Private PATH only — host setsid may live in /bin and /usr/bin on this runner.
+    linkBins(stubDir, [
+      "grep",
+      "sed",
+      "head",
+      "tr",
+      "uname",
+      "cat",
+      "bash",
+      "perl",
+      "printf",
+      "rm",
+      "ls",
+      "dirname",
+      "basename",
+      "mktemp",
+      "sleep",
+      "ps",
+      "kill",
+      "readlink",
+      "env",
+      "cd",
+      "true",
+      "false",
+      "test",
+      "[",
+      "echo",
+      "cut",
+      "sort",
+      "wc",
+      "tee",
+      "date",
+      "chmod",
+      "ln",
+      "cp",
+      "mv",
+      "which",
+      "command",
+    ]);
+    const result = runCheck({
+      ...process.env,
+      PATH: stubDir,
+      OSTYPE: "linux-gnu",
+    });
+    expect(result.status).toBe(0);
+    expect(result.out).toMatch(/Dev-server process group: set -m \+ perl setpgrp/);
+    expect(result.out).not.toMatch(/Dev-server process group: setsid$/m);
   });
 });
 
@@ -429,7 +541,6 @@ describe("stop.sh executable behaviour", () => {
       });
       expect(out).toMatch(/Stopped frontend process group/);
       expect(existsSync(pidFile)).toBe(false);
-      // Leader may briefly remain as a zombie until Node reaps; must not be a live runner.
       const leaderStat = (() => {
         try {
           return execFileSync("ps", ["-o", "stat=", "-p", String(leader.pid)], {
@@ -463,7 +574,73 @@ describe("stop.sh executable behaviour", () => {
   });
 });
 
+describe("start.sh launch without setsid (macOS path)", () => {
+  it("prosefield_launch_dev_server creates own process group when setsid is absent", () => {
+    const stubDir = mkdtempSync(path.join(tmpdir(), "pf-launch-nosetsid-"));
+    junk.push(stubDir);
+    const pidFile = path.join(stubDir, "dev.pid");
+    const logFile = path.join(stubDir, "dev.log");
 
+    writeStub(
+      stubDir,
+      "pnpm",
+      `if [[ "\${1:-}" == "dev" ]]; then
+         exec -a 'pnpm dev --hostname 127.0.0.1 --port 3000' sleep 120
+       fi
+       exit 0`,
+    );
+    writeStub(stubDir, "nohup", 'exec "$@"');
+    linkBins(stubDir, [
+      "bash",
+      "perl",
+      "ps",
+      "tr",
+      "kill",
+      "sleep",
+      "cat",
+      "sed",
+      "head",
+      "env",
+      "true",
+      "false",
+      "test",
+      "[",
+      "echo",
+      "printf",
+      "rm",
+      "chmod",
+      "ln",
+    ]);
+
+    // Private PATH only — setsid may exist in both /bin and /usr/bin.
+    const harness = `
+      set -euo pipefail
+      PATH='${stubDir}'
+      hash -r
+      if command -v setsid >/dev/null 2>&1; then
+        echo "setsid unexpectedly on PATH: $(command -v setsid)" >&2
+        exit 2
+      fi
+      eval "$(sed -n '/^prosefield_launch_dev_server()/,/^}/p' '${startSh}')"
+      prosefield_launch_dev_server '${logFile}' '${pidFile}'
+      sleep 0.2
+      pid="$(tr -d '[:space:]' <'${pidFile}')"
+      pgid="$(ps -o pgid= -p "$pid" | tr -d '[:space:]')"
+      echo "pid=$pid pgid=$pgid"
+      test -n "$pid"
+      test "$pgid" = "$pid"
+      kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+    `;
+
+    // Keep a normal PATH for finding bash; the harness itself restricts PATH.
+    const out = execFileSync("/bin/bash", ["-c", harness], {
+      cwd: root,
+      encoding: "utf8",
+    });
+    expect(out).toMatch(/pid=(\d+) pgid=\1/);
+    expect(existsSync(pidFile)).toBe(true);
+  });
+});
 
 describe("bash -n", () => {
   it("parses ship scripts", () => {
