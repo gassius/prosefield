@@ -58,12 +58,12 @@ Next.js is both the frontend and the backend-for-frontend. Server code checks Fi
 - README (architecture, tradeoffs, Stripe test flow, limitations), a one-page write-up, a short demo, and runnable acceptance tests.
 
 ### 2.2 Quality priorities (in order)
-1. A complete end-to-end flow (product completeness carries 30% of the rubric).
-2. Correct server-side authorisation and billing (security and correctness, 20%).
-3. Readable TypeScript structure with runnable tests (code quality, 25%).
+1. A complete end-to-end flow.
+2. Correct server-side authorisation and billing.
+3. Readable TypeScript structure with runnable tests.
 4. Reproducible local setup in under 15 minutes.
-5. Faithful Art Direction v1.1 implementation (UX and polish, 15%).
-6. Honest, concise documentation (communication, 10%).
+5. Faithful Art Direction v1.1 implementation.
+6. Honest, concise documentation.
 
 ### 2.3 Non-goals
 AI features; Python or LangChain services; real-time collaboration; autosave and multi-device conflict resolution; version history; uploads and export; an admin UI; email verification; multiple tiers, coupons, taxes or trials; dark mode; production multi-region infrastructure; a public API.
