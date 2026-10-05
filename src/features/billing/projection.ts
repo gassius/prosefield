@@ -53,7 +53,7 @@ function resolveCustomerId(subscription: Stripe.Subscription): string {
 }
 
 /** True when the subscription's price matches the configured plan price. */
-export function subscriptionMatchesConfiguredPrice(
+function subscriptionMatchesConfiguredPrice(
   subscription: Stripe.Subscription,
   priceId: string = getEnv().STRIPE_PRICE_ID,
 ): boolean {

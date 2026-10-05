@@ -763,17 +763,6 @@ describe("document allow-list and bounds", () => {
     expect(doc.content?.[0]).toEqual({ type: "paragraph" });
   });
 
-  it("tiptapJsonSchema rejects disallow-listed JSON", async () => {
-    const { tiptapJsonSchema } = await import("@/features/documents/schemas");
-    expect(tiptapJsonSchema.safeParse({ type: "codeBlock" }).success).toBe(false);
-    expect(
-      tiptapJsonSchema.safeParse({
-        type: "doc",
-        content: [{ type: "paragraph" }],
-      }).success,
-    ).toBe(true);
-  });
-
   it("documentContentSchema surfaces allow-list rejection messages", () => {
     const result = documentContentSchema.safeParse({ type: "horizontalRule" });
     expect(result.success).toBe(false);

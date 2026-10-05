@@ -9,7 +9,6 @@ import {
   clearAllTrialDrafts,
   clearTrialDraft,
   clearTrialDraftsNotForUid,
-  hasTrialDraft,
   readTrialDraft,
   stashTrialDraft,
   trialDraftStorageKey,
@@ -63,11 +62,9 @@ describe("trial draft stash (uid-scoped sessionStorage)", () => {
       content,
     });
     expect(readTrialDraft("uid-b")?.title).toBe("Other");
-    expect(hasTrialDraft("uid-a")).toBe(true);
 
     clearTrialDraft("uid-a");
     expect(readTrialDraft("uid-a")).toBeNull();
-    expect(hasTrialDraft("uid-a")).toBe(false);
     expect(readTrialDraft("uid-b")?.title).toBe("Other");
   });
 
@@ -93,7 +90,6 @@ describe("trial draft stash (uid-scoped sessionStorage)", () => {
     expect(sessionStorage.length).toBe(0);
     expect(readTrialDraft("")).toBeNull();
     clearTrialDraft("");
-    expect(hasTrialDraft("")).toBe(false);
   });
 
   it("defaults missing content and blank stored titles on read", () => {

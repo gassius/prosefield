@@ -6,7 +6,7 @@ import {
   parseCookieValue,
 } from "@/features/auth/csrf";
 import { isRecentAuthTime } from "@/features/auth/auth-time";
-import { isAllowedNextPath, resolveNextPath } from "@/features/auth/next";
+import { resolveNextPath } from "@/features/auth/next";
 
 describe("resolveNextPath", () => {
   it("accepts allow-listed paths", () => {
@@ -21,14 +21,6 @@ describe("resolveNextPath", () => {
     expect(resolveNextPath("/subscribe?x=1")).toBe("/subscribe");
     expect(resolveNextPath("/unknown")).toBe("/subscribe");
     expect(resolveNextPath(null, "/documents")).toBe("/documents");
-  });
-
-  it("reports allow-list membership", () => {
-    expect(isAllowedNextPath("/subscribe")).toBe(true);
-    expect(isAllowedNextPath("/login")).toBe(false);
-    expect(isAllowedNextPath(null)).toBe(false);
-    expect(isAllowedNextPath(undefined)).toBe(false);
-    expect(isAllowedNextPath("")).toBe(false);
   });
 });
 

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHash, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import {
   CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
@@ -51,11 +51,6 @@ export function csrfTokensMatch(
   } catch {
     return false;
   }
-}
-
-/** Hash helper for tests / diagnostics — never log raw tokens. */
-export function fingerprintToken(token: string): string {
-  return createHash("sha256").update(token).digest("hex").slice(0, 12);
 }
 
 export function assertValidOrigin(request: Request): boolean {

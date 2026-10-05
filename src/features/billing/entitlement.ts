@@ -18,20 +18,6 @@ export const NON_TERMINAL_SUBSCRIPTION_STATUSES = [
   "incomplete",
 ] as const;
 
-export type NonTerminalSubscriptionStatus =
-  (typeof NON_TERMINAL_SUBSCRIPTION_STATUSES)[number];
-
-export type StripeSubscriptionStatus =
-  | "active"
-  | "canceled"
-  | "incomplete"
-  | "incomplete_expired"
-  | "past_due"
-  | "paused"
-  | "trialing"
-  | "unpaid"
-  | string;
-
 export function isEntitledStatus(status: string | null | undefined): boolean {
   return status === ENTITLED_SUBSCRIPTION_STATUS;
 }

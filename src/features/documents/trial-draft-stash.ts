@@ -145,7 +145,3 @@ export function clearTrialDraftsNotForUid(uid: string): void {
     sessionStorage.removeItem(key);
   }
 }
-
-export function hasTrialDraft(uid: string): boolean {
-  return readTrialDraft(uid) !== null;
-}

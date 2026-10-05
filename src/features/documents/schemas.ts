@@ -425,18 +425,6 @@ export function contentValidationMessage(error: unknown): string {
     : "Content contains disallowed nodes or marks";
 }
 
-export const tiptapJsonSchema: z.ZodType<TiptapJson> = z.custom<TiptapJson>(
-  (value) => {
-    try {
-      assertAllowedTiptapJson(value);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  { message: "Content contains disallowed nodes or marks" },
-);
-
 export const documentContentSchema = z
   .unknown()
   .transform((value, ctx) => {
@@ -478,26 +466,9 @@ export const renameDocumentBodySchema = z.object({
   title: documentTitleSchema,
 });
 
-export const updateDocumentContentInputSchema = z.object({
-  documentId: documentIdSchema,
-  content: documentContentSchema,
-});
-
-export const renameDocumentInputSchema = z.object({
-  documentId: documentIdSchema,
-  title: documentTitleSchema,
-});
-
 export const deleteDocumentInputSchema = z.object({
   documentId: documentIdSchema,
 });
-
-export type CreateDocumentInput = z.infer<typeof createDocumentInputSchema>;
-export type UpdateDocumentContentInput = z.infer<
-  typeof updateDocumentContentInputSchema
->;
-export type RenameDocumentInput = z.infer<typeof renameDocumentInputSchema>;
-export type DeleteDocumentInput = z.infer<typeof deleteDocumentInputSchema>;
 
 /** Shared StarterKit options for the live editor and paste stripping. */
 export const prosefieldStarterKitOptions = {
