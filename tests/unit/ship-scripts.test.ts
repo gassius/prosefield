@@ -366,6 +366,8 @@ describe("P5b ship scripts inventory", () => {
     expect(setup).toMatch(/Playbook: Node version mismatch/);
     expect(setup).toMatch(/Playbook: Docker unreachable/);
     expect(setup).toMatch(/Playbook: Occupied ports/);
+    expect(setup).toMatch(/enable WSL integration/i);
+    expect(setup).toMatch(/probes Prosefield health on every busy port/);
     expect(setup).toMatch(/~\//);
     // Must not keep the old "STOP at first FAIL" short-circuit.
     expect(setup).not.toMatch(/If anything \*\*FAIL\*\*s: \*\*STOP\*\*/);
@@ -559,7 +561,9 @@ nvm() {
     }
     expect(status).not.toBe(0);
     expect(out).toMatch(/FAIL {2}Docker CLI/);
-    expect(out).toMatch(/get-docker|Install Docker/i);
+    // M1: WSL/Desktop-already-installed hint comes before install.
+    expect(out).toMatch(/start it and enable WSL integration/i);
+    expect(out).toMatch(/get-docker|Otherwise install Docker/i);
   });
 
   it("exits non-zero when port 3000 is busy (foreign)", () => {
@@ -572,6 +576,7 @@ nvm() {
     const result = runCheck(env, { PROSEFIELD_CHECK_FOR_START: "0" });
     expect(result.status).not.toBe(0);
     expect(result.out).toMatch(/FAIL {2}Port 3000/);
+    expect(result.out).not.toMatch(/in use by Prosefield/);
   });
 
   it("exits non-zero for foreign busy port even with FOR_START=1", () => {
@@ -584,6 +589,34 @@ nvm() {
     const result = runCheck(env, { PROSEFIELD_CHECK_FOR_START: "1" });
     expect(result.status).not.toBe(0);
     expect(result.out).toMatch(/FAIL {2}Port 3000/);
+  });
+
+  it("reports Prosefield-owned busy port when FOR_START=0 (not non-Prosefield)", () => {
+    const { stubDir, env } = makeStubs({
+      docker: "ok",
+      portBusy: 3000,
+      busyLooksLikeOurs: true,
+    });
+    junk.push(stubDir);
+    const result = runCheck(env, { PROSEFIELD_CHECK_FOR_START: "0" });
+    expect(result.status).not.toBe(0);
+    expect(result.out).toMatch(/FAIL {2}Port 3000/);
+    expect(result.out).toMatch(
+      /Port 3000 in use by Prosefield — run scripts\/stop\.sh or scripts\/start\.sh/,
+    );
+    expect(result.out).not.toMatch(/non-Prosefield/);
+  });
+
+  it("PASSes Prosefield-owned busy port when FOR_START=1", () => {
+    const { stubDir, env } = makeStubs({
+      docker: "ok",
+      portBusy: 3000,
+      busyLooksLikeOurs: true,
+    });
+    junk.push(stubDir);
+    const result = runCheck(env, { PROSEFIELD_CHECK_FOR_START: "1" });
+    expect(result.status).toBe(0);
+    expect(result.out).toMatch(/PASS {2}Port 3000 in use by Prosefield \(ok for start\)/);
   });
 
   it("prints owning process for a foreign busy port when lsof can show it", () => {
@@ -606,6 +639,61 @@ nvm() {
     expect(result.status).not.toBe(0);
     expect(result.out).toMatch(/FAIL {2}Port 3000/);
     expect(result.out).toMatch(/Owned by non-Prosefield process: nginx 4242/);
+    expect(result.out).not.toMatch(/in use by Prosefield/);
+  });
+
+  it("mutation: forcing port_ok_for_start false mislabels Prosefield port", () => {
+    // B1: removing/always-failing the health probe must break the FOR_START=0 Prosefield case.
+    const mutatedDir = mkdtempSync(path.join(tmpdir(), "pf-mut-port-"));
+    junk.push(mutatedDir);
+    const mutatedCheck = path.join(mutatedDir, "check.sh");
+    const mutated = read("scripts/check.sh").replace(
+      /port_ok_for_start\(\) \{[\s\S]*?\n\}/,
+      "port_ok_for_start() { return 1; }",
+    );
+    expect(mutated).toContain("port_ok_for_start() { return 1; }");
+    expect(mutated).not.toContain('curl -fsS "http://127.0.0.1:3000/api/health"');
+    writeFileSync(mutatedCheck, mutated);
+    chmodSync(mutatedCheck, 0o755);
+
+    const { stubDir, env } = makeStubs({
+      docker: "ok",
+      portBusy: 3000,
+      busyLooksLikeOurs: true,
+    });
+    junk.push(stubDir);
+    writeStub(
+      stubDir,
+      "lsof",
+      `if printf '%s\\n' "$*" | grep -q "3000"; then
+         printf '%s\\n' "COMMAND PID USER"
+         printf '%s\\n' "node 9999 demo"
+       fi
+       exit 0`,
+    );
+    let status = 0;
+    let out = "";
+    try {
+      out = execFileSync("bash", [mutatedCheck], {
+        env: asProcessEnv({
+          ...env,
+          PROSEFIELD_CHECK_ROOT: root,
+          PROSEFIELD_CHECK_FOR_START: "0",
+        }),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      const err = error as { status?: number; stdout?: string; stderr?: string };
+      status = err.status ?? 1;
+      out = `${err.stdout ?? ""}${err.stderr ?? ""}`;
+    }
+    expect(status).not.toBe(0);
+    // Without the probe, a healthy Prosefield listener is blamed as foreign.
+    expect(out).toMatch(/Owned by non-Prosefield process/);
+    expect(out).not.toMatch(
+      /Port 3000 in use by Prosefield — run scripts\/stop\.sh or scripts\/start\.sh/,
+    );
   });
 
   it("mutation: removing nvm load makes the nvm-PASS scenario FAIL", () => {

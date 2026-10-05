@@ -141,7 +141,7 @@ docker_classify_failure() {
 
 if ! command -v docker >/dev/null 2>&1; then
   fail "Docker CLI" \
-    "Install Docker Desktop (WSL2 backend) or Docker Engine inside WSL2, then start it: https://docs.docker.com/get-docker/"
+    "If Docker Desktop is installed on Windows, start it and enable WSL integration for this distro. Otherwise install Docker Desktop (WSL2 backend) or Docker Engine inside WSL2: https://docs.docker.com/get-docker/"
 else
   docker_info_out=""
   docker_info_status=0
@@ -256,8 +256,14 @@ check_port() {
     pass "Port ${port} free"
     return
   fi
-  if [[ "$FOR_START" == "1" ]] && port_ok_for_start "$port"; then
-    pass "Port ${port} in use by Prosefield (ok for start)"
+  # Always probe Prosefield health before blaming a foreign owner (plain check and start).
+  if port_ok_for_start "$port"; then
+    if [[ "$FOR_START" == "1" ]]; then
+      pass "Port ${port} in use by Prosefield (ok for start)"
+      return
+    fi
+    fail "Port ${port}" \
+      "Port ${port} in use by Prosefield — run scripts/stop.sh or scripts/start.sh"
     return
   fi
   local owner

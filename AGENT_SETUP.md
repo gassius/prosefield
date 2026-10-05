@@ -69,15 +69,16 @@ Show the exact evidence (the failing `FAIL` line, relevant command output, ownin
 
    Read the FAIL label and hint — `check.sh` classifies three cases:
 
-   1. **Docker CLI missing** → escalate: ask the human to install Docker Desktop (WSL2 backend) or Docker Engine in WSL2. One ask, with the FAIL line as evidence.
+   1. **Docker CLI missing** → on WSL2, first ask the human to **start Docker Desktop** (if already installed on Windows) and **enable WSL integration** for this distro — do not jump to “install Docker”. Only if Desktop/Engine is genuinely absent: ask them to install Docker Desktop (WSL2 backend) or Docker Engine in WSL2. One ask, with the FAIL line as evidence.
    2. **Docker daemon not running** → ask the human to **start** Docker Desktop / the engine (not reinstall). One ask.
    3. **Docker socket (permission / unreachable)** → self-recover first: re-run the check with socket access (ask your harness for Docker/socket permission). Do **not** tell the human to “install Docker”. Escalate only if you cannot get socket access; then ask for docker group membership or equivalent (needs human / sudo).
 
    #### Playbook: Occupied ports
 
-   1. If `check.sh` / `start.sh` reports the port **in use by Prosefield**, that is OK — continue (start is idempotent).
-   2. If a previous Prosefield start is stuck: run `bash scripts/stop.sh`, then re-check. Do not use `down -v`.
-   3. If the FAIL names a **non-Prosefield** owning process: escalate with that process line and ask the human to free the port. Do not kill unrelated services.
+   1. If `check.sh` reports the port **in use by Prosefield** (plain `check.sh` may still exit non-zero): run `bash scripts/stop.sh` or `bash scripts/start.sh` (start is idempotent). Do **not** escalate as a foreign owner — `check.sh` probes Prosefield health on every busy port.
+   2. If `start.sh` reports Prosefield-owned as PASS (`ok for start`): continue.
+   3. If a previous Prosefield start is stuck: run `bash scripts/stop.sh`, then re-check. Do not use `down -v`.
+   4. If the FAIL names a **non-Prosefield** owning process (health probe failed): escalate with that process line and ask the human to free the port. Do not kill unrelated services.
 
 4. **Start** (idempotent; safe to re-run):
 
