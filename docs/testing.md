@@ -1,6 +1,15 @@
 # Testing
 
-Full policy: [AGENTS.md → Testing requirements](../AGENTS.md#testing-requirements) (same-PR tests, regression tests that bite, coverage only up, no skip/weaken, PR body maps scope → tests).
+## Policy
+
+Every PR that changes behaviour must ship tests in the **same** PR:
+
+1. **Same-PR tests for behaviour changes** — Vitest unit and component (RTL) coverage for logic and UI wiring; Playwright E2E for user flows (register, login, logout, redirects, CTAs); axe accessibility checks for new pages; Docker-only visual baselines for UI changes (`pnpm test:visual` / `pnpm test:visual:update`).
+2. **Bug fixes** include a **regression test that fails before the fix** (prove it bites).
+3. **Tests must bite** — be ready to show a red run when the feature is removed or weakened.
+4. **Coverage thresholds only go up.** New files under covered `src/` globs must stay inside Vitest coverage `include`. Do not lower thresholds to get green.
+5. **No weakening to get green:** no `.skip` / `.only`, no loosened assertions, no extra visual diff allowance, no retries used to hide flakes.
+6. **PR body** lists which tests cover each scope item / behaviour change.
 
 Commands below match [`.github/workflows/ci.yml`](../.github/workflows/ci.yml). Copy the env blocks with the commands so local runs match CI.
 

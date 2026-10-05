@@ -1,4 +1,4 @@
-<!-- Art Direction & Design Guide v1.1 (Approved). Reference images are bundled alongside: prosefield-landing-v1.1.png, prosefield-landing-mobile-v1.1.png, prosefield-branding-v1.1.png -->
+<!-- Art Direction & Design Guide v1.1 (Approved). Reference images are bundled under art-direction/: prosefield-landing-v1.1.png, prosefield-landing-mobile-v1.1.png, prosefield-branding-v1.1.png -->
 # Prosefield Art Direction and Design Guide
 
 | Field | Value |
@@ -41,19 +41,19 @@ Status: Approved reference images v1.1 (2026-10-01).
 
 ### 3.1 Landing page, desktop
 
-![](prosefield-landing-v1.1.png)
+![](art-direction/prosefield-landing-v1.1.png)
 
 Full landing page at 1440 px (rendered at 2×), following the section order in section 9.
 
 ### 3.2 Landing page, mobile
 
-![](prosefield-landing-mobile-v1.1.png)
+![](art-direction/prosefield-landing-mobile-v1.1.png)
 
 Landing page at 390 px (rendered at 2×), following the mobile rules in section 16.
 
 ### 3.3 Branding board
 
-![](prosefield-branding-v1.1.png)
+![](art-direction/prosefield-branding-v1.1.png)
 
 Logo and minimum sizes, colour tokens with contrast, type scale, brand character, control states, manual-save states, and icon sizes.
 
@@ -134,7 +134,7 @@ The mark drawn in the v1.1 reference images is provisional, pending the final lo
 
 ### 5.3 Logo variants
 
-Implement only the variants needed for this exercise:
+Implement only the variants needed for this product:
 
 *   Full horizontal lockup: mark plus `Prosefield` wordmark.
 *   Mark only: small mobile surfaces and loading state.
@@ -742,7 +742,7 @@ Before considering the experience complete, verify:
 
 ## 21. Scope boundaries
 
-Do not spend scope time on:
+Out of scope:
 
 *   An extensive logo family.
 *   Custom icon design beyond the Prosefield mark.

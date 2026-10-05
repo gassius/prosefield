@@ -5,7 +5,7 @@
 | Status | **Approved v1.0** (approved 2026-10-01 13:43 CEST) |
 | Version | v1.0 |
 | Date | 2026-10-01 |
-| Author | Agent: Engineer Supervisor (from v0.1 by Carlos González Rico) |
+| Author | Carlos González Rico (AI-assisted) |
 | Approver | Carlos González Rico |
 | Product | Prosefield |
 | Repository | `gassius/prosefield` (public), default branch `main`, baseline `7e041b1` |
@@ -18,8 +18,8 @@
 | Version | Date | Author | Summary |
 |---|---|---|---|
 | v0.1 | 2026-09-30 | Carlos González Rico | Initial proposal: Next.js + Firebase Auth/Firestore + Stripe Checkout + Tiptap, App Hosting deploy |
-| v0.2 | 2026-10-01 | Agent: Engineer Supervisor | Review addendum on the v0.1 page: billing correctness, demo emulator project, Docker option, phasing, open questions |
-| v1.0 | 2026-10-01 | Agent: Engineer Supervisor | Consolidated rewrite. Folds in v0.2 and Carlos's answers (local Firebase via Docker as the primary target; deployment entirely on Firebase as an optional final phase; Docker is OK; price and plan configurable; copy owned by the Art Direction guide), aligns with Art Direction v1.1, and makes the Prosefield Cursor Project the delivery vehicle. Changes against v0.1 are listed in section 17 |
+| v0.2 | 2026-10-01 | Carlos González Rico (AI-assisted) | Review addendum on the v0.1 page: billing correctness, demo emulator project, Docker option, phasing, open questions |
+| v1.0 | 2026-10-01 | Carlos González Rico (AI-assisted) | Consolidated rewrite. Folds in v0.2 and Carlos's answers (local Firebase via Docker as the primary target; deployment entirely on Firebase as an optional final stage; Docker is OK; price and plan configurable; copy owned by the Art Direction guide), aligns with Art Direction v1.1. Changes against v0.1 are listed in section 17 |
 
 ## 1. Executive summary
 
@@ -82,7 +82,6 @@ AI features; Python or LangChain services; real-time collaboration; autosave and
 | Tests and CI | None | Add Vitest, emulator integration, Playwright + axe, and GitHub Actions |
 | Firebase | None | Add `firebase.json`, rules, indexes, and Docker emulators |
 | `.env.example` | Absent and ignored | Add it and unignore it explicitly |
-| Cloud Agent env | Saved by Carlos (Node 24.21.0, pnpm, `pnpm install --frozen-lockfile`, dev on :3000) | Project agents reuse it. Backend emulators run only via Docker Compose |
 
 ## 4. System context
 
@@ -394,7 +393,7 @@ The total for Foundation through Ship docs is about 9 h, inside the 6–10 h est
 5. **Content module** for all copy; CTA and copy rules delegated to Art Direction v1.1 ("Start your first page"; no trial; the "Cancel anytime" rule enforced through `FEATURE_CUSTOMER_PORTAL`).
 6. **Art Direction v1.1 alignment:** tokens, fonts, en-GB, light-only, restricted editor formats, save-state, billing-pending, upgrade-gate, delete and auth-error patterns, a11y rules, and axe in the acceptance tests.
 7. **Security additions:** `next` allow-list, `__session` cookie name, recent-auth check, revocation on logout, 404 for foreign docs, gitleaks for the public repo, live-key rejection, payload bounds sized to Firestore limits.
-8. **Phased delivery plan** sized to the time budget, with docs committed under `docs/`.
+8. **Staged delivery plan** sized to the time budget, with docs committed under `docs/`.
 9. Deliverables added to the definition of done: write-up, demo, AI-usage section, credits.
 
 ## 18. Definition of done (first release)

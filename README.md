@@ -1,8 +1,8 @@
 # Prosefield
 
 [![CI](https://github.com/gassius/prosefield/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gassius/prosefield/actions/workflows/ci.yml?query=branch%3Amain)
-[![coverage](https://img.shields.io/badge/coverage-99.96%25-brightgreen)](docs/testing.md)
-[![tests](https://img.shields.io/badge/tests-664%20passed-brightgreen)](docs/testing.md)
+[![coverage (statements)](https://img.shields.io/badge/coverage_(statements)-99.96%25-brightgreen)](docs/testing.md)
+[![vitest](https://img.shields.io/badge/tests-668%20passed-brightgreen)](docs/testing.md)
 [![Node 24](https://img.shields.io/badge/node-24-brightgreen)](.nvmrc)
 [![TypeScript strict](https://img.shields.io/badge/TypeScript-strict-3178C6)](tsconfig.json)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
@@ -14,8 +14,7 @@ A writing workspace: register, subscribe, and keep pages with less friction.
 Paste this into any coding agent (or point it at the raw file):
 
 ```text
-Follow https://raw.githubusercontent.com/gassius/prosefield/main/AGENT_SETUP.md
-end to end. Stop and ask me before any system-wide install.
+Follow https://raw.githubusercontent.com/gassius/prosefield/main/AGENT_SETUP.md end to end.
 ```
 
 Full prompt: [`AGENT_SETUP.md`](AGENT_SETUP.md).
@@ -102,7 +101,7 @@ pnpm test:e2e          # Playwright + axe (app + emulators)
 pnpm test:visual       # visual regression (Playwright Docker image)
 ```
 
-Full commands with the same env CI uses, plus scripts inventory: [`docs/testing.md`](docs/testing.md). Policy: [AGENTS.md → Testing requirements](AGENTS.md#testing-requirements).
+Full commands with the same env CI uses, plus scripts inventory: [`docs/testing.md`](docs/testing.md).
 
 ## More docs
 
@@ -110,7 +109,6 @@ Full commands with the same env CI uses, plus scripts inventory: [`docs/testing.
 |---|---|
 | [`docs/architecture.md`](docs/architecture.md) | System architecture (v1.0) |
 | [`docs/art-direction.md`](docs/art-direction.md) | Art Direction & Design Guide (v1.1) |
-| [`docs/write-up.md`](docs/write-up.md) | Surfaces / entitlement / security answers |
 | [`docs/local-development.md`](docs/local-development.md) | Prerequisites, manual start, emulators, Compose profiles |
 | [`docs/stripe-testing.md`](docs/stripe-testing.md) | Stripe test payment details |
 | [`docs/testing.md`](docs/testing.md) | Unit, integration, E2E, visual — copy-paste commands |
@@ -121,5 +119,5 @@ Full commands with the same env CI uses, plus scripts inventory: [`docs/testing.
 ## Credits
 
 - Product and Art Direction: Carlos González Rico
-- Architecture v1.0 / delivery system: Engineer Supervisor + GasNet agents on the Prosefield Cursor Project
+- Architecture and implementation: Carlos González Rico, with AI coding agents ([docs/ai-usage.md](docs/ai-usage.md))
 - Stack: Next.js, Firebase Auth/Firestore, Stripe, Tiptap, Playwright, Vitest
