@@ -34,10 +34,3 @@ export function resolveNextPath(
 
   return fallback;
 }
-
-export function isAllowedNextPath(raw: string | null | undefined): boolean {
-  if (!raw) {
-    return false;
-  }
-  return allowSet.has(raw);
-}

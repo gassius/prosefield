@@ -10,4 +10,3 @@ import { z, ZodError } from "zod";
 z.config({ jitless: true });
 
 export { z, ZodError };
-export type { ZodType } from "zod";

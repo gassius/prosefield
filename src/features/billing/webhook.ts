@@ -7,7 +7,7 @@ import { resolveProjectionSubscription } from "@/features/billing/subscriptions"
 import { getEnv } from "@/lib/env";
 import { getStripe } from "@/lib/stripe/server";
 
-export const HANDLED_STRIPE_EVENT_TYPES = [
+const HANDLED_STRIPE_EVENT_TYPES = [
   "checkout.session.completed",
   "customer.subscription.created",
   "customer.subscription.updated",
@@ -16,7 +16,7 @@ export const HANDLED_STRIPE_EVENT_TYPES = [
   "invoice.payment_failed",
 ] as const;
 
-export type HandledStripeEventType = (typeof HANDLED_STRIPE_EVENT_TYPES)[number];
+type HandledStripeEventType = (typeof HANDLED_STRIPE_EVENT_TYPES)[number];
 
 export function isHandledStripeEventType(
   type: string,

@@ -8,7 +8,7 @@ import {
 
 export type PersistTrialDraftResult =
   | { ok: true; documentId: string }
-  | { ok: false; reason: "none" | "create_failed" | "invalid" };
+  | { ok: false; reason: "none" | "create_failed" };
 
 /**
  * In-flight guard against StrictMode / remount double-create for the same uid.

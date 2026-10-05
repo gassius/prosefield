@@ -2,10 +2,6 @@
  * Shared Auth emulator helpers for integration tests.
  * Prefer registerAction (sets pf_pw) for accounts that exchange sessions.
  */
-import {
-  PASSWORD_POLICY_CLAIM,
-  PASSWORD_POLICY_CLAIM_VALUE,
-} from "@/features/auth/constants";
 
 function authHost(): string {
   const host = process.env.FIREBASE_AUTH_EMULATOR_HOST;
@@ -80,17 +76,4 @@ export async function registerAndSignIn(
     );
   }
   return signInWithPassword(email, password);
-}
-
-/** Stamp pf_pw on an existing Auth user and return a fresh ID token. */
-export async function grantPasswordPolicyClaimAndRefresh(input: {
-  email: string;
-  password: string;
-  localId: string;
-}): Promise<{ idToken: string; localId: string }> {
-  const { getAdminAuth } = await import("@/lib/firebase/admin");
-  await getAdminAuth().setCustomUserClaims(input.localId, {
-    [PASSWORD_POLICY_CLAIM]: PASSWORD_POLICY_CLAIM_VALUE,
-  });
-  return signInWithPassword(input.email, input.password);
 }

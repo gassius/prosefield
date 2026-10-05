@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertValidOrigin,
   csrfTokensMatch,
-  fingerprintToken,
   parseCookieValue,
   readCsrfFromRequest,
 } from "@/features/auth/csrf";
@@ -10,14 +9,6 @@ import {
 describe("csrf helpers", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
-  });
-
-  it("fingerprints tokens without echoing the raw value", () => {
-    const fp = fingerprintToken("secret-token-value");
-    expect(fp).toHaveLength(12);
-    expect(fp).not.toContain("secret");
-    expect(fingerprintToken("secret-token-value")).toBe(fp);
-    expect(fingerprintToken("other")).not.toBe(fp);
   });
 
   it("reads cookie and header CSRF tokens from a request", () => {

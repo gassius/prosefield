@@ -19,7 +19,7 @@ export type BillingStatusView =
   | "not_configured";
 
 /** Stripe Checkout Session ids are `cs_test_…` or `cs_live_…` only. */
-export const CHECKOUT_SESSION_ID_PATTERN = /^cs_(test|live)_/;
+const CHECKOUT_SESSION_ID_PATTERN = /^cs_(test|live)_/;
 
 export function isValidCheckoutSessionId(
   sessionId: string | null | undefined,
