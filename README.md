@@ -7,8 +7,7 @@ A writing workspace: register, subscribe, and keep pages with less friction.
 Paste this into any coding agent (or point it at the raw file):
 
 ```text
-Follow https://raw.githubusercontent.com/gassius/prosefield/main/AGENT_SETUP.md
-end to end. Stop and ask me before any system-wide install.
+Follow https://raw.githubusercontent.com/gassius/prosefield/main/AGENT_SETUP.md end to end.
 ```
 
 Full prompt: [`AGENT_SETUP.md`](AGENT_SETUP.md).

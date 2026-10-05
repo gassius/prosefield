@@ -2,6 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -123,11 +124,16 @@ function linkBins(dir: string, names: string[]): void {
 
 type StubOpts = {
   nodeVersion?: string;
-  /** "ok" | "daemon-down" | "missing" */
-  docker?: "ok" | "daemon-down" | "missing";
+  /** "ok" | "daemon-down" | "permission" | "missing" */
+  docker?: "ok" | "daemon-down" | "permission" | "missing";
   portBusy?: number;
   /** When port busy + FOR_START, whether curl health succeeds (ours) */
   busyLooksLikeOurs?: boolean;
+  /**
+   * When set with a mismatched nodeVersion, create $HOME/.nvm/nvm.sh that can
+   * switch PATH to a node stub at this version (simulates nvm use).
+   */
+  nvmProvidesVersion?: string;
 };
 
 type EnvMap = Record<string, string | undefined>;
@@ -165,7 +171,13 @@ function makeStubs(opts: StubOpts = {}): {
     writeStub(
       stubDir,
       "docker",
-      'if [[ "${1:-}" == "info" ]]; then echo "Cannot connect" >&2; exit 1; fi; exit 0',
+      'if [[ "${1:-}" == "info" ]]; then echo "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?" >&2; exit 1; fi; exit 0',
+    );
+  } else if (docker === "permission") {
+    writeStub(
+      stubDir,
+      "docker",
+      'if [[ "${1:-}" == "info" ]]; then echo "Got permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: connect: permission denied" >&2; exit 1; fi; exit 0',
     );
   }
 
@@ -226,6 +238,39 @@ function makeStubs(opts: StubOpts = {}): {
   };
   delete env.MSYSTEM;
   env.OSTYPE = "linux-gnu";
+  // Isolate from the real developer nvm unless a stub nvm is requested.
+  delete env.NVM_DIR;
+
+  if (opts.nvmProvidesVersion) {
+    const home = mkdtempSync(path.join(tmpdir(), "pf-nvm-home-"));
+    junk.push(home);
+    const nvmDir = path.join(home, ".nvm");
+    mkdirSync(nvmDir, { recursive: true });
+    const nvmNodeDir = path.join(home, "nvm-node-bin");
+    mkdirSync(nvmNodeDir, { recursive: true });
+    const ver = opts.nvmProvidesVersion;
+    writeStub(nvmNodeDir, "node", `echo "v${ver}"`);
+    // Minimal nvm.sh: `nvm use` prepends the matching stub bin (like a real nvm).
+    writeFileSync(
+      path.join(nvmDir, "nvm.sh"),
+      `#!/usr/bin/env bash
+nvm() {
+  if [[ "\${1:-}" == "use" ]]; then
+    export PATH="${nvmNodeDir}:\$PATH"
+    return 0
+  fi
+  return 1
+}
+`,
+    );
+    env.HOME = home;
+    env.NVM_DIR = nvmDir;
+  } else {
+    // Point HOME at an empty temp so a real ~/.nvm on the runner cannot leak in.
+    const home = mkdtempSync(path.join(tmpdir(), "pf-no-nvm-home-"));
+    junk.push(home);
+    env.HOME = home;
+  }
 
   return { stubDir, env };
 }
@@ -313,9 +358,17 @@ describe("P5b ship scripts inventory", () => {
     expect(stop).not.toMatch(/grep -Eqi 'dev'/);
   });
 
-  it("docs contracts: AGENT_SETUP WSL home, write-up active-only", () => {
-    expect(read("AGENT_SETUP.md")).toMatch(/STOP/);
-    expect(read("AGENT_SETUP.md")).toMatch(/~\//);
+  it("docs contracts: AGENT_SETUP diagnose/self-recover, write-up active-only", () => {
+    const setup = read("AGENT_SETUP.md");
+    expect(setup).toMatch(/diagnose → self-recover → escalate/i);
+    expect(setup).toMatch(/Allowed without asking/);
+    expect(setup).toMatch(/Stop and ask the human only when/);
+    expect(setup).toMatch(/Playbook: Node version mismatch/);
+    expect(setup).toMatch(/Playbook: Docker unreachable/);
+    expect(setup).toMatch(/Playbook: Occupied ports/);
+    expect(setup).toMatch(/~\//);
+    // Must not keep the old "STOP at first FAIL" short-circuit.
+    expect(setup).not.toMatch(/If anything \*\*FAIL\*\*s: \*\*STOP\*\*/);
     expect(read("docs/write-up.md")).toMatch(/status` is `active`/);
     expect(read("docs/write-up.md")).not.toMatch(/equivalent allowed statuses/i);
     expect(existsSync(path.join(root, "docs/time-log.md"))).toBe(false);
@@ -388,7 +441,7 @@ describe("check.sh executable behaviour (stubbed PATH)", () => {
     expect(result.out).toMatch(/0 failed/);
   });
 
-  it("exits non-zero on Node version mismatch", () => {
+  it("exits non-zero on Node version mismatch when nvm is absent", () => {
     const { stubDir, env } = makeStubs({
       nodeVersion: "20.0.0",
       docker: "ok",
@@ -397,6 +450,44 @@ describe("check.sh executable behaviour (stubbed PATH)", () => {
     const result = runCheck(env);
     expect(result.status).not.toBe(0);
     expect(result.out).toMatch(/FAIL {2}Node\.js/);
+    expect(result.out).toMatch(/No matching Node and no nvm/);
+  });
+
+  it("PASSes Node when mismatch is fixed by loading nvm (has .nvmrc version)", () => {
+    const { stubDir, env } = makeStubs({
+      nodeVersion: "20.0.0",
+      docker: "ok",
+      nvmProvidesVersion: requiredNode(),
+    });
+    junk.push(stubDir);
+    const result = runCheck(env);
+    expect(result.status).toBe(0);
+    expect(result.out).toMatch(/PASS {2}Node\.js v[\d.]+ \(matches \.nvmrc via nvm\)/);
+  });
+
+  it("FAILs with nvm-present hint when nvm cannot provide .nvmrc version", () => {
+    const { stubDir, env } = makeStubs({
+      nodeVersion: "20.0.0",
+      docker: "ok",
+      // nvm.sh exists but `nvm use` leaves the wrong node on PATH.
+      nvmProvidesVersion: "20.0.0",
+    });
+    junk.push(stubDir);
+    // Override stub nvm so `nvm use` fails to switch to required version.
+    const nvmDir = env.NVM_DIR!;
+    writeFileSync(
+      path.join(nvmDir, "nvm.sh"),
+      `#!/usr/bin/env bash
+nvm() {
+  # Pretend use "succeeds" but never changes PATH — wrong node remains.
+  return 0
+}
+`,
+    );
+    const result = runCheck(env);
+    expect(result.status).not.toBe(0);
+    expect(result.out).toMatch(/FAIL {2}Node\.js \(need v[\d.]+; nvm present\)/);
+    expect(result.out).toMatch(/nvm is installed — run `nvm install`/);
   });
 
   it("exits non-zero when MSYSTEM is set (Git Bash / MSYS)", () => {
@@ -418,12 +509,27 @@ describe("check.sh executable behaviour (stubbed PATH)", () => {
     expect(result.out).toMatch(/FAIL {2}Repo path on \/mnt/);
   });
 
-  it("exits non-zero when Docker daemon is down", () => {
+  it("exits non-zero when Docker daemon is down (daemon message, not install)", () => {
     const { stubDir, env } = makeStubs({ docker: "daemon-down" });
     junk.push(stubDir);
     const result = runCheck(env);
     expect(result.status).not.toBe(0);
-    expect(result.out).toMatch(/FAIL {2}Docker/);
+    expect(result.out).toMatch(/FAIL {2}Docker daemon not running/);
+    expect(result.out).toMatch(/Start Docker Desktop|Start Docker/);
+    expect(result.out).not.toMatch(/FAIL {2}Docker CLI/);
+    expect(result.out).not.toMatch(/permission \/ unreachable/);
+  });
+
+  it("permission-denied docker info uses permission message, not install", () => {
+    const { stubDir, env } = makeStubs({ docker: "permission" });
+    junk.push(stubDir);
+    const result = runCheck(env);
+    expect(result.status).not.toBe(0);
+    expect(result.out).toMatch(/FAIL {2}Docker socket \(permission \/ unreachable\)/);
+    expect(result.out).toMatch(/Re-run this check with access/);
+    expect(result.out).not.toMatch(/get-docker/i);
+    expect(result.out).not.toMatch(/Install Docker Desktop/);
+    expect(result.out).not.toMatch(/FAIL {2}Docker daemon not running/);
   });
 
   it("exits non-zero when Docker CLI is missing", () => {
@@ -452,7 +558,7 @@ describe("check.sh executable behaviour (stubbed PATH)", () => {
       out = `${err.stdout ?? ""}${err.stderr ?? ""}`;
     }
     expect(status).not.toBe(0);
-    expect(out).toMatch(/FAIL {2}Docker/);
+    expect(out).toMatch(/FAIL {2}Docker CLI/);
     expect(out).toMatch(/get-docker|Install Docker/i);
   });
 
@@ -478,6 +584,107 @@ describe("check.sh executable behaviour (stubbed PATH)", () => {
     const result = runCheck(env, { PROSEFIELD_CHECK_FOR_START: "1" });
     expect(result.status).not.toBe(0);
     expect(result.out).toMatch(/FAIL {2}Port 3000/);
+  });
+
+  it("prints owning process for a foreign busy port when lsof can show it", () => {
+    const { stubDir, env } = makeStubs({
+      docker: "ok",
+      portBusy: 3000,
+      busyLooksLikeOurs: false,
+    });
+    junk.push(stubDir);
+    writeStub(
+      stubDir,
+      "lsof",
+      `if printf '%s\\n' "$*" | grep -q "3000"; then
+         printf '%s\\n' "COMMAND PID USER"
+         printf '%s\\n' "nginx 4242 demo"
+       fi
+       exit 0`,
+    );
+    const result = runCheck(env, { PROSEFIELD_CHECK_FOR_START: "0" });
+    expect(result.status).not.toBe(0);
+    expect(result.out).toMatch(/FAIL {2}Port 3000/);
+    expect(result.out).toMatch(/Owned by non-Prosefield process: nginx 4242/);
+  });
+
+  it("mutation: removing nvm load makes the nvm-PASS scenario FAIL", () => {
+    // Prove the behavioural PASS test bites: stub out load_nvm_if_present.
+    const mutatedDir = mkdtempSync(path.join(tmpdir(), "pf-mut-nvm-"));
+    junk.push(mutatedDir);
+    const mutatedCheck = path.join(mutatedDir, "check.sh");
+    const mutated = read("scripts/check.sh").replace(
+      /load_nvm_if_present\(\) \{[\s\S]*?\n\}/,
+      "load_nvm_if_present() { return 1; }",
+    );
+    expect(mutated).toContain("load_nvm_if_present() { return 1; }");
+    expect(mutated).not.toContain('. "${NVM_DIR:-$HOME/.nvm}/nvm.sh"');
+    writeFileSync(mutatedCheck, mutated);
+    chmodSync(mutatedCheck, 0o755);
+
+    const { stubDir, env } = makeStubs({
+      nodeVersion: "20.0.0",
+      docker: "ok",
+      nvmProvidesVersion: requiredNode(),
+    });
+    junk.push(stubDir);
+    let status = 0;
+    let out = "";
+    try {
+      out = execFileSync("bash", [mutatedCheck], {
+        env: asProcessEnv({
+          ...env,
+          // Mutated copy lives outside the repo; keep .nvmrc resolution on root.
+          PROSEFIELD_CHECK_ROOT: root,
+        }),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      const err = error as { status?: number; stdout?: string; stderr?: string };
+      status = err.status ?? 1;
+      out = `${err.stdout ?? ""}${err.stderr ?? ""}`;
+    }
+    expect(status).not.toBe(0);
+    expect(out).toMatch(/FAIL {2}Node\.js/);
+    expect(out).not.toMatch(/matches \.nvmrc via nvm/);
+  });
+
+  it("mutation: removing Docker classification mislabels permission as daemon", () => {
+    const mutatedDir = mkdtempSync(path.join(tmpdir(), "pf-mut-docker-"));
+    junk.push(mutatedDir);
+    const mutatedCheck = path.join(mutatedDir, "check.sh");
+    const mutated = read("scripts/check.sh").replace(
+      /docker_classify_failure\(\) \{[\s\S]*?\n\}/,
+      "docker_classify_failure() { printf 'daemon'; }",
+    );
+    expect(mutated).toContain("docker_classify_failure() { printf 'daemon'; }");
+    expect(mutated).not.toContain("permission denied|operation not permitted");
+    writeFileSync(mutatedCheck, mutated);
+    chmodSync(mutatedCheck, 0o755);
+
+    const { stubDir, env } = makeStubs({ docker: "permission" });
+    junk.push(stubDir);
+    let status = 0;
+    let out = "";
+    try {
+      out = execFileSync("bash", [mutatedCheck], {
+        env: asProcessEnv({
+          ...env,
+          PROSEFIELD_CHECK_ROOT: root,
+        }),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      const err = error as { status?: number; stdout?: string; stderr?: string };
+      status = err.status ?? 1;
+      out = `${err.stdout ?? ""}${err.stderr ?? ""}`;
+    }
+    expect(status).not.toBe(0);
+    // Without classification, permission-denied looks like daemon-down.
+    expect(out).toMatch(/FAIL {2}Docker daemon not running/);
+    expect(out).not.toMatch(/FAIL {2}Docker socket \(permission \/ unreachable\)/);
   });
 
   it("reports perl setpgrp path when setsid is absent from PATH", () => {
