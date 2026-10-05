@@ -192,11 +192,18 @@ describe("README technical sections (evaluator-facing)", () => {
     expect(section).toMatch(/Stripe Checkout/);
     expect(section).toMatch(/Tiptap/);
     expect(section).toMatch(/Carlos González Rico \(AI-assisted\)/);
+    expect(section).toMatch(/## 14\. Build order/);
     expect(section).not.toMatch(/ClickUp/i);
     expect(section).not.toMatch(/\bP[0-6]\b/);
     // Bite: reintroducing internal process names fails.
     expect(section).not.toMatch(EVALUATOR_DENY);
     expect(section).not.toMatch(/Cloud Agent env/);
+    // Bite: reintroducing time-box / take-home framing fails.
+    expect(section).not.toMatch(/time budget/i);
+    expect(section).not.toMatch(/hard cap/i);
+    expect(section).not.toMatch(/three questions/i);
+    expect(section).not.toMatch(/Effort of 6/);
+    expect(section).not.toMatch(/\| Est\. \|/);
     // Only allowed AGENTS.md mention is the Next.js warn note in §3.
     const agentsHits = [...section.matchAll(/AGENTS\.md/g)];
     expect(agentsHits).toHaveLength(1);

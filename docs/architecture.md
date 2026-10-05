@@ -55,8 +55,7 @@ Next.js is both the frontend and the backend-for-frontend. Server code checks Fi
 - Subscriber-only create, edit, save, rename and delete (with confirmation), a list with titles and last-updated times, empty and error states.
 - Stripe test subscription, with access granted **only** from server-side webhook confirmation.
 - Runs from the README on a fresh machine in under 15 minutes, with `.env.example` and no secrets.
-- README (architecture, tradeoffs, Stripe test flow, limitations), a one-page write-up, a 2–4 minute demo, and runnable acceptance tests.
-- Effort of 6–10 h, with a hard cap of 12 h.
+- README (architecture, tradeoffs, Stripe test flow, limitations), a one-page write-up, a short demo, and runnable acceptance tests.
 
 ### 2.2 Quality priorities (in order)
 1. A complete end-to-end flow (product completeness carries 30% of the rubric).
@@ -322,7 +321,7 @@ Deploy only at the end and only if it's easy. One platform for everything is pre
 - **Secrets:** `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` go in App Hosting secrets (Secret Manager) via `apphosting.yaml`. Firebase Admin uses the App Hosting service account (no key files).
 - Stripe's test-mode hosted webhook points at `https://<backend>.web.app/api/stripe/webhook`. The App Hosting domain is added to Auth authorised domains.
 - **Cost:** App Hosting needs the Blaze plan; the free allowances should cover this traffic. A budget alert of about €5 goes on before the first rollout, with min instances at 0.
-- **Exit criteria:** the same Playwright smoke test (landing, register, upgrade gate) passes against the deployed URL, plus one manual Stripe test payment. If setup goes past about 1.5 h, stop and document it under "With another day".
+- **Exit criteria:** the same Playwright smoke test (landing, register, upgrade gate) passes against the deployed URL, plus one manual Stripe test payment. If optional deploy setup becomes disproportionate, stop and document it under "With another day".
 - This scope accepts the trade-off that App Hosting has no PR preview channels.
 
 ## 12. Dependencies
@@ -345,21 +344,19 @@ Versions get pinned through `pnpm-lock.yaml` at install time.
 
 The seeded subscriber is written straight into the emulator projection by a test fixture. That's documented as a test-only shortcut, and no production code path allows it.
 
-## 14. Delivery plan
+## 14. Build order
 
 Art Direction v1.1 and this architecture live under `docs/`. Work shipped as draft PRs; Carlos merges.
 
-| Stage | Est. | Deliverable | Done when |
-|---|---|---|---|
-| Foundation | 1 h | Tokens and fonts (Art Direction 6.3, 7.1), `lang="en-GB"`, light-only; `env.ts`; docker compose emulators + app; `firebase.json`, rules, indexes; Vitest; CI (lint, typecheck, build, unit, gitleaks, actionlint); `.env.example`; `docs/` | `docker compose up` serves the app with emulators healthy; CI green |
-| Auth | 1.5 h | Register, login, logout, session cookie, CSRF, guards, account-state header and CTA routing, auth error UX | Integration tests for the session and guards pass |
-| Billing | 2 h | `getPlan`, `stripe:seed`, checkout, webhook, projection, session-sync fallback, billing status page, upgrade gate | Unit and integration tests pass, and a manual 4242 flow unlocks access |
-| Documents | 2 h | Repository, actions, list, empty state, Tiptap editor (restricted formats), save states, rename, delete dialog | Guard-chain integration tests pass, and CRUD persists |
-| Landing | 1.5 h | All marketing sections from `content/site.ts`, inert preview, logo SVG and favicon, responsive pass | Playwright plus axe at four widths green |
-| Ship docs | 1 h | Playwright happy path, README (architecture, tradeoffs, Stripe flow, limitations, AI usage and manual verification, credits), write-up (three questions), demo recording | A fresh-machine run under 15 min is measured and recorded |
-| Optional | ≤ 1.5 h | Customer Portal (flag on) + Firebase App Hosting deploy | Smoke test on the deployed URL |
-
-The total for Foundation through Ship docs is about 9 h, inside the 6–10 h estimate, leaving about 3 h of buffer under the 12 h cap for review rounds and optional deploy.
+| Stage | Deliverable | Done when |
+|---|---|---|
+| Foundation | Tokens and fonts (Art Direction 6.3, 7.1), `lang="en-GB"`, light-only; `env.ts`; docker compose emulators + app; `firebase.json`, rules, indexes; Vitest; CI (lint, typecheck, build, unit, gitleaks, actionlint); `.env.example`; `docs/` | `docker compose up` serves the app with emulators healthy; CI green |
+| Auth | Register, login, logout, session cookie, CSRF, guards, account-state header and CTA routing, auth error UX | Integration tests for the session and guards pass |
+| Billing | `getPlan`, `stripe:seed`, checkout, webhook, projection, session-sync fallback, billing status page, upgrade gate | Unit and integration tests pass, and a manual 4242 flow unlocks access |
+| Documents | Repository, actions, list, empty state, Tiptap editor (restricted formats), save states, rename, delete dialog | Guard-chain integration tests pass, and CRUD persists |
+| Landing | All marketing sections from `content/site.ts`, inert preview, logo SVG and favicon, responsive pass | Playwright plus axe at four widths green |
+| Ship docs | Playwright happy path, README (architecture, tradeoffs, Stripe flow, limitations, AI usage and manual verification, credits), write-up, demo recording | A fresh-machine run under 15 min is measured and recorded |
+| Optional | Customer Portal (flag on) + Firebase App Hosting deploy | Smoke test on the deployed URL |
 
 ## 15. Operational notes
 - Structured logs with request and event IDs. Never log secrets, tokens, cookies, passwords or document bodies.
@@ -393,7 +390,7 @@ The total for Foundation through Ship docs is about 9 h, inside the 6–10 h est
 5. **Content module** for all copy; CTA and copy rules delegated to Art Direction v1.1 ("Start your first page"; no trial; the "Cancel anytime" rule enforced through `FEATURE_CUSTOMER_PORTAL`).
 6. **Art Direction v1.1 alignment:** tokens, fonts, en-GB, light-only, restricted editor formats, save-state, billing-pending, upgrade-gate, delete and auth-error patterns, a11y rules, and axe in the acceptance tests.
 7. **Security additions:** `next` allow-list, `__session` cookie name, recent-auth check, revocation on logout, 404 for foreign docs, gitleaks for the public repo, live-key rejection, payload bounds sized to Firestore limits.
-8. **Staged delivery plan** sized to the time budget, with docs committed under `docs/`.
+8. **Staged build order** with docs committed under `docs/`.
 9. Deliverables added to the definition of done: write-up, demo, AI-usage section, credits.
 
 ## 18. Definition of done (first release)
