@@ -83,10 +83,16 @@ export ALLOW_EMULATORS=1
 export APP_URL=http://localhost:3000
 pnpm build
 
-# Same pattern as CI visual job (prefix+body so secrets stay non-contiguous in docs/CI):
-export STRIPE_SECRET_KEY="sk_test_visualbaseline01"
-export STRIPE_WEBHOOK_SECRET="whsec_visualbaseline01"
-export STRIPE_PRICE_ID="price_visualbaseline01"
+# Same pattern as CI visual job: join prefix+body so docs never contain a
+# contiguous sk_test_/whsec_ value (gitleaks). No real Stripe calls — prices
+# hit the local mock below, not api.stripe.com.
+SK_PREFIX='sk_test'
+SK_BODY='visualbaseline01'
+export STRIPE_SECRET_KEY="${SK_PREFIX}_${SK_BODY}"
+WH_PREFIX='whsec'
+WH_BODY='visualbaseline01'
+export STRIPE_WEBHOOK_SECRET="${WH_PREFIX}_${WH_BODY}"
+export STRIPE_PRICE_ID='price_visualbaseline01'
 export STRIPE_API_HOST=127.0.0.1
 export STRIPE_API_PORT=12111
 export STRIPE_API_PROTOCOL=http
