@@ -1,5 +1,12 @@
 # Prosefield
 
+[![CI](https://github.com/gassius/prosefield/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/gassius/prosefield/actions/workflows/ci.yml?query=branch%3Amain)
+[![coverage](https://img.shields.io/badge/coverage-99.96%25-brightgreen)](docs/testing.md)
+[![tests](https://img.shields.io/badge/tests-664%20passed-brightgreen)](docs/testing.md)
+[![Node 24](https://img.shields.io/badge/node-24-brightgreen)](.nvmrc)
+[![TypeScript strict](https://img.shields.io/badge/TypeScript-strict-3178C6)](tsconfig.json)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-black)](https://nextjs.org/)
+
 A writing workspace: register, subscribe, and keep pages with less friction.
 
 ## Let your agent set up and run this project (locally)

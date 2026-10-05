@@ -42,14 +42,25 @@ const LINKED_DOCS = [
 ] as const;
 
 describe("README technical sections (evaluator-facing)", () => {
-  it("opens with pitch, agent setup, three-step Quick Start, then demo GIFs", () => {
+  it("opens with status badges under the title, then pitch and Quick Start", () => {
     const text = readme();
+    const titleIdx = text.indexOf("# Prosefield");
+    const badgeIdx = text.indexOf("actions/workflows/ci.yml/badge.svg?branch=main");
     const pitchIdx = text.indexOf("A writing workspace");
     const agentIdx = text.indexOf(
       "## Let your agent set up and run this project (locally)",
     );
     const quickIdx = text.indexOf("## Quick start");
     const demoIdx = text.indexOf("## Demo");
+    expect(titleIdx).toBe(0);
+    expect(badgeIdx).toBeGreaterThan(titleIdx);
+    expect(badgeIdx).toBeLessThan(pitchIdx);
+    expect(text).toMatch(/coverage-99\.96%25/);
+    expect(text).toMatch(/tests-664%20passed/);
+    expect(text).toMatch(/badge\/node-24/);
+    expect(text).toMatch(/TypeScript-strict/);
+    expect(text).toMatch(/Next\.js-16/);
+    expect(text).not.toMatch(/license/i);
     expect(pitchIdx).toBeGreaterThan(-1);
     expect(agentIdx).toBeGreaterThan(pitchIdx);
     expect(quickIdx).toBeGreaterThan(agentIdx);
