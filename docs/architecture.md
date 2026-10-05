@@ -5,22 +5,21 @@
 | Status | **Approved v1.0** (approved 2026-10-01 13:43 CEST) |
 | Version | v1.0 |
 | Date | 2026-10-01 |
-| Author | Agent: Engineer Supervisor (from v0.1 by Carlos González Rico) |
+| Author | Carlos González Rico (AI-assisted) |
 | Approver | Carlos González Rico |
 | Product | Prosefield |
 | Repository | `gassius/prosefield` (public), default branch `main`, baseline `7e041b1` |
-| Scope source | Take-Home Assignment doc `2kxv30qk-792` (read-only, never edited) |
-| Design source | Art Direction & Design Guide v1.1 (`2kxv30qk-932`), approved; it governs all visual and copy decisions |
-| Supersedes | v0.1 (page `2kxv30qk-852`) and its v0.2 review addendum (section 19 there). That page stays unchanged as history |
-| Delivery | Implemented only through the **Prosefield Cursor Project**, one ClickUp ticket per phase, draft PRs, Carlos merges |
+| Design source | Art Direction & Design Guide v1.1 ([`docs/art-direction.md`](art-direction.md)), approved; it governs all visual and copy decisions |
+| Supersedes | v0.1 and its v0.2 review addendum (section 19 of that draft). Earlier drafts stay unchanged as history |
+| Delivery | Implemented through draft PRs reviewed on GitHub; Carlos merges |
 
 ## 0. Revision history
 
 | Version | Date | Author | Summary |
 |---|---|---|---|
 | v0.1 | 2026-09-30 | Carlos González Rico | Initial proposal: Next.js + Firebase Auth/Firestore + Stripe Checkout + Tiptap, App Hosting deploy |
-| v0.2 | 2026-10-01 | Agent: Engineer Supervisor | Review addendum on the v0.1 page: billing correctness, demo emulator project, Docker option, phasing, open questions |
-| v1.0 | 2026-10-01 | Agent: Engineer Supervisor | Consolidated rewrite. Folds in v0.2 and Carlos's answers (local Firebase via Docker as the primary target; deployment entirely on Firebase as an optional final phase; Docker is OK; price and plan configurable; copy owned by the Art Direction guide), aligns with Art Direction v1.1, and makes the Prosefield Cursor Project the delivery vehicle. Changes against v0.1 are listed in section 17 |
+| v0.2 | 2026-10-01 | Carlos González Rico (AI-assisted) | Review addendum on the v0.1 page: billing correctness, demo emulator project, Docker option, phasing, open questions |
+| v1.0 | 2026-10-01 | Carlos González Rico (AI-assisted) | Consolidated rewrite. Folds in v0.2 and Carlos's answers (local Firebase via Docker as the primary target; deployment entirely on Firebase as an optional final stage; Docker is OK; price and plan configurable; copy owned by the Art Direction guide), aligns with Art Direction v1.1. Changes against v0.1 are listed in section 17 |
 
 ## 1. Executive summary
 
@@ -29,21 +28,23 @@ Prosefield is a single full-stack **Next.js 16 (App Router, strict TypeScript)**
 1. A public, responsive marketing and pricing page, built to the Cultivated Clarity art direction.
 2. An authenticated document workspace that only active subscribers can use.
 
-Next.js is both the frontend and the backend-for-frontend. Server code checks Firebase session cookies, does all Firestore access through Firebase Admin, creates Stripe Checkout Sessions, verifies Stripe webhooks, and decides access.
+Next.js is both the frontend and the backend-for-frontend. Server code checks Firebase session cookies, does all Firestore access through Firebase Admin, creates Stripe Checkout Sessions, verifies Stripe webhooks, and decides access. Server Actions and Route Handlers enforce sessions, entitlement, and all document CRUD.
 
-**Primary target: local first.** Host `pnpm dev` for the Next.js frontend; `docker compose up -d --wait` for Firebase Auth and Firestore emulators (project `demo-prosefield`, so no real Firebase project or login is needed) and the Emulator UI. Optional Compose profiles run the app and Stripe CLI webhook forwarder in Docker. The evaluator needs Node per `.nvmrc`, pnpm, Docker, and their own Stripe **test** keys — nothing else on the host.
+**Primary target: local first.** Host `pnpm dev` for the Next.js frontend; `docker compose up -d --wait` for Firebase Auth and Firestore emulators (project `demo-prosefield`, so no real Firebase project or login is needed) and the Emulator UI. Optional Compose profiles run the app and Stripe CLI webhook forwarder in Docker. A reviewer needs Node per `.nvmrc`, pnpm, Docker, and their own Stripe **test** keys — nothing else on the host.
 
-**Optional final phase: Firebase for everything.** Firebase App Hosting serves the whole Next.js app (SSR, Route Handlers, the webhook) together with Firebase Auth and Cloud Firestore in one GCP project. There's no Vercel or second host. This is added value only and never blocks the acceptance path.
+**Optional deploy: Firebase for everything.** Firebase App Hosting can serve the whole Next.js app (SSR, Route Handlers, the webhook) together with Firebase Auth and Cloud Firestore in one GCP project. There's no Vercel or second host. This is added value only and never blocks the local acceptance path.
+
+### Architecture overview
 
 | Concern | Choice |
 |---|---|
 | Framework | Next.js 16 App Router, React 19, TypeScript strict |
-| Identity | Firebase Authentication (email/password) and server session cookies |
-| Data | Cloud Firestore, server-only access through Firebase Admin; browser access denied by rules |
-| Local platform | Firebase Local Emulator Suite in Docker, `demo-prosefield` |
-| Payments | Stripe Checkout (hosted) in test mode, one recurring price, verified webhooks |
-| Editor | Tiptap (JSON persistence, manual save) |
-| UI | Tailwind CSS 4 + shadcn/ui (minimal set) + lucide-react, tokens from Art Direction v1.1 |
+| Identity | Firebase Auth (email/password) + server session cookie (`__session`) |
+| Data | Cloud Firestore via Firebase Admin only; browser clients are deny-all |
+| Local backend | Firebase Auth + Firestore emulators in Docker (`demo-prosefield`) |
+| Payments | Stripe Checkout (test mode) + verified webhooks; session-sync fallback on `/billing/status` |
+| Editor | Tiptap (JSON persistence, **manual** save) |
+| UI | Tailwind CSS 4 + minimal shadcn/ui (+ lucide-react), tokens from Art Direction v1.1 |
 | Optional deploy | Firebase App Hosting (Cloud Run + CDN + Secret Manager) |
 
 ## 2. Architectural drivers
@@ -54,16 +55,15 @@ Next.js is both the frontend and the backend-for-frontend. Server code checks Fi
 - Subscriber-only create, edit, save, rename and delete (with confirmation), a list with titles and last-updated times, empty and error states.
 - Stripe test subscription, with access granted **only** from server-side webhook confirmation.
 - Runs from the README on a fresh machine in under 15 minutes, with `.env.example` and no secrets.
-- README (architecture, tradeoffs, Stripe test flow, limitations), a one-page write-up, a 2–4 minute demo, and runnable acceptance tests.
-- Effort of 6–10 h, with a hard cap of 12 h.
+- README (architecture, tradeoffs, Stripe test flow, limitations), a one-page write-up, a short demo, and runnable acceptance tests.
 
 ### 2.2 Quality priorities (in order)
-1. A complete end-to-end flow (product completeness carries 30% of the rubric).
-2. Correct server-side authorisation and billing (security and correctness, 20%).
-3. Readable TypeScript structure with runnable tests (code quality, 25%).
+1. A complete end-to-end flow.
+2. Correct server-side authorisation and billing.
+3. Readable TypeScript structure with runnable tests.
 4. Reproducible local setup in under 15 minutes.
-5. Faithful Art Direction v1.1 implementation (UX and polish, 15%).
-6. Honest, concise documentation (communication, 10%).
+5. Faithful Art Direction v1.1 implementation.
+6. Honest, concise documentation.
 
 ### 2.3 Non-goals
 AI features; Python or LangChain services; real-time collaboration; autosave and multi-device conflict resolution; version history; uploads and export; an admin UI; email verification; multiple tiers, coupons, taxes or trials; dark mode; production multi-region infrastructure; a public API.
@@ -81,7 +81,6 @@ AI features; Python or LangChain services; real-time collaboration; autosave and
 | Tests and CI | None | Add Vitest, emulator integration, Playwright + axe, and GitHub Actions |
 | Firebase | None | Add `firebase.json`, rules, indexes, and Docker emulators |
 | `.env.example` | Absent and ignored | Add it and unignore it explicitly |
-| Cloud Agent env | Saved by Carlos (Node 24.21.0, pnpm, `pnpm install --frozen-lockfile`, dev on :3000) | Project agents reuse it. Backend emulators run only via Docker Compose |
 
 ## 4. System context
 
@@ -244,7 +243,7 @@ src/
 tests/ unit/, integration/, e2e/
 docker/ (emulators.Dockerfile, app.Dockerfile)
 docker-compose.yml, firebase.json, .firebaserc, firestore.rules, firestore.indexes.json,
-apphosting.yaml (P6), .env.example, docs/ (architecture.md, art-direction.md, write-up.md)
+apphosting.yaml (optional deploy), .env.example, docs/ (architecture.md, art-direction.md, write-up.md)
 ```
 
 ## 8. Firestore data model
@@ -277,7 +276,7 @@ Composite index: `documents(ownerId ASC, updatedAt DESC)`, committed in `firesto
 | XSS | Tiptap JSON only; no `dangerouslySetInnerHTML` of user content |
 | Oversized input | Zod bounds (title, JSON size) |
 | Direct DB access | Default-deny rules, tested |
-| Secret leakage (public repo) | `.env*` ignored except `.env.example`; gitleaks in CI; no `NEXT_PUBLIC_` secrets; App Hosting secrets in P6 |
+| Secret leakage (public repo) | `.env*` ignored except `.env.example`; gitleaks in CI; no `NEXT_PUBLIC_` secrets; App Hosting secrets via Secret Manager when deployed |
 | Tests reaching production | `demo-` project ID with explicit emulator hosts; tests refuse to run without emulator env vars |
 | Log leakage | Structured logs with request and event IDs only; never tokens, cookies, passwords, document bodies or keys |
 
@@ -313,16 +312,16 @@ flowchart TB
 4. `docker compose up -d --wait` — Emulator UI on :4000.
 5. Optional: `docker compose run --rm stripe-cli listen --print-secret` for `STRIPE_WEBHOOK_SECRET`, then `--profile stripe` (with `--profile app` if the CLI must reach the containerised app).
 
-## 11. Deployment: Firebase for everything (optional phase P6)
+## 11. Deployment: Firebase for everything (optional)
 
-Carlos's answer 1: deploy only at the end and only if it's easy. One platform for everything is preferred.
+Deploy only at the end and only if it's easy. One platform for everything is preferred.
 
 - **Firebase App Hosting** serves the entire Next.js app: SSR pages, Server Actions, Route Handlers and the Stripe webhook. There's no Vercel and no separate static host. Rollouts happen automatically from `main`.
 - **Firebase Auth + Cloud Firestore** live in the same Firebase project (EU region, chosen before any data is created). `firestore.rules` and indexes are deployed with `firebase deploy --only firestore`.
 - **Secrets:** `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` go in App Hosting secrets (Secret Manager) via `apphosting.yaml`. Firebase Admin uses the App Hosting service account (no key files).
 - Stripe's test-mode hosted webhook points at `https://<backend>.web.app/api/stripe/webhook`. The App Hosting domain is added to Auth authorised domains.
 - **Cost:** App Hosting needs the Blaze plan; the free allowances should cover this traffic. A budget alert of about €5 goes on before the first rollout, with min instances at 0.
-- **Exit criteria:** the same Playwright smoke test (landing, register, upgrade gate) passes against the deployed URL, plus one manual Stripe test payment. If setup goes past about 1.5 h, stop and document it under "With another day".
+- **Exit criteria:** the same Playwright smoke test (landing, register, upgrade gate) passes against the deployed URL, plus one manual Stripe test payment. If optional deploy setup becomes disproportionate, stop and document it under "With another day".
 - This scope accepts the trade-off that App Hosting has no PR preview channels.
 
 ## 12. Dependencies
@@ -345,27 +344,25 @@ Versions get pinned through `pnpm-lock.yaml` at install time.
 
 The seeded subscriber is written straight into the emulator projection by a test fixture. That's documented as a test-only shortcut, and no production code path allows it.
 
-## 14. Delivery plan via the Prosefield Cursor Project
+## 14. Build order
 
-All implementation runs through the **Prosefield Cursor Project** (coordinator `bc-cb8c7a99-09da-4b74-b273-fbbf6130fef1`). The scope doc (read-only), Art Direction v1.1 and this architecture (once approved) live in the Project's shared context. P0 also commits them under `docs/`, so every thread, the README and reviewers see the same source. Each phase is one ClickUp ticket on the Prosefield board and one draft PR, reviewed by Pull Request Reviewer. Carlos merges. Commits carry the GasNet trailer block (`Agent`, `Agent-Ticket`, `Agent-Run`) and PR bodies carry the same footer.
+Art Direction v1.1 and this architecture live under `docs/`. Work shipped as draft PRs; Carlos merges.
 
-| Phase | Est. | Deliverable | Done when |
-|---|---|---|---|
-| P0 Foundation | 1 h | Tokens and fonts (Art Direction 6.3, 7.1), `lang="en-GB"`, light-only; `env.ts`; docker compose emulators + app; `firebase.json`, rules, indexes; Vitest; CI (lint, typecheck, build, unit, gitleaks, actionlint); `.env.example`; `docs/` | `docker compose up` serves the app with emulators healthy; CI green |
-| P1 Auth | 1.5 h | Register, login, logout, session cookie, CSRF, guards, account-state header and CTA routing, auth error UX | Integration tests for the session and guards pass |
-| P2 Billing | 2 h | `getPlan`, `stripe:seed`, checkout, webhook, projection, session-sync fallback, billing status page, upgrade gate | Unit and integration tests pass, and a manual 4242 flow unlocks access |
-| P3 Documents | 2 h | Repository, actions, list, empty state, Tiptap editor (restricted formats), save states, rename, delete dialog | Guard-chain integration tests pass, and CRUD persists |
-| P4 Landing | 1.5 h | All marketing sections from `content/site.ts`, inert preview, logo SVG and favicon, responsive pass | Playwright plus axe at four widths green |
-| P5 Ship docs | 1 h | Playwright happy path, README (architecture, tradeoffs, Stripe flow, limitations, AI usage and manual verification, credits), write-up (three questions), demo recording | A fresh-machine run under 15 min is measured and recorded |
-| P6 Optional | ≤ 1.5 h | Customer Portal (flag on) + Firebase App Hosting deploy | Smoke test on the deployed URL |
-
-The total for P0–P5 is about 9 h, inside the 6–10 h estimate, leaving about 3 h of buffer under the 12 h cap for review rounds and P6.
+| Stage | Deliverable | Done when |
+|---|---|---|
+| Foundation | Tokens and fonts (Art Direction 6.3, 7.1), `lang="en-GB"`, light-only; `env.ts`; docker compose emulators + app; `firebase.json`, rules, indexes; Vitest; CI (lint, typecheck, build, unit, gitleaks, actionlint); `.env.example`; `docs/` | `docker compose up` serves the app with emulators healthy; CI green |
+| Auth | Register, login, logout, session cookie, CSRF, guards, account-state header and CTA routing, auth error UX | Integration tests for the session and guards pass |
+| Billing | `getPlan`, `stripe:seed`, checkout, webhook, projection, session-sync fallback, billing status page, upgrade gate | Unit and integration tests pass, and a manual 4242 flow unlocks access |
+| Documents | Repository, actions, list, empty state, Tiptap editor (restricted formats), save states, rename, delete dialog | Guard-chain integration tests pass, and CRUD persists |
+| Landing | All marketing sections from `content/site.ts`, inert preview, logo SVG and favicon, responsive pass | Playwright plus axe at four widths green |
+| Ship docs | Playwright happy path, README (architecture, tradeoffs, Stripe flow, limitations, AI usage and manual verification, credits), write-up, demo recording | A fresh-machine run under 15 min is measured and recorded |
+| Optional | Customer Portal (flag on) + Firebase App Hosting deploy | Smoke test on the deployed URL |
 
 ## 15. Operational notes
 - Structured logs with request and event IDs. Never log secrets, tokens, cookies, passwords or document bodies.
 - Keep `stripeEvents` for debugging.
 - Emulator data persists in the Compose named volume `emulator-data` at `/data/export` inside the container. Wipe with `docker compose down -v`.
-- P6: budget alert, min instances 0, rollback through App Hosting rollout history.
+- Optional deploy: budget alert, min instances 0, rollback through App Hosting rollout history.
 
 ## 16. Key decisions and trade-offs
 
@@ -373,7 +370,7 @@ The total for P0–P5 is about 9 h, inside the 6–10 h estimate, leaving about 
 |---|---|---|
 | One Next.js app | Small system, shared types, one origin | Backend deploys with the frontend |
 | Docker-only local Firebase (`demo-` project) | The evaluator needs no Firebase account and nothing beyond Node/pnpm/Docker on the host; can't touch production | Docker is a prerequisite for the backend; first image pull time |
-| Firebase for everything (optional) | One platform, one bill, one console; no Vercel | Blaze plan; no PR previews |
+| Firebase for everything (optional deploy) | One platform, one bill, one console; no Vercel | Blaze plan; no PR previews |
 | Session cookie (`__session`) | Server-validated sessions as required; App Hosting compatible | Token exchange + CSRF handling |
 | Server-only Firestore | Authorisation in one tested layer; deny-all rules | No real-time or offline client features |
 | Fetch canonical Subscription on every event | Order-independent, simple, correct | One extra Stripe API call per event |
@@ -386,14 +383,14 @@ The total for P0–P5 is about 9 h, inside the 6–10 h estimate, leaving about 
 | shadcn/ui minimal set | Fast polish, code visible | Generated code needs review |
 
 ## 17. Changes from v0.1 (for approval)
-1. **Local-first with Docker** is now the primary target (`docker compose`, `demo-prosefield`, a stripe-cli service). Deployment moves to optional phase P6, specified as Firebase for everything (App Hosting + Auth + Firestore, no Vercel).
+1. **Local-first with Docker** is now the primary target (`docker compose`, `demo-prosefield`, a stripe-cli service). Deployment moves to an optional final stage, specified as Firebase for everything (App Hosting + Auth + Firestore, no Vercel).
 2. **Billing correctness:** uid in `subscription_data.metadata` and Customer metadata, a `stripeCustomers` reverse lookup, canonical Subscription fetch replacing `lastStripeEventCreated` ordering, idempotent Customer creation, checkout refused when already active, and the Node runtime with raw-body verification made explicit.
 3. **Delayed-webhook fallback** via server-verified Checkout Session retrieval on `/billing/status`.
 4. **Configurable plan and price** (`STRIPE_PRICE_ID` + `getPlan()` + env display fallback + `stripe:seed`).
 5. **Content module** for all copy; CTA and copy rules delegated to Art Direction v1.1 ("Start your first page"; no trial; the "Cancel anytime" rule enforced through `FEATURE_CUSTOMER_PORTAL`).
 6. **Art Direction v1.1 alignment:** tokens, fonts, en-GB, light-only, restricted editor formats, save-state, billing-pending, upgrade-gate, delete and auth-error patterns, a11y rules, and axe in the acceptance tests.
 7. **Security additions:** `next` allow-list, `__session` cookie name, recent-auth check, revocation on logout, 404 for foreign docs, gitleaks for the public repo, live-key rejection, payload bounds sized to Firestore limits.
-8. **Phased delivery plan** sized to the time budget, run through the Prosefield Cursor Project with docs committed under `docs/`.
+8. **Staged build order** with docs committed under `docs/`.
 9. Deliverables added to the definition of done: write-up, demo, AI-usage section, credits.
 
 ## 18. Definition of done (first release)
@@ -410,4 +407,4 @@ The total for P0–P5 is about 9 h, inside the 6–10 h estimate, leaving about 
 ## 19. Open items (non-blocking)
 - A final logo replaces the provisional cultivated-P (Art Direction 5.1). The component API stays the same.
 - Final price and plan name: set via Stripe and env at any time, no code change needed.
-- Customer Portal: default on in P6 if time allows; the copy follows automatically.
+- Customer Portal: default on in the optional deploy stage if time allows; the copy follows automatically.

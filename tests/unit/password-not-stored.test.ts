@@ -101,17 +101,15 @@ describe("passwords never leave Firebase Auth", () => {
     logLogSpy.mockRestore();
   });
 
-  it("README security section documents Firebase Auth salted scrypt", () => {
-    const readme = readFileSync(
-      path.resolve(process.cwd(), "README.md"),
+  it("docs/security.md documents Firebase Auth salted scrypt", () => {
+    const security = readFileSync(
+      path.resolve(process.cwd(), "docs/security.md"),
       "utf8",
     );
-    const start = readme.indexOf("## Security");
-    expect(start).toBeGreaterThan(-1);
-    const section = readme.slice(start, start + 3500);
-    expect(section).toMatch(/salted scrypt/i);
-    expect(section).toMatch(/Firebase Auth/);
-    expect(section).toMatch(/envelope/i);
-    expect(section).toMatch(/never stores, logs, or sends passwords/i);
+    expect(security).toMatch(/salted scrypt/i);
+    expect(security).toMatch(/Firebase Auth/);
+    expect(security).toMatch(/envelope/i);
+    expect(security).toMatch(/never stores, logs, or sends passwords/i);
   });
 });
+
