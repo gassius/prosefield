@@ -12,18 +12,19 @@ describe("document size wording", () => {
       path.resolve(__dirname, "../../docs/architecture.md"),
       "utf8",
     );
-    const readme = readFileSync(
-      path.resolve(__dirname, "../../README.md"),
+    const designNotes = readFileSync(
+      path.resolve(__dirname, "../../docs/design-notes.md"),
       "utf8",
     );
 
     expect(schema).toMatch(/512 KiB/);
     expect(architecture).toMatch(/512 KiB/);
-    expect(readme).toMatch(/512 KiB/);
+    expect(designNotes).toMatch(/512 KiB/);
 
     // Bite: reintroducing the mixed "512 KB" spelling fails.
     expect(architecture).not.toMatch(/512 KB/);
     expect(schema).not.toMatch(/512 KB/);
-    expect(readme).not.toMatch(/512 KB/);
+    expect(designNotes).not.toMatch(/512 KB/);
   });
 });
+

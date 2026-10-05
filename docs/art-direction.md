@@ -1,4 +1,4 @@
-<!-- Export of ClickUp page 2kxv30qk-932 (Approved v1.1). Reference images are bundled alongside: prosefield-landing-v1.1.png, prosefield-landing-mobile-v1.1.png, prosefield-branding-v1.1.png -->
+<!-- Art Direction & Design Guide v1.1 (Approved). Reference images are bundled alongside: prosefield-landing-v1.1.png, prosefield-landing-mobile-v1.1.png, prosefield-branding-v1.1.png -->
 # Prosefield Art Direction and Design Guide
 
 | Field | Value |
@@ -12,13 +12,13 @@
 | Product | Prosefield |
 | Scope | Landing experience, conversion funnel, essential application states, and shared product identity |
 
-Supersedes Art Direction & Design Guide v1.0 (doc 2kxv30qk-532).
+Supersedes Art Direction & Design Guide v1.0.
 
 ## 1. Purpose
 
 This guide translates the approved **Cultivated Clarity** direction into practical rules for implementing Prosefield with Next.js, Tailwind CSS 4, and shadcn/ui.
 
-It is a focused implementation contract for the take-home assignment, not a complete corporate identity system. Its purpose is to make the marketing experience distinctive, coherent, responsive, and conversion-oriented, and to give the essential application states a consistent treatment, without spending the project budget on unnecessary design-system work.
+It is a focused implementation contract for this product, not a complete corporate identity system. Its purpose is to make the marketing experience distinctive, coherent, responsive, and conversion-oriented, and to give the essential application states a consistent treatment, without spending the project budget on unnecessary design-system work.
 
 ## 2. Direction summary
 
@@ -75,7 +75,7 @@ It should not present itself as:
 *   A replacement for every document product.
 *   A productivity system built around pressure or streaks.
 
-The assignment does not require AI features, so the brand and landing page must not imply capabilities the product does not have.
+The product does not include AI features, so the brand and landing page must not imply capabilities it does not have.
 
 ### 4.2 Brand promise
 
@@ -143,7 +143,7 @@ Implement only the variants needed for this exercise:
 *   Single-colour light version.
 *   Field-blue version on light neutral backgrounds.
 
-Do not create gradient, outlined badge, or illustrated variants during the take-home.
+Do not create gradient, outlined badge, or illustrated variants in this scope.
 
 ### 5.4 Minimum sizes
 
@@ -395,7 +395,7 @@ Behaviour:
 
 *   Keep the header visually light and separated by a quiet bottom border.
 *   Collapse links into a shadcn `Sheet` menu on small screens.
-*   Do not make the header sticky for the take-home unless testing shows a clear conversion benefit.
+*   Do not make the header sticky unless testing shows a clear conversion benefit.
 *   Below `640px`, the header shows only the lockup and the menu button; `Sign in` and the header CTA move into the menu `Sheet`. The hero CTA sits directly below.
 
 ### 9.2 Hero
@@ -522,7 +522,7 @@ The preview is non-interactive. Expose it as a single labelled image (`role="img
 
 ## 12. Application surfaces and states
 
-The same tokens, type scale, and icon rules apply to every authenticated surface. This section covers only the states the assignment requires.
+The same tokens, type scale, and icon rules apply to every authenticated surface. This section covers only the states this product requires.
 
 ### 12.1 Document list
 
@@ -742,7 +742,7 @@ Before considering the experience complete, verify:
 
 ## 21. Scope boundaries
 
-Do not spend take-home time on:
+Do not spend scope time on:
 
 *   An extensive logo family.
 *   Custom icon design beyond the Prosefield mark.
