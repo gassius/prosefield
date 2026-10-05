@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Prosefield requirements check (macOS, Linux, WSL2). Bash only — no installs.
 # Exit 0 when every check passes; non-zero when anything is missing.
+# Loads existing nvm (like start.sh) so a fresh shell with nvm installed can PASS.
 set -euo pipefail
 
 # Test override (unit tests); production always uses the repo containing this script.
@@ -52,6 +53,26 @@ cd "$ROOT"
 required_node="$(tr -d '[:space:]' <"$ROOT/.nvmrc")"
 required_node="${required_node#v}"
 
+# Prefer nvm Node from .nvmrc when the active Node does not already match (same as start.sh).
+# Do not call `nvm use` when Node already matches (CI setup-node / system Node).
+load_nvm_if_present() {
+  if [[ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]]; then
+    # shellcheck disable=SC1091
+    . "${NVM_DIR:-$HOME/.nvm}/nvm.sh"
+    return 0
+  fi
+  if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
+    # shellcheck disable=SC1091
+    . "$HOME/.nvm/nvm.sh"
+    return 0
+  fi
+  return 1
+}
+
+nvm_sh_present() {
+  [[ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ]] || [[ -s "$HOME/.nvm/nvm.sh" ]]
+}
+
 # --- git ---
 if command -v git >/dev/null 2>&1; then
   pass "git ($(git --version | head -n1))"
@@ -59,18 +80,40 @@ else
   fail "git" "Install Git: https://git-scm.com/downloads"
 fi
 
-# --- Node (exact .nvmrc) ---
-if ! command -v node >/dev/null 2>&1; then
-  fail "Node.js ${required_node}" \
-    "Install nvm, then run nvm install in this repo: https://github.com/nvm-sh/nvm#installing-and-updating"
-else
+# --- Node (exact .nvmrc; try loading existing nvm before FAIL) ---
+actual_node=""
+if command -v node >/dev/null 2>&1; then
   actual_node="$(node -v 2>/dev/null | tr -d 'v[:space:]')"
-  if [[ "$actual_node" == "$required_node" ]]; then
-    pass "Node.js v${actual_node} (matches .nvmrc)"
+fi
+
+if [[ "$actual_node" == "$required_node" ]]; then
+  pass "Node.js v${actual_node} (matches .nvmrc)"
+elif [[ -z "${PROSEFIELD_SKIP_NVM:-}" ]] && load_nvm_if_present; then
+  # nvm is present — try switching to .nvmrc (agent-safe; no system-wide install).
+  if nvm use >/dev/null 2>&1; then
+    actual_node="$(node -v 2>/dev/null | tr -d 'v[:space:]')"
   else
-    fail "Node.js v${actual_node} (need v${required_node})" \
-      "Install nvm and run nvm install / nvm use in this repo: https://github.com/nvm-sh/nvm#installing-and-updating"
+    actual_node=""
+    if command -v node >/dev/null 2>&1; then
+      actual_node="$(node -v 2>/dev/null | tr -d 'v[:space:]')"
+    fi
   fi
+  if [[ "$actual_node" == "$required_node" ]]; then
+    pass "Node.js v${actual_node} (matches .nvmrc via nvm)"
+  else
+    fail "Node.js (need v${required_node}; nvm present)" \
+      "nvm is installed — run \`nvm install\` (reads .nvmrc) in this repo, then retry. No system-wide install needed."
+  fi
+elif nvm_sh_present; then
+  # PROSEFIELD_SKIP_NVM set, or load failed oddly — still distinguish "nvm present".
+  fail "Node.js (need v${required_node}; nvm present)" \
+    "nvm is installed — run \`nvm install\` (reads .nvmrc) in this repo, then retry. No system-wide install needed."
+elif [[ -z "$actual_node" ]]; then
+  fail "Node.js ${required_node}" \
+    "No matching Node and no nvm. Install nvm (user-level), then run nvm install in this repo: https://github.com/nvm-sh/nvm#installing-and-updating"
+else
+  fail "Node.js v${actual_node} (need v${required_node})" \
+    "No matching Node and no nvm. Install nvm (user-level), then run nvm install / nvm use in this repo: https://github.com/nvm-sh/nvm#installing-and-updating"
 fi
 
 # --- pnpm via existing binary or Corepack (scripts enable it; we never install system-wide) ---
@@ -83,30 +126,63 @@ else
     "Install Node via nvm (includes Corepack), then retry: https://github.com/nvm-sh/nvm#installing-and-updating"
 fi
 
-# --- Docker daemon ---
+# --- Docker CLI / daemon / permission ---
+docker_classify_failure() {
+  # Reads stderr+stdout from a failed `docker info` in $1.
+  # Prints: permission | daemon
+  local err="$1"
+  if printf '%s' "$err" | grep -Eiq \
+    'permission denied|operation not permitted|access denied|socket.*(unreachable|not accessible)|cannot connect to the docker daemon.*permission'; then
+    printf 'permission'
+  else
+    printf 'daemon'
+  fi
+}
+
 if ! command -v docker >/dev/null 2>&1; then
-  fail "Docker" \
-    "Install Docker Desktop (WSL2 backend) or Docker Engine inside WSL2, then start it: https://docs.docker.com/get-docker/"
+  fail "Docker CLI" \
+    "If Docker Desktop is installed on Windows, start it and enable WSL integration for this distro. Otherwise install Docker Desktop (WSL2 backend) or Docker Engine inside WSL2: https://docs.docker.com/get-docker/"
 else
-  if docker info >/dev/null 2>&1; then
+  docker_info_out=""
+  docker_info_status=0
+  set +e
+  docker_info_out="$(docker info 2>&1)"
+  docker_info_status=$?
+  set -e
+  if [[ "$docker_info_status" -eq 0 ]]; then
     pass "Docker (daemon running)"
   else
-    fail "Docker daemon" \
-      "Start Docker Desktop (WSL2 backend) or the Docker Engine daemon in WSL2: https://docs.docker.com/engine/install/"
+    case "$(docker_classify_failure "$docker_info_out")" in
+      permission)
+        fail "Docker socket (permission / unreachable)" \
+          "Docker CLI is present but cannot reach the daemon socket (permission or sandbox). Re-run this check with access to the Docker socket — do not install Docker. Hint: ask your agent harness for Docker/socket permission, or add your user to the docker group (needs human)."
+        ;;
+      *)
+        fail "Docker daemon not running" \
+          "Start Docker Desktop (WSL2 backend) or the Docker Engine daemon in WSL2: https://docs.docker.com/engine/install/"
+        ;;
+    esac
   fi
 fi
 
 # --- Docker Compose v2 (`docker compose`) ---
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  if docker compose version >/dev/null 2>&1; then
-    pass "Docker Compose v2 ($(docker compose version --short 2>/dev/null || echo ok))"
+if command -v docker >/dev/null 2>&1; then
+  docker_ok=0
+  set +e
+  docker info >/dev/null 2>&1
+  docker_ok=$?
+  set -e
+  if [[ "$docker_ok" -eq 0 ]]; then
+    if docker compose version >/dev/null 2>&1; then
+      pass "Docker Compose v2 ($(docker compose version --short 2>/dev/null || echo ok))"
+    else
+      fail "Docker Compose v2" \
+        "Install Docker Compose V2 (bundled with Docker Desktop): https://docs.docker.com/compose/install/"
+    fi
   else
     fail "Docker Compose v2" \
-      "Install Docker Compose V2 (bundled with Docker Desktop): https://docs.docker.com/compose/install/"
+      "Docker daemon unreachable — fix Docker first (start daemon, or re-run with socket access), then confirm Compose V2: https://docs.docker.com/compose/install/"
   fi
-elif command -v docker >/dev/null 2>&1; then
-  fail "Docker Compose v2" \
-    "Start Docker first, then confirm Compose V2: https://docs.docker.com/compose/install/"
 fi
 
 # --- Dev-server process group path (start.sh) ---
@@ -131,6 +207,22 @@ port_in_use() {
   fi
   # Fallback: bash /dev/tcp
   (echo >/dev/tcp/127.0.0.1/"$port") >/dev/null 2>&1
+}
+
+port_owner_line() {
+  # Best-effort: print "cmd pid" for the LISTEN owner, or empty.
+  local port="$1"
+  local line=""
+  if command -v lsof >/dev/null 2>&1; then
+    line="$(lsof -iTCP:"$port" -sTCP:LISTEN -n -P 2>/dev/null | awk 'NR==2 {print $1, $2; exit}')"
+  fi
+  if [[ -z "$line" ]] && command -v ss >/dev/null 2>&1; then
+    # ss -p: users:(("nginx",pid=123,fd=6)) — portable sed, no gawk-only match().
+    line="$(ss -ltnp "( sport = :${port} )" 2>/dev/null \
+      | sed -n 's/.*users:((\"\([^"]*\)\",pid=\([0-9][0-9]*\).*/\1 \2/p' \
+      | head -n1)"
+  fi
+  printf '%s' "$line"
 }
 
 port_ok_for_start() {
@@ -164,12 +256,25 @@ check_port() {
     pass "Port ${port} free"
     return
   fi
-  if [[ "$FOR_START" == "1" ]] && port_ok_for_start "$port"; then
-    pass "Port ${port} in use by Prosefield (ok for start)"
+  # Always probe Prosefield health before blaming a foreign owner (plain check and start).
+  if port_ok_for_start "$port"; then
+    if [[ "$FOR_START" == "1" ]]; then
+      pass "Port ${port} in use by Prosefield (ok for start)"
+      return
+    fi
+    fail "Port ${port}" \
+      "Port ${port} in use by Prosefield — run scripts/stop.sh or scripts/start.sh"
     return
   fi
-  fail "Port ${port}" \
-    "Free port ${port} (stop the other process), or run scripts/stop.sh if a previous Prosefield start is still running."
+  local owner
+  owner="$(port_owner_line "$port")"
+  if [[ -n "$owner" ]]; then
+    fail "Port ${port}" \
+      "Owned by non-Prosefield process: ${owner}. Free port ${port}, or run scripts/stop.sh only if that process is a previous Prosefield start. Do not kill unrelated services."
+  else
+    fail "Port ${port}" \
+      "Free port ${port} (stop the other process), or run scripts/stop.sh if a previous Prosefield start is still running. Do not kill unrelated services."
+  fi
 }
 
 for p in 3000 4000 8080 9099 9150; do

@@ -55,6 +55,11 @@ describe("README technical sections (P5a / P5b)", () => {
 
     expect(text).toMatch(/docs\/demo\/01-landing\.gif/);
     expect(text).toMatch(/AGENT_SETUP\.md/);
+    // README one-liner: policy lives in AGENT_SETUP.md (no "stop and ask" in the paste).
+    expect(text).toMatch(
+      /Follow https:\/\/raw\.githubusercontent\.com\/gassius\/prosefield\/main\/AGENT_SETUP\.md end to end\./,
+    );
+    expect(text).not.toMatch(/Stop and ask me before any system-wide install/);
     expect(text).toMatch(/pnpm check/);
     expect(text).toMatch(/pnpm start:local/);
     expect(text).toMatch(/pnpm stop:local/);
