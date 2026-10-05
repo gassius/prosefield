@@ -6,12 +6,19 @@ function readme(): string {
   return readFileSync(path.resolve(process.cwd(), "README.md"), "utf8");
 }
 
+function stripeDoc(): string {
+  return readFileSync(
+    path.resolve(process.cwd(), "docs/stripe-testing.md"),
+    "utf8",
+  );
+}
+
 describe("README Stripe manual 4242 flow", () => {
   it("documents pnpm stripe:setup before Compose app+stripe (no host pnpm dev)", () => {
     const text = readme();
     const section = text.slice(
-      text.indexOf("### Manual Stripe test payment (4242)"),
-      text.indexOf("## Known limitations"),
+      text.indexOf("## Manual Stripe test payment (4242)"),
+      text.indexOf("## Testing"),
     );
     const setupIdx = section.indexOf("pnpm stripe:setup");
     const forwardIdx = section.indexOf(
@@ -24,13 +31,13 @@ describe("README Stripe manual 4242 flow", () => {
   });
 
   it("states /subscribe stays not configured until all three Stripe env vars are set", () => {
-    const text = readme();
-    expect(text).toMatch(/\/subscribe/);
-    expect(text).toMatch(/not configured/i);
-    expect(text).toMatch(/STRIPE_SECRET_KEY/);
-    expect(text).toMatch(/STRIPE_PRICE_ID/);
-    expect(text).toMatch(/STRIPE_WEBHOOK_SECRET/);
-    expect(text).toMatch(
+    const details = stripeDoc();
+    expect(details).toMatch(/\/subscribe/);
+    expect(details).toMatch(/not configured/i);
+    expect(details).toMatch(/STRIPE_SECRET_KEY/);
+    expect(details).toMatch(/STRIPE_PRICE_ID/);
+    expect(details).toMatch(/STRIPE_WEBHOOK_SECRET/);
+    expect(details).toMatch(
       /all three of `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET`/,
     );
   });
@@ -38,13 +45,17 @@ describe("README Stripe manual 4242 flow", () => {
   it("no longer tells readers to only run stripe:seed and paste the price by hand as step 2", () => {
     const text = readme();
     const manualSection = text.slice(
-      text.indexOf("### Manual Stripe test payment (4242)"),
-      text.indexOf("## Known limitations"),
+      text.indexOf("## Manual Stripe test payment (4242)"),
+      text.indexOf("## Testing"),
     );
     // Step 2 must be setup, not a bare seed + paste instruction.
     expect(manualSection).toMatch(/2\.\s+Run `pnpm stripe:setup`/);
     expect(manualSection).not.toMatch(
       /2\.\s+Seed a Price:\s*`pnpm stripe:seed`/,
     );
+
+    const details = stripeDoc();
+    expect(details).toMatch(/pnpm stripe:setup/);
+    expect(details).not.toMatch(/2\.\s+Seed a Price:\s*`pnpm stripe:seed`/);
   });
 });

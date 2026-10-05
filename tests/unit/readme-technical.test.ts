@@ -1,9 +1,13 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 function readme(): string {
   return readFileSync(path.resolve(process.cwd(), "README.md"), "utf8");
+}
+
+function readDoc(rel: string): string {
+  return readFileSync(path.resolve(process.cwd(), rel), "utf8");
 }
 
 function packageScripts(): Set<string> {
@@ -25,7 +29,19 @@ function pnpmScriptNames(text: string): string[] {
   return [...names];
 }
 
-describe("README technical sections (P5a / P5b)", () => {
+const LINKED_DOCS = [
+  "docs/architecture.md",
+  "docs/art-direction.md",
+  "docs/write-up.md",
+  "docs/local-development.md",
+  "docs/stripe-testing.md",
+  "docs/testing.md",
+  "docs/design-notes.md",
+  "docs/security.md",
+  "docs/ai-usage.md",
+] as const;
+
+describe("README technical sections (evaluator-facing)", () => {
   it("opens with pitch, agent setup, three-step Quick Start, then demo GIFs", () => {
     const text = readme();
     const pitchIdx = text.indexOf("A writing workspace");
@@ -55,24 +71,38 @@ describe("README technical sections (P5a / P5b)", () => {
 
     expect(text).toMatch(/docs\/demo\/01-landing\.gif/);
     expect(text).toMatch(/AGENT_SETUP\.md/);
-    // README one-liner: policy lives in AGENT_SETUP.md (no "stop and ask" in the paste).
-    expect(text).toMatch(
-      /Follow https:\/\/raw\.githubusercontent\.com\/gassius\/prosefield\/main\/AGENT_SETUP\.md end to end\./,
-    );
-    expect(text).not.toMatch(/Stop and ask me before any system-wide install/);
-    expect(text).toMatch(/pnpm check/);
-    expect(text).toMatch(/pnpm start:local/);
-    expect(text).toMatch(/pnpm stop:local/);
+    expect(text).toMatch(/docs\/local-development\.md/);
   });
 
-
-  it("manual start (below the fold) still documents nvm, host pnpm dev, and Compose backend", () => {
+  it("keeps architecture and surfaces as short links (no take-home/assignment wording)", () => {
     const text = readme();
-    const start = text.indexOf("## Manual start (optional)");
-    const end = text.indexOf("## Architecture overview");
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const section = text.slice(start, end);
+    expect(text).toMatch(/## Architecture/);
+    expect(text).toMatch(/docs\/architecture\.md/);
+    expect(text).toMatch(/## Surfaces/);
+    expect(text).toMatch(/docs\/write-up\.md/);
+    expect(text).not.toMatch(/take-home/i);
+    expect(text).not.toMatch(/\bassignment\b/i);
+    expect(text).not.toMatch(/ClickUp/i);
+    expect(text).not.toMatch(/Carlos — confirm before ship/);
+    expect(text).not.toMatch(/\bP[0-6]\b/);
+    expect(text).not.toMatch(/P5a|P5b/);
+  });
+
+  it("links every More docs entry and each file exists", () => {
+    const text = readme();
+    expect(text).toMatch(/## More docs/);
+    for (const rel of LINKED_DOCS) {
+      expect(text, `README should link ${rel}`).toMatch(
+        new RegExp(rel.replace(/\./g, "\\.")),
+      );
+      expect(existsSync(path.resolve(process.cwd(), rel)), rel).toBe(true);
+    }
+  });
+
+  it("manual start and prerequisites live in local-development.md", () => {
+    const section = readDoc("docs/local-development.md");
+    expect(section).toMatch(/## Manual start \(optional\)/);
+    expect(section).toMatch(/## Prerequisites \(details\)/);
     expect(section).toMatch(/nvm install/);
     expect(section).toMatch(/\.nvmrc/);
     expect(section).toMatch(/corepack enable/);
@@ -81,67 +111,53 @@ describe("README technical sections (P5a / P5b)", () => {
     expect(section).toMatch(/pnpm backend:up/);
     expect(section).toMatch(/pnpm backend:down/);
     expect(section).toMatch(/pnpm backend:logs/);
-  });
-
-  it("prerequisites keep Docker-only backend, no host Firebase CLI, WSL2-only Windows", () => {
-    const text = readme();
-    const start = text.indexOf("## Prerequisites (details)");
-    const end = text.indexOf("## Manual start (optional)");
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const section = text.slice(start, end);
     expect(section).toMatch(/do not install the Firebase CLI on the host/i);
     expect(section).toMatch(/no global `firebase-tools`/);
     expect(section).toMatch(/Emulator Suite runtime/);
     expect(section).toMatch(/WSL2 only/i);
+    expect(section).toMatch(/## Emulator data/);
+    expect(section).toMatch(/## Optional Compose profiles/);
+    expect(section).toMatch(/Optional `app` profile notes/);
   });
 
-  it("documents architecture overview with core stack choices", () => {
-    const text = readme();
-    const start = text.indexOf("## Architecture overview");
-    const end = text.indexOf("### Emulator data");
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const section = text.slice(start, end);
+  it("architecture overview lives in docs/architecture.md with core stack choices", () => {
+    const section = readDoc("docs/architecture.md");
+    expect(section).toMatch(/### Architecture overview/);
     expect(section).toMatch(/Next\.js 16/);
     expect(section).toMatch(/Firebase Auth/);
     expect(section).toMatch(/Cloud Firestore/);
     expect(section).toMatch(/Stripe Checkout/);
     expect(section).toMatch(/Tiptap/);
-    expect(section).toMatch(/docs\/architecture\.md/);
+    expect(section).not.toMatch(/ClickUp/i);
+    expect(section).not.toMatch(/\bP[0-6]\b/);
   });
 
-  it("documents known limitations including Docker-only backend and manual save", () => {
-    const text = readme();
-    const start = text.indexOf("## Known limitations");
-    const end = text.indexOf("## Tradeoffs");
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-    const section = text.slice(start, end);
+  it("known limitations and tradeoffs live in design-notes.md", () => {
+    const section = readDoc("docs/design-notes.md");
+    expect(section).toMatch(/## Known limitations/);
     expect(section).toMatch(/Docker is required/i);
     expect(section).toMatch(/Manual save only/i);
     expect(section).toMatch(/No real-time collaboration/i);
     expect(section).toMatch(/sk_test_/);
     expect(section).toMatch(/FEATURE_CUSTOMER_PORTAL/);
+    expect(section).toMatch(/## Tradeoffs and “With another day”/);
+    expect(section).toMatch(/512 KiB/);
   });
 
-  it("includes tradeoffs, AI usage checklist for Carlos, and credits", () => {
-    const text = readme();
-    expect(text).toMatch(/## Tradeoffs and “With another day”/);
-    expect(text).toMatch(/## AI usage and manual verification/);
-    expect(text).toMatch(/Carlos — confirm before ship/);
-    expect(text).toMatch(/do not treat as already done/);
-    expect(text).toMatch(/## Credits/);
-    expect(text).not.toMatch(/docs\/time-log\.md/);
-    expect(text).not.toMatch(/docs\/screenshots\//);
-    expect(text).toMatch(/docs\/write-up\.md/);
+  it("AI usage lives in ai-usage.md without the confirm-before-ship checklist", () => {
+    const section = readDoc("docs/ai-usage.md");
+    expect(section).toMatch(/AI usage and manual verification/i);
+    expect(section).not.toMatch(/Carlos — confirm before ship/);
+    expect(section).not.toMatch(/do not treat as already done/);
+    expect(readme()).toMatch(/## Credits/);
+    expect(readme()).not.toMatch(/docs\/time-log\.md/);
+    expect(readme()).not.toMatch(/docs\/screenshots\//);
   });
 
-
-  it("Stripe 4242 section uses Compose app+stripe profiles without host pnpm dev", () => {
+  it("Stripe 4242 minimum stays in README and details in stripe-testing.md", () => {
     const text = readme();
-    const start = text.indexOf("### Manual Stripe test payment (4242)");
-    const end = text.indexOf("## Known limitations");
+    const start = text.indexOf("## Manual Stripe test payment (4242)");
+    const end = text.indexOf("## Testing");
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const section = text.slice(start, end);
@@ -151,30 +167,49 @@ describe("README technical sections (P5a / P5b)", () => {
     );
     expect(section).toMatch(/pnpm stripe:setup/);
     expect(section).toMatch(/Skip host `pnpm dev`/);
+    expect(section).toMatch(/docs\/stripe-testing\.md/);
+
+    const details = readDoc("docs/stripe-testing.md");
+    expect(details).toMatch(/Billing is not configured/i);
+    expect(details).toMatch(
+      /all three of `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET`/,
+    );
   });
 
-  it("every pnpm <script> mentioned in README exists in package.json", () => {
-    const text = readme();
+  it("every pnpm <script> mentioned in README and linked docs exists in package.json", () => {
     const scripts = packageScripts();
     // Not package.json scripts — Corepack / pnpm builtins / playwright CLI.
-    const allowlist = new Set(["install", "exec"]);
-    for (const name of pnpmScriptNames(text)) {
+    const allowlist = new Set(["install", "exec", "start"]);
+    const corpus = [
+      readme(),
+      ...LINKED_DOCS.map((rel) => readDoc(rel)),
+    ].join("\n");
+    for (const name of pnpmScriptNames(corpus)) {
       if (allowlist.has(name)) continue;
       expect(
         scripts.has(name),
-        `README mentions \`pnpm ${name}\` but package.json has no such script`,
+        `Docs mention \`pnpm ${name}\` but package.json has no such script`,
       ).toBe(true);
     }
   });
 
-  it("documents a Security section covering encryption, transport, and passwords", () => {
-    const text = readme();
-    const start = text.indexOf("## Security");
-    expect(start).toBeGreaterThan(-1);
-    const section = text.slice(start, start + 2800);
+  it("security details live in docs/security.md", () => {
+    const section = readDoc("docs/security.md");
     expect(section).toMatch(/AES-256-GCM/);
     expect(section).toMatch(/KeyProvider/);
     expect(section).toMatch(/HSTS/);
     expect(section).toMatch(/salted scrypt/i);
+    expect(section).not.toMatch(/ClickUp/i);
+  });
+
+  it("testing.md documents CI emulator env, ALLOW_EMULATORS, and stripe prices mock", () => {
+    const section = readDoc("docs/testing.md");
+    expect(section).toMatch(/FIREBASE_AUTH_EMULATOR_HOST=127\.0\.0\.1:9099/);
+    expect(section).toMatch(/FIRESTORE_EMULATOR_HOST=127\.0\.0\.1:8080/);
+    expect(section).toMatch(/APP_URL=http:\/\/localhost:3000/);
+    expect(section).toMatch(/ALLOW_EMULATORS=1/);
+    expect(section).toMatch(/scripts\/stripe-prices-mock-server\.mjs/);
+    expect(section).toMatch(/e2e\/visual\.spec\.ts/);
+    expect(section).toMatch(/STRIPE_API_HOST/);
   });
 });
