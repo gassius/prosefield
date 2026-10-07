@@ -14,6 +14,3 @@ export type SpellcheckWorkerResponse =
   | { id: number; type: "ready" }
   | { id: number; type: "result"; results: SpellcheckWordResult[] }
   | { id: number; type: "error"; message: string };
-
-export const SPELLCHECK_DICT_AFF_URL = "/spellcheck/en.aff";
-export const SPELLCHECK_DICT_DIC_URL = "/spellcheck/en.dic";

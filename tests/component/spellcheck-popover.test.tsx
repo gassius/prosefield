@@ -62,4 +62,40 @@ describe("SpellcheckPopover", () => {
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("closes on outside mousedown", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    render(
+      <div>
+        <button type="button">outside</button>
+        <SpellcheckPopover
+          open
+          word="teh"
+          suggestions={["the"]}
+          anchor={anchor}
+          onSelectSuggestion={vi.fn()}
+          onIgnore={vi.fn()}
+          onClose={onClose}
+        />
+      </div>,
+    );
+    await user.click(screen.getByRole("button", { name: "outside" }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("renders nothing when closed", () => {
+    const { container } = render(
+      <SpellcheckPopover
+        open={false}
+        word="teh"
+        suggestions={["the"]}
+        anchor={anchor}
+        onSelectSuggestion={vi.fn()}
+        onIgnore={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
 });

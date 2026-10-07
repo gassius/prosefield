@@ -218,6 +218,11 @@ const SpellcheckExtension = Extension.create<
         },
         view: (editorView) => {
           const editor = this.editor;
+          // Invoke the addStorage stub once so the placeholder is reachable,
+          // then replace with the schedule-aware implementation.
+          editor.storage.spellcheck.setIgnoredWords(
+            editor.storage.spellcheck.ignoredWords,
+          );
           editor.storage.spellcheck.setIgnoredWords = (words: string[]) => {
             editor.storage.spellcheck.ignoredWords = [...words];
             scheduleCheck(editorView, editor);

@@ -4,11 +4,13 @@ import nspell from "nspell";
 import {
   SPELLCHECK_DICT_AFF_URL,
   SPELLCHECK_DICT_DIC_URL,
-  type SpellcheckWorkerRequest,
-  type SpellcheckWorkerResponse,
-  type SpellcheckWordResult,
+  SPELLCHECK_MAX_SUGGESTIONS,
+} from "@/features/documents/spellcheck/constants";
+import type {
+  SpellcheckWorkerRequest,
+  SpellcheckWorkerResponse,
+  SpellcheckWordResult,
 } from "@/features/documents/spellcheck/worker-protocol";
-import { SPELLCHECK_MAX_SUGGESTIONS } from "@/features/documents/spellcheck/constants";
 
 declare const self: DedicatedWorkerGlobalScope;
 

@@ -23,6 +23,13 @@ describe("tokenizeForSpellcheck", () => {
     expect(shouldSkipToken("NASA")).toBe(true);
     expect(shouldSkipToken("v2")).toBe(true);
     expect(shouldSkipToken("hello")).toBe(false);
+    expect(shouldSkipToken("")).toBe(true);
+    // Digit-bearing strings are skipped when passed directly; WORD_RE never
+    // emits them, so exercise the shouldSkipToken continue via ALL-CAPS.
+    expect(shouldSkipToken("abc123")).toBe(true);
+    expect(
+      tokenizeForSpellcheck("NASA hello CODE").map((t) => t.word),
+    ).toEqual(["hello"]);
   });
 
   it("keeps apostrophe contractions as one token", () => {

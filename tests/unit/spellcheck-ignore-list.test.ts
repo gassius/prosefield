@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   addIgnoredWord,
+  ignoredWordsSet,
   isWordIgnored,
   normaliseIgnoredWord,
 } from "@/features/documents/spellcheck/ignore-list";
@@ -11,6 +12,19 @@ describe("ignore-list", () => {
     expect(normaliseIgnoredWord(" TeSt ")).toBe("test");
     expect(isWordIgnored("TEST", ["test"])).toBe(true);
     expect(isWordIgnored("other", ["test"])).toBe(false);
+  });
+
+  it("matches against a Set and rejects blank keys", () => {
+    expect(isWordIgnored("   ", ["test"])).toBe(false);
+    expect(isWordIgnored("TeSt", new Set(["test"]))).toBe(true);
+    expect(isWordIgnored("nope", new Set(["test"]))).toBe(false);
+  });
+
+  it("builds a normalised Set via ignoredWordsSet", () => {
+    expect([...ignoredWordsSet([" Foo ", "", "BAR"])].sort()).toEqual([
+      "bar",
+      "foo",
+    ]);
   });
 
   it("dedupes case-insensitively when adding", () => {
