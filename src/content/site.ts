@@ -263,6 +263,10 @@ export const siteCopy = {
     toolbarQuote: "Quote",
     toolbarUndo: "Undo",
     toolbarRedo: "Redo",
+    spellcheckPopoverLabel: "Spelling suggestions",
+    spellcheckIgnore: "Ignore Spelling",
+    spellcheckNoSuggestions: "No suggestions",
+    spellcheckOpenShortcutHint: "Open spelling suggestions",
   },
   billingStatus: {
     title: "Confirming payment",
