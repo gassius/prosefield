@@ -19,7 +19,12 @@ export function isWordIgnored(
   if (ignored instanceof Set) {
     return ignored.has(key);
   }
-  return ignored.some((entry) => normaliseIgnoredWord(entry) === key);
+  for (const entry of ignored) {
+    if (normaliseIgnoredWord(entry) === key) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**

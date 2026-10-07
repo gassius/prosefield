@@ -67,6 +67,7 @@ describe("document actions (mocked guards)", () => {
       title: "Untitled document",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -81,6 +82,7 @@ describe("document actions (mocked guards)", () => {
       title: "Untitled document",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -90,6 +92,7 @@ describe("document actions (mocked guards)", () => {
       title: "Untitled document",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date("2026-10-02T12:00:00Z"),
     });
@@ -108,6 +111,7 @@ describe("document actions (mocked guards)", () => {
       title: "Renamed",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date("2026-10-02T12:00:00Z"),
     });
@@ -144,6 +148,7 @@ describe("document actions (mocked guards)", () => {
       title: "T",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -161,6 +166,7 @@ describe("document actions (mocked guards)", () => {
       title: "Mine",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -186,6 +192,7 @@ describe("document actions (mocked guards)", () => {
       title: "Mine",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -195,6 +202,7 @@ describe("document actions (mocked guards)", () => {
       title: "Mine",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date("2026-10-02T12:00:00Z"),
     });
@@ -228,6 +236,7 @@ describe("document actions (mocked guards)", () => {
       title: "T",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -260,6 +269,7 @@ describe("document actions (mocked guards)", () => {
       title: "Keep",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -292,6 +302,7 @@ describe("document actions (mocked guards)", () => {
       title: "T",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -339,6 +350,7 @@ describe("document actions (mocked guards)", () => {
         title: "T",
         content: EMPTY_DOCUMENT_CONTENT,
         contentAllowed: true,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -348,6 +360,7 @@ describe("document actions (mocked guards)", () => {
         title: "T",
         content,
         contentAllowed: true,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date("2026-10-02T12:00:00Z"),
       });
@@ -416,6 +429,7 @@ describe("document actions (mocked guards)", () => {
       title: "Untitled document",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -454,6 +468,7 @@ describe("document actions (mocked guards)", () => {
       title: "T",
       content: EMPTY_DOCUMENT_CONTENT,
       contentAllowed: true,
+      ignoredWords: [],
       createdAt: new Date(),
       updatedAt: new Date(),
     });

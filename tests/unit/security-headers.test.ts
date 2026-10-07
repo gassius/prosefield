@@ -22,6 +22,7 @@ function expectExactCspShape(policy: string, opts: { nonce: string; eval: boolea
   expect(d["form-action"]).toEqual(["'self'"]);
   expect(d["upgrade-insecure-requests"]).toEqual([]);
   expect(d["style-src"]).toEqual(["'self'", "'unsafe-inline'"]);
+  expect(d["worker-src"]).toEqual(["'self'", "blob:"]);
   expect(d["script-src"]).toContain("'self'");
   expect(d["script-src"]).toContain(`'nonce-${opts.nonce}'`);
   expect(d["script-src"]).toContain("'strict-dynamic'");

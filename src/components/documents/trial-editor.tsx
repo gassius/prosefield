@@ -12,6 +12,8 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import Placeholder from "@tiptap/extension-placeholder";
 import { AlertCircle, FileText, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { SpellcheckPopover } from "@/components/documents/spellcheck-popover";
+import { SpellcheckTitleField } from "@/components/documents/spellcheck-title-field";
 import { EditorToolbar } from "@/components/editor/toolbar";
 import { SaveStatusIndicator } from "@/components/editor/save-status";
 import { Button } from "@/components/ui/button";
@@ -19,7 +21,11 @@ import { TrialLeaveModal } from "@/components/documents/trial-leave-modal";
 import { TrialSubscribeModal } from "@/components/documents/trial-subscribe-modal";
 import { useUnsavedLeaveGuard } from "@/components/documents/unsaved-leave-guard";
 import { siteCopy } from "@/content/site";
-import { createProsefieldStarterKit } from "@/features/documents/editor-extensions";
+import {
+  createProsefieldSpellcheck,
+  createProsefieldStarterKit,
+} from "@/features/documents/editor-extensions";
+import { useSpellcheckPopover } from "@/features/documents/spellcheck/use-spellcheck-popover";
 import {
   isDirtySaveStatus,
   isSaveHotkey,
@@ -36,8 +42,6 @@ import {
   stashTrialDraft,
   type TrialDraft,
 } from "@/features/documents/trial-draft-stash";
-import { cn } from "@/lib/utils";
-
 const TRIAL_DOC_ID = "trial-local";
 
 type TrialEditorProps = {
@@ -57,15 +61,18 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
     return readTrialDraft(uid) ?? {
       title: DEFAULT_DOCUMENT_TITLE,
       content: EMPTY_DOCUMENT_CONTENT,
+      ignoredWords: [],
     };
   }, [initialDraft, uid]);
 
   const [title, setTitle] = useState(starting.title);
+  const [ignoredWords, setIgnoredWords] = useState(starting.ignoredWords ?? []);
   /** Last committed title — blur no-ops when onChange already updated `title`. */
   const committedTitleRef = useRef(starting.title);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>(
     starting.title !== DEFAULT_DOCUMENT_TITLE ||
-      JSON.stringify(starting.content) !== JSON.stringify(EMPTY_DOCUMENT_CONTENT)
+      JSON.stringify(starting.content) !== JSON.stringify(EMPTY_DOCUMENT_CONTENT) ||
+      (starting.ignoredWords?.length ?? 0) > 0
       ? "unsaved"
       : "saved",
   );
@@ -77,12 +84,22 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
       /Mac|iPhone|iPad|iPod/.test(navigator.platform),
   );
 
+  const onIgnoredWordsChange = useCallback((words: string[]) => {
+    setIgnoredWords(words);
+    allowUnloadRef.current = false;
+    setSaveStatus((current) => reduceSaveStatus(current, { type: "edit" }));
+  }, []);
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
       createProsefieldStarterKit(),
       Placeholder.configure({
         placeholder: "Start writing…",
+      }),
+      createProsefieldSpellcheck({
+        ignoredWords: starting.ignoredWords ?? [],
+        onIgnoredWordsChange,
       }),
     ],
     content: starting.content,
@@ -92,6 +109,7 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
         class:
           "prosefield-editor min-h-[50vh] focus:outline-none text-base leading-relaxed",
         "aria-label": siteCopy.documents.editorLandmark,
+        spellcheck: "false",
       },
     },
     onUpdate: () => {
@@ -99,6 +117,25 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
       setSaveStatus((current) => reduceSaveStatus(current, { type: "edit" }));
     },
   });
+
+  const spellPopover = useSpellcheckPopover(editor);
+
+  useEffect(() => {
+    editor?.storage.spellcheck.setIgnoredWords(ignoredWords);
+  }, [editor, ignoredWords]);
+
+  // Persist ignored words + draft to sessionStorage on every dirty change.
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+    const draft: TrialDraft = {
+      title: title.trim() || DEFAULT_DOCUMENT_TITLE,
+      content: plainTiptapJson(editor.getJSON()),
+      ignoredWords,
+    };
+    stashTrialDraft(uid, draft);
+  }, [editor, ignoredWords, title, uid, saveStatus]);
 
   const dirty = isDirtySaveStatus(saveStatus);
 
@@ -125,13 +162,18 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
   const currentDraft = useCallback((): TrialDraft => {
     const trimmed = title.trim() || DEFAULT_DOCUMENT_TITLE;
     if (!editor) {
-      return { title: trimmed, content: EMPTY_DOCUMENT_CONTENT };
+      return {
+        title: trimmed,
+        content: EMPTY_DOCUMENT_CONTENT,
+        ignoredWords,
+      };
     }
     return {
       title: trimmed,
       content: plainTiptapJson(editor.getJSON()),
+      ignoredWords,
     };
-  }, [editor, title]);
+  }, [editor, ignoredWords, title]);
 
   /**
    * Validate + stash before the checkout request. Does **not** disarm
@@ -261,27 +303,16 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
         <div className="flex min-w-0 flex-1 flex-col px-4 py-6 sm:px-8">
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <label className="sr-only" htmlFor={`doc-title-${TRIAL_DOC_ID}`}>
-                  {siteCopy.documents.titleLabel}
-                </label>
-                <input
-                  id={`doc-title-${TRIAL_DOC_ID}`}
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  onBlur={() => commitTitle(title)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.currentTarget.blur();
-                    }
-                  }}
-                  maxLength={120}
-                  className={cn(
-                    "font-display text-foreground w-full bg-transparent text-3xl font-medium tracking-tight",
-                    "focus-visible:ring-ring rounded-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
-                  )}
-                />
-              </div>
+              <SpellcheckTitleField
+                id={`doc-title-${TRIAL_DOC_ID}`}
+                label={siteCopy.documents.titleLabel}
+                value={title}
+                onChange={setTitle}
+                onCommit={commitTitle}
+                ignoredWords={ignoredWords}
+                onIgnoredWordsChange={onIgnoredWordsChange}
+                className="font-display text-foreground text-3xl font-medium tracking-tight focus-visible:ring-ring rounded-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+              />
               <div className="flex shrink-0 items-center gap-2">
                 {/* Icon-only on narrow viewports so the title is not squeezed to "Un…". */}
                 <Button
@@ -350,6 +381,16 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
           </div>
         </div>
       </div>
+
+      <SpellcheckPopover
+        open={spellPopover.open}
+        word={spellPopover.misspelling?.word ?? ""}
+        suggestions={spellPopover.misspelling?.suggestions ?? []}
+        anchor={spellPopover.anchor}
+        onClose={spellPopover.close}
+        onSelectSuggestion={spellPopover.applySuggestion}
+        onIgnore={spellPopover.ignore}
+      />
 
       <TrialSubscribeModal
         open={subscribeOpen}

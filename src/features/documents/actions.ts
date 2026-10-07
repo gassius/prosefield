@@ -97,6 +97,7 @@ export async function createDocumentAction(
       ownerId: session.uid,
       title: parsed.title,
       content: parsed.content,
+      ignoredWords: parsed.ignoredWords,
     });
     revalidateDocumentPaths(doc.id);
     return { ok: true, data: { id: doc.id } };
@@ -115,11 +116,13 @@ export async function saveDocumentAction(
     const { documentId } = documentIdOnlySchema.parse(input);
     const existing = await getDocumentById(documentId);
     requireOwner(existing, session.uid);
-    const { content } = updateDocumentContentBodySchema.parse(input);
+    const { content, ignoredWords } =
+      updateDocumentContentBodySchema.parse(input);
     const updated = await updateDocumentContent({
       documentId,
       ownerId: session.uid,
       content,
+      ignoredWords,
     });
     if (!updated) {
       throw new DocumentAccessError("Document not found", "not_found");

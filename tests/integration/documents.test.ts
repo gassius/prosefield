@@ -932,6 +932,7 @@ describe("documents guard chain (emulators)", () => {
         title: legacyTitle,
         content: loaded!.content,
         contentAllowed: loaded!.contentAllowed,
+        ignoredWords: loaded!.ignoredWords,
         createdAt: loaded!.createdAt,
         updatedAt: loaded!.updatedAt,
       }),

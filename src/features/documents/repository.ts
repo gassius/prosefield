@@ -19,6 +19,7 @@ import {
   assertAllowedTiptapJson,
   DEFAULT_DOCUMENT_TITLE,
   EMPTY_DOCUMENT_CONTENT,
+  ignoredWordsSchema,
   type TiptapJson,
 } from "@/features/documents/schemas";
 
@@ -29,6 +30,8 @@ export type DocumentRecord = {
   content: TiptapJson;
   /** False when stored JSON fails the allow-list — editor must not save until repaired. */
   contentAllowed: boolean;
+  /** Per-document spellcheck ignore list (decrypted). */
+  ignoredWords: string[];
   createdAt: Date;
   updatedAt: Date;
 };
@@ -108,10 +111,27 @@ function encryptionWriteFields(
     wrappedDataKey: fields.wrappedDataKey,
     titleCipher: fields.titleCipher,
     contentCipher: fields.contentCipher,
+    ignoredWordsCipher: fields.ignoredWordsCipher,
     // Clear legacy plaintext fields on every encrypted write.
     title: FieldValue.delete(),
     content: FieldValue.delete(),
   };
+}
+
+function serialiseIgnoredWords(ignoredWords: string[]): string {
+  return JSON.stringify(ignoredWords);
+}
+
+function parseIgnoredWords(raw: string | undefined): string[] {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = ignoredWordsSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
+  }
 }
 
 async function buildEncryptedPayload(input: {
@@ -119,12 +139,14 @@ async function buildEncryptedPayload(input: {
   docId: string;
   title: string;
   content: TiptapJson;
+  ignoredWords?: string[];
 }): Promise<EncryptedDocumentFields> {
   return encryptDocumentFields({
     uid: input.ownerId,
     docId: input.docId,
     title: input.title,
     content: serialiseContent(input.content),
+    ignoredWords: serialiseIgnoredWords(input.ignoredWords ?? []),
   });
 }
 
@@ -133,12 +155,15 @@ async function encryptVerbatim(input: {
   docId: string;
   title: string;
   content: string;
+  ignoredWords?: string[];
 }): Promise<EncryptedDocumentFields> {
+  const ignoredWords = serialiseIgnoredWords(input.ignoredWords ?? []);
   const encrypted = await encryptDocumentFields({
     uid: input.ownerId,
     docId: input.docId,
     title: input.title,
     content: input.content,
+    ignoredWords,
   });
   // Verify before any plaintext deletion lands.
   const check = await decryptDocumentFields({
@@ -146,7 +171,11 @@ async function encryptVerbatim(input: {
     docId: input.docId,
     fields: encrypted,
   });
-  if (check.title !== input.title || check.content !== input.content) {
+  if (
+    check.title !== input.title ||
+    check.content !== input.content ||
+    check.ignoredWords !== ignoredWords
+  ) {
     throw new Error("Envelope round-trip verification failed");
   }
   return encrypted;
@@ -164,6 +193,7 @@ function unreadableRecord(
     title: DEFAULT_DOCUMENT_TITLE,
     content: { ...EMPTY_DOCUMENT_CONTENT },
     contentAllowed: false,
+    ignoredWords: [],
     createdAt,
     updatedAt,
   };
@@ -187,6 +217,9 @@ async function toRecord(
           wrappedDataKey: data.wrappedDataKey,
           titleCipher: data.titleCipher,
           contentCipher: data.contentCipher,
+          ignoredWordsCipher: isCipherPackage(data.ignoredWordsCipher)
+            ? data.ignoredWordsCipher
+            : undefined,
         },
       });
       const { content, contentAllowed } = parseContent(decrypted.content);
@@ -196,6 +229,7 @@ async function toRecord(
         title: decrypted.title || DEFAULT_DOCUMENT_TITLE,
         content,
         contentAllowed,
+        ignoredWords: parseIgnoredWords(decrypted.ignoredWords),
         createdAt,
         updatedAt,
       };
@@ -220,9 +254,26 @@ async function toRecord(
     title,
     content,
     contentAllowed,
+    ignoredWords: [],
     createdAt,
     updatedAt,
   };
+}
+
+function isCipherPackage(value: unknown): value is {
+  ciphertext: string;
+  iv: string;
+  tag: string;
+} {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const pack = value as Record<string, unknown>;
+  return (
+    typeof pack.ciphertext === "string" &&
+    typeof pack.iv === "string" &&
+    typeof pack.tag === "string"
+  );
 }
 
 /**
@@ -344,15 +395,18 @@ export async function createDocument(input: {
   ownerId: string;
   title?: string;
   content?: TiptapJson;
+  ignoredWords?: string[];
 }): Promise<DocumentRecord> {
   const ref = getAdminFirestore().collection("documents").doc();
   const title = input.title?.trim() || DEFAULT_DOCUMENT_TITLE;
   const content = input.content ?? { ...EMPTY_DOCUMENT_CONTENT };
+  const ignoredWords = input.ignoredWords ?? [];
   const encrypted = await buildEncryptedPayload({
     ownerId: input.ownerId,
     docId: ref.id,
     title,
     content,
+    ignoredWords,
   });
   const payload = {
     ownerId: input.ownerId,
@@ -360,6 +414,7 @@ export async function createDocument(input: {
     wrappedDataKey: encrypted.wrappedDataKey,
     titleCipher: encrypted.titleCipher,
     contentCipher: encrypted.contentCipher,
+    ignoredWordsCipher: encrypted.ignoredWordsCipher,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   };
@@ -372,6 +427,7 @@ export async function updateDocumentContent(input: {
   documentId: string;
   ownerId: string;
   content: TiptapJson;
+  ignoredWords?: string[];
 }): Promise<DocumentRecord | null> {
   const db = getAdminFirestore();
   const ref = db.collection("documents").doc(input.documentId);
@@ -389,6 +445,7 @@ export async function updateDocumentContent(input: {
       return false;
     }
     let title = DEFAULT_DOCUMENT_TITLE;
+    let priorIgnored: string[] = [];
     if (isEncryptedDocumentData(existing)) {
       const decrypted = await decryptDocumentFields({
         uid: input.ownerId,
@@ -398,9 +455,13 @@ export async function updateDocumentContent(input: {
           wrappedDataKey: existing.wrappedDataKey,
           titleCipher: existing.titleCipher,
           contentCipher: existing.contentCipher,
+          ignoredWordsCipher: isCipherPackage(existing.ignoredWordsCipher)
+            ? existing.ignoredWordsCipher
+            : undefined,
         },
       });
       title = decrypted.title || DEFAULT_DOCUMENT_TITLE;
+      priorIgnored = parseIgnoredWords(decrypted.ignoredWords);
     } else if (typeof existing.title === "string") {
       title = existing.title;
     }
@@ -409,6 +470,7 @@ export async function updateDocumentContent(input: {
       docId: input.documentId,
       title,
       content: input.content,
+      ignoredWords: input.ignoredWords ?? priorIgnored,
     });
     tx.update(ref, {
       ...encryptionWriteFields(encrypted),
@@ -448,7 +510,7 @@ export async function renameDocument(input: {
     }
 
     if (isEncryptedDocumentData(existing)) {
-      // Title only — never re-parse or rewrite contentCipher.
+      // Title only — never re-parse or rewrite contentCipher / ignoredWordsCipher.
       const titleCipher = await reencryptDocumentTitle({
         uid: input.ownerId,
         docId: input.documentId,
@@ -458,6 +520,9 @@ export async function renameDocument(input: {
           wrappedDataKey: existing.wrappedDataKey,
           titleCipher: existing.titleCipher,
           contentCipher: existing.contentCipher,
+          ignoredWordsCipher: isCipherPackage(existing.ignoredWordsCipher)
+            ? existing.ignoredWordsCipher
+            : undefined,
         },
       });
       tx.update(ref, {

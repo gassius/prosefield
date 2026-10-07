@@ -1,4 +1,10 @@
 import { z } from "@/lib/zod";
+import {
+  IGNORED_WORD_MAX_LENGTH,
+  IGNORED_WORDS_MAX,
+} from "@/features/documents/spellcheck/constants";
+
+export { IGNORED_WORD_MAX_LENGTH, IGNORED_WORDS_MAX };
 
 /** Title: trimmed, 1–120 characters (Architecture §8). */
 export const DOCUMENT_TITLE_MIN = 1;
@@ -448,9 +454,37 @@ export const documentContentSchema = z
     }
   });
 
+/**
+ * Normalised ignored-words list: trimmed, lowercased, deduped, bounded.
+ * Empty/missing input becomes `[]` so legacy docs load without the field.
+ */
+export const ignoredWordsSchema = z
+  .array(z.string().max(IGNORED_WORD_MAX_LENGTH))
+  .max(IGNORED_WORDS_MAX)
+  .optional()
+  .default([])
+  .transform((words) => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const word of words) {
+      const normalised = word.trim().toLowerCase();
+      if (
+        !normalised ||
+        normalised.length > IGNORED_WORD_MAX_LENGTH ||
+        seen.has(normalised)
+      ) {
+        continue;
+      }
+      seen.add(normalised);
+      out.push(normalised);
+    }
+    return out;
+  });
+
 export const createDocumentInputSchema = z.object({
   title: documentTitleSchema.optional().default(DEFAULT_DOCUMENT_TITLE),
   content: documentContentSchema.optional().default(EMPTY_DOCUMENT_CONTENT),
+  ignoredWords: ignoredWordsSchema,
 });
 
 /** Parse documentId alone first (owner check runs before title/content Zod). */
@@ -460,6 +494,7 @@ export const documentIdOnlySchema = z.object({
 
 export const updateDocumentContentBodySchema = z.object({
   content: documentContentSchema,
+  ignoredWords: ignoredWordsSchema,
 });
 
 export const renameDocumentBodySchema = z.object({

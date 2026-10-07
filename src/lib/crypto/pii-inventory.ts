@@ -12,7 +12,7 @@ import "server-only";
  * | uid | `stripeCustomers/{customerId}` | Opaque Firebase uid reverse lookup |
  * | subscription projection | `subscriptions/{uid}` | Status/ids only — no email |
  * | Stripe webhook dedupe | `stripeEvents/{id}` | Event metadata only — no email/PII |
- * | document title/content | Firestore via Admin | Envelope-encrypted (AES-256-GCM) before write |
+ * | document title/content/ignoredWords | Firestore via Admin | Envelope-encrypted (AES-256-GCM) before write |
  * | emailEnc (optional) | `users/{uid}` | Envelope-encrypted; only when `retainEncryptedEmail` is set (nothing in-app calls it today — Auth remains SoT) |
  * | display name | not collected | — |
  *
@@ -58,6 +58,11 @@ export const PII_INVENTORY = [
   },
   {
     field: "document.content",
+    store: "firestore-documents",
+    firestore: "envelope-encrypted",
+  },
+  {
+    field: "document.ignoredWords",
     store: "firestore-documents",
     firestore: "envelope-encrypted",
   },

@@ -14,6 +14,8 @@ export type EncryptedDocumentFields = {
   wrappedDataKey: string;
   titleCipher: CipherPackage;
   contentCipher: CipherPackage;
+  /** Absent on legacy envelopes — treat as empty ignore list. */
+  ignoredWordsCipher?: CipherPackage;
 };
 
 export type EnvelopeEncryptInput = {
@@ -21,6 +23,8 @@ export type EnvelopeEncryptInput = {
   docId: string;
   title: string;
   content: string;
+  /** JSON-serialised ignored words array (plaintext before encrypt). */
+  ignoredWords?: string;
   provider?: KeyProvider;
 };
 
@@ -57,11 +61,22 @@ export async function encryptDocumentFields(
       keyVersion: provider.keyVersion,
     }),
   );
+  const ignoredWordsCipher = encryptAesGcm(
+    input.ignoredWords ?? "[]",
+    dataKey,
+    buildAad({
+      uid: input.uid,
+      docId: input.docId,
+      field: "ignoredWords",
+      keyVersion: provider.keyVersion,
+    }),
+  );
   return {
     keyVersion: provider.keyVersion,
     wrappedDataKey: Buffer.from(wrapped).toString("base64"),
     titleCipher,
     contentCipher,
+    ignoredWordsCipher,
   };
 }
 
@@ -74,7 +89,7 @@ export type EnvelopeDecryptInput = {
 
 export async function decryptDocumentFields(
   input: EnvelopeDecryptInput,
-): Promise<{ title: string; content: string }> {
+): Promise<{ title: string; content: string; ignoredWords: string }> {
   const provider = input.provider ?? getKeyProvider();
   const wrapped = Buffer.from(input.fields.wrappedDataKey, "base64");
   const dataKey = await provider.unwrapDataKey(
@@ -102,7 +117,20 @@ export async function decryptDocumentFields(
       keyVersion: input.fields.keyVersion,
     }),
   ).toString("utf8");
-  return { title, content };
+  let ignoredWords = "[]";
+  if (input.fields.ignoredWordsCipher) {
+    ignoredWords = decryptAesGcm(
+      input.fields.ignoredWordsCipher,
+      dataKey,
+      buildAad({
+        uid: input.uid,
+        docId: input.docId,
+        field: "ignoredWords",
+        keyVersion: input.fields.keyVersion,
+      }),
+    ).toString("utf8");
+  }
+  return { title, content, ignoredWords };
 }
 
 /** Decrypt title only (list view) — does not touch content ciphertext. */
@@ -134,8 +162,9 @@ export async function decryptDocumentTitle(input: {
 }
 
 /**
- * Re-encrypt only the title under the existing DEK; leave contentCipher and
- * wrappedDataKey unchanged so off-spec content is never rewritten.
+ * Re-encrypt only the title under the existing DEK; leave contentCipher,
+ * ignoredWordsCipher, and wrappedDataKey unchanged so off-spec content is
+ * never rewritten.
  */
 export async function reencryptDocumentTitle(input: {
   uid: string;
@@ -244,11 +273,12 @@ export function isMalformedEncryptedDocumentData(
     data.wrappedDataKey !== undefined ||
     data.keyVersion !== undefined ||
     data.titleCipher !== undefined ||
-    data.contentCipher !== undefined;
+    data.contentCipher !== undefined ||
+    data.ignoredWordsCipher !== undefined;
   return hasAny && !isEncryptedDocumentData(data);
 }
 
-function isCipherPackage(value: unknown): value is CipherPackage {
+function isCipherPackage(value: unknown): boolean {
   if (!value || typeof value !== "object") {
     return false;
   }

@@ -100,6 +100,7 @@ export default async function DocumentPage({ params }: DocumentPageProps) {
             documentId={doc.id}
             initialTitle={doc.title}
             initialContent={doc.content}
+            initialIgnoredWords={doc.ignoredWords}
             contentAllowed={doc.contentAllowed}
           />
         </DocumentsWorkspace>
