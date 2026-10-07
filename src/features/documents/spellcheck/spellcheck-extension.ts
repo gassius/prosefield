@@ -132,7 +132,6 @@ const SpellcheckExtension = Extension.create<
   },
 
   addProseMirrorPlugins() {
-    const extension = this;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let requestId = 0;
 
@@ -184,7 +183,7 @@ const SpellcheckExtension = Extension.create<
       if (timer) {
         clearTimeout(timer);
       }
-      const delay = extension.options.debounceMs ?? SPELLCHECK_DEBOUNCE_MS;
+      const delay = this.options.debounceMs ?? SPELLCHECK_DEBOUNCE_MS;
       timer = setTimeout(() => {
         timer = null;
         runCheck(view, editor);
@@ -218,19 +217,19 @@ const SpellcheckExtension = Extension.create<
           },
         },
         view: (editorView) => {
-          const editor = extension.editor;
+          const editor = this.editor;
           editor.storage.spellcheck.setIgnoredWords = (words: string[]) => {
             editor.storage.spellcheck.ignoredWords = [...words];
             scheduleCheck(editorView, editor);
           };
           scheduleCheck(editorView, editor);
           return {
-            update(view, prevState) {
+            update: (view, prevState) => {
               if (view.state.doc !== prevState.doc) {
                 scheduleCheck(view, editor);
               }
             },
-            destroy() {
+            destroy: () => {
               if (timer) {
                 clearTimeout(timer);
               }

@@ -74,7 +74,7 @@ export function SpellcheckPopover({
       }}
     >
       <p id={labelId} className="sr-only">
-        {siteCopy.documents.spellcheckPopoverLabel}: {word}
+        {siteCopy.documents.spellcheckPopoverLabelFor} {word}
       </p>
       {suggestions.length === 0 ? (
         <p className="text-muted-foreground px-2 py-1.5 text-sm">

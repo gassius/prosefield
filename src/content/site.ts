@@ -264,6 +264,7 @@ export const siteCopy = {
     toolbarUndo: "Undo",
     toolbarRedo: "Redo",
     spellcheckPopoverLabel: "Spelling suggestions",
+    spellcheckPopoverLabelFor: "Spelling suggestions for",
     spellcheckIgnore: "Ignore Spelling",
     spellcheckNoSuggestions: "No suggestions",
     spellcheckOpenShortcutHint: "Open spelling suggestions",

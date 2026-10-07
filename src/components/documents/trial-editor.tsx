@@ -97,6 +97,8 @@ export function TrialEditor({ uid, initialDraft }: TrialEditorProps) {
       Placeholder.configure({
         placeholder: "Start writing…",
       }),
+      // TipTap option bag only; onIgnoredWordsChange runs on Ignore Spelling (event path).
+      // eslint-disable-next-line react-hooks/refs -- allowUnloadRef read happens later in the callback
       createProsefieldSpellcheck({
         ignoredWords: starting.ignoredWords ?? [],
         onIgnoredWordsChange,
