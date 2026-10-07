@@ -73,6 +73,34 @@ describe("envelope encryption", () => {
     expect(legacyDecrypted.ignoredWords).toBe("[]");
   });
 
+  it("treats ignoredWordsCipher bound to a different DEK as empty (does not brick content)", async () => {
+    const first = await encryptDocumentFields({
+      uid: "user-1",
+      docId: "doc-1",
+      title: "Brief",
+      content: "body-v1",
+      ignoredWords: JSON.stringify(["teh"]),
+    });
+    const second = await encryptDocumentFields({
+      uid: "user-1",
+      docId: "doc-1",
+      title: "Brief",
+      content: "body-v2",
+      ignoredWords: JSON.stringify([]),
+    });
+    // Stale ignore cipher from `first` + DEK from `second`.
+    const decrypted = await decryptDocumentFields({
+      uid: "user-1",
+      docId: "doc-1",
+      fields: {
+        ...second,
+        ignoredWordsCipher: first.ignoredWordsCipher,
+      },
+    });
+    expect(decrypted.content).toBe("body-v2");
+    expect(decrypted.ignoredWords).toBe("[]");
+  });
+
   it("round-trips title and content", async () => {
     const encrypted = await encryptDocumentFields({
       uid: "user-1",

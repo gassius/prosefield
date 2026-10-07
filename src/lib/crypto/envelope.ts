@@ -117,18 +117,24 @@ export async function decryptDocumentFields(
       keyVersion: input.fields.keyVersion,
     }),
   ).toString("utf8");
+  // Optional field: stale/missing cipher (e.g. DEK rotated without rewrite)
+  // must not brick title/content reads — treat as empty ignore list.
   let ignoredWords = "[]";
   if (input.fields.ignoredWordsCipher) {
-    ignoredWords = decryptAesGcm(
-      input.fields.ignoredWordsCipher,
-      dataKey,
-      buildAad({
-        uid: input.uid,
-        docId: input.docId,
-        field: "ignoredWords",
-        keyVersion: input.fields.keyVersion,
-      }),
-    ).toString("utf8");
+    try {
+      ignoredWords = decryptAesGcm(
+        input.fields.ignoredWordsCipher,
+        dataKey,
+        buildAad({
+          uid: input.uid,
+          docId: input.docId,
+          field: "ignoredWords",
+          keyVersion: input.fields.keyVersion,
+        }),
+      ).toString("utf8");
+    } catch {
+      ignoredWords = "[]";
+    }
   }
   return { title, content, ignoredWords };
 }
