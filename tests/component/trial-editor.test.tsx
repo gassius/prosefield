@@ -752,6 +752,7 @@ describe("TrialEditor locks and leave guard", () => {
       expect(readTrialDraft("uid-trial")).toEqual({
         title: "No editor yet",
         content: EMPTY_DOCUMENT_CONTENT,
+        ignoredWords: [],
       });
       expect(assign).toHaveBeenCalled();
     });

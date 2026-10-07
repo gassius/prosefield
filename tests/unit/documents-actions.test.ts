@@ -103,6 +103,7 @@ describe("document actions (mocked guards)", () => {
       documentId: DOC_ID,
       ownerId: "u1",
       content: EMPTY_DOCUMENT_CONTENT,
+      ignoredWords: [],
     });
 
     renameDocument.mockResolvedValue({
@@ -219,6 +220,7 @@ describe("document actions (mocked guards)", () => {
       documentId: DOC_ID,
       ownerId: "u1",
       content: EMPTY_DOCUMENT_CONTENT,
+      ignoredWords: [],
     });
     expect(updateDocumentContent).not.toHaveBeenCalledWith(
       expect.objectContaining({ ownerId: "attacker" }),
@@ -380,6 +382,7 @@ describe("document actions (mocked guards)", () => {
             }),
           ],
         }),
+        ignoredWords: [],
       });
     },
   );

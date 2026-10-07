@@ -42,6 +42,37 @@ describe("envelope encryption", () => {
     __resetEnvCacheForTests();
   });
 
+
+  it("round-trips ignoredWords with the same DEK; legacy missing cipher defaults to []", async () => {
+    const encrypted = await encryptDocumentFields({
+      uid: "user-1",
+      docId: "doc-1",
+      title: "Brief",
+      content: "body",
+      ignoredWords: JSON.stringify(["teh", "mispelled"]),
+    });
+    expect(encrypted.ignoredWordsCipher).toBeDefined();
+    const decrypted = await decryptDocumentFields({
+      uid: "user-1",
+      docId: "doc-1",
+      fields: encrypted,
+    });
+    expect(JSON.parse(decrypted.ignoredWords)).toEqual(["teh", "mispelled"]);
+
+    const legacy = {
+      keyVersion: encrypted.keyVersion,
+      wrappedDataKey: encrypted.wrappedDataKey,
+      titleCipher: encrypted.titleCipher,
+      contentCipher: encrypted.contentCipher,
+    };
+    const legacyDecrypted = await decryptDocumentFields({
+      uid: "user-1",
+      docId: "doc-1",
+      fields: legacy,
+    });
+    expect(legacyDecrypted.ignoredWords).toBe("[]");
+  });
+
   it("round-trips title and content", async () => {
     const encrypted = await encryptDocumentFields({
       uid: "user-1",
