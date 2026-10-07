@@ -60,6 +60,7 @@ describe("trial draft stash (uid-scoped sessionStorage)", () => {
     expect(readTrialDraft("uid-a")).toEqual({
       title: "My draft",
       content,
+      ignoredWords: [],
     });
     expect(readTrialDraft("uid-b")?.title).toBe("Other");
 
@@ -111,11 +112,13 @@ describe("trial draft stash (uid-scoped sessionStorage)", () => {
     expect(validateTrialDraft(null)).toEqual({
       title: "Untitled document",
       content: EMPTY_DOCUMENT_CONTENT,
+      ignoredWords: [],
     });
     expect(validateTrialDraft({ title: 1 })).toBeNull();
     expect(validateTrialDraft({ title: "Ok", content: EMPTY_DOCUMENT_CONTENT })).toEqual({
       title: "Ok",
       content: EMPTY_DOCUMENT_CONTENT,
+      ignoredWords: [],
     });
   });
 

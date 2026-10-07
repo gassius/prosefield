@@ -65,6 +65,7 @@ describe("persistStashedTrialDraft", () => {
     expect(createDocumentAction).toHaveBeenCalledWith({
       title: "Kept draft",
       content: expect.objectContaining({ type: "doc" }),
+      ignoredWords: [],
     });
     expect(sessionStorage.getItem("prosefield:trial-draft:uid-1")).toBeNull();
   });

@@ -112,6 +112,12 @@ body {
   padding-left: 1em;
 }
 
+.spellcheck-misspelled {
+  text-decoration: underline dotted var(--destructive);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
+
 .prosefield-editor .is-editor-empty:first-child::before {
   color: var(--muted-foreground);
   content: attr(data-placeholder);

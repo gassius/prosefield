@@ -59,6 +59,10 @@ export default defineConfig({
       exclude: [
         "src/lib/firebase/client.ts",
         "src/lib/crypto/types.ts",
+        // Web Worker entry — dictionary load + nspell; exercised by E2E spellcheck.
+        "src/features/documents/spellcheck/spellcheck.worker.ts",
+        // Type-only protocol module (no runtime exports after constants moved).
+        "src/features/documents/spellcheck/worker-protocol.ts",
       ],
       thresholds: {
         // Ratcheted to measured Component+coverage on main (PR #21 / 92149a7):

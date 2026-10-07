@@ -12,6 +12,8 @@ import {
 export type TrialDraft = {
   title: string;
   content: TiptapJson;
+  /** Omitted on older stashes; schema defaults to []. */
+  ignoredWords?: string[];
 };
 
 export type StashTrialDraftResult =
@@ -52,10 +54,11 @@ export function validateTrialDraft(
   if (!parsed.success) {
     return null;
   }
-  // Schema already defaults blank/missing title+content (#25).
+  // Schema already defaults blank/missing title+content+ignoredWords (#25).
   return {
     title: parsed.data.title,
     content: parsed.data.content,
+    ignoredWords: parsed.data.ignoredWords,
   };
 }
 

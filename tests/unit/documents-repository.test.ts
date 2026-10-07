@@ -651,6 +651,7 @@ describe("documents repository", () => {
         title: "T",
         content: EMPTY_DOCUMENT_CONTENT,
         contentAllowed: true,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -664,6 +665,7 @@ describe("documents repository", () => {
         title: "T",
         content: EMPTY_DOCUMENT_CONTENT,
         contentAllowed: true,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -685,6 +687,7 @@ describe("documents repository", () => {
         title: "T",
         content: EMPTY_DOCUMENT_CONTENT,
         contentAllowed: true,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -775,6 +778,7 @@ describe("documents repository", () => {
         title: "T",
         content: EMPTY_DOCUMENT_CONTENT,
         contentAllowed: true,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -796,6 +800,7 @@ describe("documents repository", () => {
         title: "T",
         content: EMPTY_DOCUMENT_CONTENT,
         contentAllowed: true,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -942,6 +947,7 @@ describe("documents repository", () => {
         title: "Legacy off",
         content: EMPTY_DOCUMENT_CONTENT,
         contentAllowed: false,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -1216,6 +1222,7 @@ describe("documents repository", () => {
         title: "T",
         content: EMPTY_DOCUMENT_CONTENT,
         contentAllowed: true,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -1237,6 +1244,7 @@ describe("documents repository", () => {
         title: "T",
         content: EMPTY_DOCUMENT_CONTENT,
         contentAllowed: false,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -1281,6 +1289,7 @@ describe("documents repository", () => {
         title: "TitleOnly",
         content: EMPTY_DOCUMENT_CONTENT,
         contentAllowed: true,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -1303,6 +1312,7 @@ describe("documents repository", () => {
         title: "Obj",
         content: EMPTY_DOCUMENT_CONTENT,
         contentAllowed: true,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -1333,7 +1343,7 @@ describe("documents repository", () => {
     const envelope = await import("@/lib/crypto/envelope");
     const decryptSpy = vi
       .spyOn(envelope, "decryptDocumentFields")
-      .mockResolvedValue({ title: "nope", content: "nope" });
+      .mockResolvedValue({ title: "nope", content: "nope", ignoredWords: "[]" });
     txGet.mockResolvedValueOnce({
       exists: true,
       id: "mig-verify",
@@ -1350,6 +1360,7 @@ describe("documents repository", () => {
         title: "V",
         content: EMPTY_DOCUMENT_CONTENT,
         contentAllowed: true,
+      ignoredWords: [],
         createdAt: new Date(),
         updatedAt: new Date(),
       }),
@@ -1408,4 +1419,246 @@ describe("documents repository", () => {
       /"content"\s*:\s*"\{/,
     );
   });
+
+  it("persists ignoredWordsCipher and defaults when cipher missing", async () => {
+    const {
+      createDocument,
+      getDocumentById,
+      updateDocumentContent,
+      renameDocument,
+    } = await import("@/features/documents/repository");
+    const { encryptDocumentFields } = await import("@/lib/crypto/envelope");
+
+    const createdFields = await encryptDocumentFields({
+      uid: "u1",
+      docId: "newdocid00000000001",
+      title: "With ignores",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      ignoredWords: JSON.stringify(["teh"]),
+    });
+    refSet.mockResolvedValue(undefined);
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "newdocid00000000001",
+      data: () => ({
+        ownerId: "u1",
+        ...createdFields,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    const created = await createDocument({
+      ownerId: "u1",
+      title: "With ignores",
+      ignoredWords: ["teh"],
+    });
+    expect(created.ignoredWords).toEqual(["teh"]);
+    expect(refSet.mock.calls.at(-1)?.[0]).toHaveProperty("ignoredWordsCipher");
+
+    // Encrypted doc without ignoredWordsCipher → empty ignore list on read.
+    const legacy = await encryptDocumentFields({
+      uid: "u1",
+      docId: "d-legacy-ignore",
+      title: "Legacy",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+    });
+    const legacyFields = {
+      keyVersion: legacy.keyVersion,
+      wrappedDataKey: legacy.wrappedDataKey,
+      titleCipher: legacy.titleCipher,
+      contentCipher: legacy.contentCipher,
+    };
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d-legacy-ignore",
+      data: () => ({
+        ownerId: "u1",
+        ...legacyFields,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    expect((await getDocumentById("d-legacy-ignore"))?.ignoredWords).toEqual([]);
+
+    // Empty ignoredWords plaintext → parseIgnoredWords early return.
+    const emptyIgnoreFields = await encryptDocumentFields({
+      uid: "u1",
+      docId: "d-empty-ignore",
+      title: "Empty ignore",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      ignoredWords: "",
+    });
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d-empty-ignore",
+      data: () => ({
+        ownerId: "u1",
+        ...emptyIgnoreFields,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    expect((await getDocumentById("d-empty-ignore"))?.ignoredWords).toEqual([]);
+
+    // Invalid JSON in ignoredWords plaintext → parseIgnoredWords catch → [].
+    const badJsonFields = await encryptDocumentFields({
+      uid: "u1",
+      docId: "d-bad-json-ignore",
+      title: "Bad JSON",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      ignoredWords: "{not-json",
+    });
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d-bad-json-ignore",
+      data: () => ({
+        ownerId: "u1",
+        ...badJsonFields,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    expect((await getDocumentById("d-bad-json-ignore"))?.ignoredWords).toEqual(
+      [],
+    );
+
+    // Schema-invalid JSON array → safeParse failure → [].
+    const schemaFailFields = await encryptDocumentFields({
+      uid: "u1",
+      docId: "d-schema-fail-ignore",
+      title: "Schema fail",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      ignoredWords: JSON.stringify([1, 2, 3]),
+    });
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d-schema-fail-ignore",
+      data: () => ({
+        ownerId: "u1",
+        ...schemaFailFields,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    expect(
+      (await getDocumentById("d-schema-fail-ignore"))?.ignoredWords,
+    ).toEqual([]);
+
+    // updateDocumentContent with cipher present.
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({
+        ownerId: "u1",
+        ...createdFields,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    const after = await encryptDocumentFields({
+      uid: "u1",
+      docId: "newdocid00000000001",
+      title: "With ignores",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      ignoredWords: JSON.stringify(["teh", "quux"]),
+    });
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "newdocid00000000001",
+      data: () => ({
+        ownerId: "u1",
+        ...after,
+        updatedAt: new Date(),
+      }),
+    });
+    const updated = await updateDocumentContent({
+      documentId: "newdocid00000000001",
+      ownerId: "u1",
+      content: EMPTY_DOCUMENT_CONTENT,
+      ignoredWords: ["teh", "quux"],
+    });
+    expect(updated?.ignoredWords).toEqual(["teh", "quux"]);
+
+    // update without ignoredWordsCipher on existing encrypted doc (undefined branch).
+    const noCipherUpdate = await encryptDocumentFields({
+      uid: "u1",
+      docId: "d-no-cipher-upd",
+      title: "No cipher",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+    });
+    const { ignoredWordsCipher: _dropUpd, ...noCipherUpdFields } =
+      noCipherUpdate;
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({
+        ownerId: "u1",
+        ...noCipherUpdFields,
+        // Explicit non-package value exercises isCipherPackage false branch.
+        ignoredWordsCipher: { ciphertext: 1, iv: "i", tag: "t" },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    const afterNoCipher = await encryptDocumentFields({
+      uid: "u1",
+      docId: "d-no-cipher-upd",
+      title: "No cipher",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+      ignoredWords: JSON.stringify(["kept"]),
+    });
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d-no-cipher-upd",
+      data: () => ({
+        ownerId: "u1",
+        ...afterNoCipher,
+        updatedAt: new Date(),
+      }),
+    });
+    const updatedNoCipher = await updateDocumentContent({
+      documentId: "d-no-cipher-upd",
+      ownerId: "u1",
+      content: EMPTY_DOCUMENT_CONTENT,
+      ignoredWords: ["kept"],
+    });
+    expect(updatedNoCipher?.ignoredWords).toEqual(["kept"]);
+
+    // rename without ignoredWordsCipher (undefined branch at reencrypt).
+    const noCipherRename = await encryptDocumentFields({
+      uid: "u1",
+      docId: "d-no-cipher-ren",
+      title: "Rename me",
+      content: JSON.stringify(EMPTY_DOCUMENT_CONTENT),
+    });
+    const { ignoredWordsCipher: _dropRen, ...noCipherRenFields } =
+      noCipherRename;
+    txGet.mockResolvedValueOnce({
+      exists: true,
+      data: () => ({
+        ownerId: "u1",
+        ...noCipherRenFields,
+        ignoredWordsCipher: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    refGet.mockResolvedValueOnce({
+      exists: true,
+      id: "d-no-cipher-ren",
+      data: () => ({
+        ownerId: "u1",
+        ...noCipherRenFields,
+        titleCipher: noCipherRename.titleCipher,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    });
+    const renamed = await renameDocument({
+      documentId: "d-no-cipher-ren",
+      ownerId: "u1",
+      title: "Renamed",
+    });
+    expect(renamed).toBeTruthy();
+    expect(txUpdate).toHaveBeenCalled();
+  });
+
 });

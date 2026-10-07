@@ -3,11 +3,16 @@
 import { useCallback, useEffect, useEffectEvent, useState, useTransition } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import Placeholder from "@tiptap/extension-placeholder";
+import { SpellcheckPopover } from "@/components/documents/spellcheck-popover";
+import { SpellcheckTitleField } from "@/components/documents/spellcheck-title-field";
 import { EditorToolbar } from "@/components/editor/toolbar";
 import { SaveStatusIndicator } from "@/components/editor/save-status";
 import { DeleteDocumentDialog } from "@/components/documents/delete-document-dialog";
 import { siteCopy } from "@/content/site";
-import { createProsefieldStarterKit } from "@/features/documents/editor-extensions";
+import {
+  createProsefieldSpellcheck,
+  createProsefieldStarterKit,
+} from "@/features/documents/editor-extensions";
 import {
   renameDocumentAction,
   saveDocumentAction,
@@ -23,12 +28,13 @@ import {
   plainTiptapJson,
   type TiptapJson,
 } from "@/features/documents/schemas";
-import { cn } from "@/lib/utils";
+import { useSpellcheckPopover } from "@/features/documents/spellcheck/use-spellcheck-popover";
 
 type DocumentEditorProps = {
   documentId: string;
   initialTitle: string;
   initialContent: TiptapJson;
+  initialIgnoredWords?: string[];
   /**
    * Required — no fail-open default. When false, stored JSON failed the
    * allow-list; save is blocked so an emptied editor cannot overwrite storage.
@@ -40,10 +46,12 @@ export function DocumentEditor({
   documentId,
   initialTitle,
   initialContent,
+  initialIgnoredWords = [],
   contentAllowed,
 }: DocumentEditorProps) {
   const [title, setTitle] = useState(initialTitle);
   const [savedTitle, setSavedTitle] = useState(initialTitle);
+  const [ignoredWords, setIgnoredWords] = useState(initialIgnoredWords);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(!contentAllowed);
@@ -53,12 +61,21 @@ export function DocumentEditor({
   );
   const [renaming, startRename] = useTransition();
 
+  const onIgnoredWordsChange = useCallback((words: string[]) => {
+    setIgnoredWords(words);
+    setSaveStatus((current) => reduceSaveStatus(current, { type: "edit" }));
+  }, []);
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
       createProsefieldStarterKit(),
       Placeholder.configure({
         placeholder: "Start writing…",
+      }),
+      createProsefieldSpellcheck({
+        ignoredWords: initialIgnoredWords,
+        onIgnoredWordsChange,
       }),
     ],
     // Never feed off-spec JSON into Tiptap — it would empty the doc and enable overwrite.
@@ -69,6 +86,7 @@ export function DocumentEditor({
         class:
           "prosefield-editor min-h-[50vh] focus:outline-none text-base leading-relaxed",
         "aria-label": siteCopy.documents.editorLandmark,
+        spellcheck: "false",
       },
     },
     onUpdate: () => {
@@ -78,6 +96,12 @@ export function DocumentEditor({
       setSaveStatus((current) => reduceSaveStatus(current, { type: "edit" }));
     },
   });
+
+  const spellPopover = useSpellcheckPopover(blocked ? null : editor);
+
+  useEffect(() => {
+    editor?.storage.spellcheck.setIgnoredWords(ignoredWords);
+  }, [editor, ignoredWords]);
 
   const onBeforeUnload = useEffectEvent((event: BeforeUnloadEvent) => {
     if (isDirtySaveStatus(saveStatus)) {
@@ -99,13 +123,17 @@ export function DocumentEditor({
     setSaveStatus((current) => reduceSaveStatus(current, { type: "save" }));
     // TipTap attrs are null-prototype; plain-clone before Server Actions.
     const content = plainTiptapJson(editor.getJSON());
-    const result = await saveDocumentAction({ documentId, content });
+    const result = await saveDocumentAction({
+      documentId,
+      content,
+      ignoredWords,
+    });
     if (!result.ok) {
       setSaveStatus((current) => reduceSaveStatus(current, { type: "failure" }));
       return;
     }
     setSaveStatus((current) => reduceSaveStatus(current, { type: "success" }));
-  }, [blocked, documentId, editor]);
+  }, [blocked, documentId, editor, ignoredWords]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -172,35 +200,24 @@ export function DocumentEditor({
       ) : null}
 
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <label className="sr-only" htmlFor={`doc-title-${documentId}`}>
-            {siteCopy.documents.titleLabel}
-          </label>
-          <input
-            id={`doc-title-${documentId}`}
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            onBlur={() => commitTitle(title)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.currentTarget.blur();
-              }
-            }}
-            disabled={renaming}
-            maxLength={120}
-            className={cn(
-              "font-display text-foreground w-full bg-transparent text-3xl font-medium tracking-tight",
-              "focus-visible:ring-ring rounded-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none",
-            )}
-          />
-          {renameError ? (
-            <p className="text-destructive mt-1 text-sm" role="alert">
-              {renameError}
-            </p>
-          ) : null}
-        </div>
+        <SpellcheckTitleField
+          id={`doc-title-${documentId}`}
+          label={siteCopy.documents.titleLabel}
+          value={title}
+          onChange={setTitle}
+          onCommit={commitTitle}
+          ignoredWords={ignoredWords}
+          onIgnoredWordsChange={onIgnoredWordsChange}
+          disabled={renaming}
+          className="font-display text-foreground text-3xl font-medium tracking-tight focus-visible:ring-ring rounded-md focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
+        />
         <DeleteDocumentDialog documentId={documentId} title={title} />
       </div>
+      {renameError ? (
+        <p className="text-destructive mt-1 text-sm" role="alert">
+          {renameError}
+        </p>
+      ) : null}
 
       <EditorToolbar
         editor={blocked ? null : editor}
@@ -216,6 +233,16 @@ export function DocumentEditor({
       <div className="mt-4 min-h-0 flex-1">
         <EditorContent editor={editor} />
       </div>
+
+      <SpellcheckPopover
+        open={spellPopover.open}
+        word={spellPopover.misspelling?.word ?? ""}
+        suggestions={spellPopover.misspelling?.suggestions ?? []}
+        anchor={spellPopover.anchor}
+        onClose={spellPopover.close}
+        onSelectSuggestion={spellPopover.applySuggestion}
+        onIgnore={spellPopover.ignore}
+      />
     </div>
   );
 }

@@ -14,6 +14,7 @@ function doc(ownerId: string): DocumentRecord {
     title: "T",
     content: { ...EMPTY_DOCUMENT_CONTENT },
     contentAllowed: true,
+      ignoredWords: [],
     createdAt: new Date(),
     updatedAt: new Date(),
   };

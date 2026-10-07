@@ -57,6 +57,8 @@ export function buildContentSecurityPolicy(options: CspBuildOptions): string {
     "img-src 'self' data: blob:",
     "font-src 'self'",
     `script-src ${scriptSrc.join(" ")}`,
+    // Spellcheck Web Worker (bundler chunk + blob bootstrap).
+    "worker-src 'self' blob:",
     // TipTap and Next inject inline styles; keep 'unsafe-inline' for style-src only.
     "style-src 'self' 'unsafe-inline'",
     `connect-src ${connectSrc.join(" ")}`,

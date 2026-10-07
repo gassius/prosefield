@@ -5,7 +5,17 @@
  */
 import StarterKit from "@tiptap/starter-kit";
 import { prosefieldStarterKitOptions } from "@/features/documents/schemas";
+import {
+  createSpellcheckExtension,
+  type SpellcheckExtensionOptions,
+} from "@/features/documents/spellcheck/spellcheck-extension";
 
 export function createProsefieldStarterKit() {
   return StarterKit.configure(prosefieldStarterKitOptions);
+}
+
+export function createProsefieldSpellcheck(
+  options: SpellcheckExtensionOptions = {},
+) {
+  return createSpellcheckExtension(options);
 }

@@ -44,6 +44,7 @@ async function doPersist(uid: string): Promise<PersistTrialDraftResult> {
     const result = await createDocumentAction({
       title: draft.title,
       content: draft.content,
+      ignoredWords: draft.ignoredWords,
     });
     if (!result.ok) {
       return { ok: false, reason: "create_failed" };

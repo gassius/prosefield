@@ -700,6 +700,12 @@ jobs:
               # Real docker/ only — not docker-foo/
               return path == "docker" or path.startswith("docker/")
 
+          def is_under_spellcheck_dict(path: str) -> bool:
+              # Vendored Hunspell assets (en.dic lists words like "Java").
+              return path == "public/spellcheck" or path.startswith(
+                  "public/spellcheck/"
+              )
+
           def is_binary(data: bytes) -> bool:
               return b"\x00" in data[:8192]
 
@@ -731,6 +737,8 @@ jobs:
                   continue
               path = raw.decode("utf-8", errors="surrogateescape")
               if is_under_docker_dir(path):
+                  continue
+              if is_under_spellcheck_dict(path):
                   continue
               if path == str(WORKFLOW) or path == WORKFLOW.as_posix():
                   continue
