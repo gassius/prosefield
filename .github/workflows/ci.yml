@@ -93,6 +93,9 @@ jobs:
       - name: Checkout
         # actions/checkout@v4
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          # Full history so diff coverage can compare against the PR base SHA.
+          fetch-depth: 0
 
       - name: Setup pnpm
         # pnpm/action-setup@v4
@@ -125,6 +128,19 @@ jobs:
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
           APP_URL: http://localhost:3000
         run: pnpm test:coverage
+
+      - name: Coverage ratchet (floor + baseline)
+        env:
+          # On PRs, pin the baseline to max(PR file, base SHA file) so a PR
+          # cannot lower coverage-baseline.json and stay green.
+          COVERAGE_RATCHET_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: pnpm coverage:ratchet
+
+      - name: Diff coverage (PR new/changed lines under src/)
+        if: github.event_name == 'pull_request'
+        env:
+          COVERAGE_DIFF_BASE: ${{ github.event.pull_request.base.sha }}
+        run: pnpm coverage:diff
 
       - name: Stop emulators
         if: always()

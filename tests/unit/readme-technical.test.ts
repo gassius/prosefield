@@ -325,7 +325,12 @@ describe("README technical sections (evaluator-facing)", () => {
     const section = readDoc("docs/testing.md");
     expect(section).toMatch(/## Policy/);
     expect(section).toMatch(/Same-PR tests for behaviour changes/);
+    expect(section).toMatch(/Coverage policy \(ratchet\)/);
+    expect(section).toMatch(/coverage-baseline\.json/);
+    expect(section).toMatch(/diff coverage/i);
+    expect(section).toMatch(/pnpm coverage:ratchet/);
     expect(section).not.toMatch(/AGENTS\.md/);
+    expect(section).not.toMatch(/ClickUp/i);
     expect(section).toMatch(/FIREBASE_AUTH_EMULATOR_HOST=127\.0\.0\.1:9099/);
     expect(section).toMatch(/FIRESTORE_EMULATOR_HOST=127\.0\.0\.1:8080/);
     expect(section).toMatch(/APP_URL=http:\/\/localhost:3000/);

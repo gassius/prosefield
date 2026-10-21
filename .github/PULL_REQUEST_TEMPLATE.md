@@ -15,7 +15,7 @@
 
 - [ ] Same-PR tests for every behaviour change (unit/component, E2E, axe for new pages, visual for UI)
 - [ ] Bug fixes include a regression test that fails before the fix
-- [ ] Coverage thresholds not lowered; new files inside coverage includes
+- [ ] Coverage baseline / critical path thresholds not lowered; new files inside coverage includes; diff coverage green
 - [ ] No `.skip` / `.only`, no loosened assertions / diffs / retries
 - [ ] Draft until Reviewer Approve + Hermes Pass + green CI on the same head SHA
 

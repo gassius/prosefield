@@ -9,6 +9,7 @@ const sharedResolve = {
   },
 };
 
+/** High bar for auth, billing, and encryption / document payload. */
 const highBar = {
   lines: 95,
   functions: 95,
@@ -23,14 +24,23 @@ const authSurfaceBar = {
   statements: 92,
 } as const;
 
+/** Repo-wide floor (ratchet baseline lives in coverage-baseline.json). */
+const globalFloor = {
+  lines: 90,
+  functions: 90,
+  branches: 90,
+  statements: 90,
+} as const;
+
 export default defineConfig({
   resolve: sharedResolve,
   test: {
     environment: "node",
     coverage: {
       provider: "v8",
-      reporter: ["text", "text-summary", "json-summary"],
+      reporter: ["text", "text-summary", "json-summary", "json"],
       reportsDirectory: "./coverage",
+      // Only src/ is measured (data/assets under public/ etc. stay out).
       include: [
         "src/lib/**/*.{ts,tsx}",
         "src/features/auth/**/*.{ts,tsx}",
@@ -65,35 +75,35 @@ export default defineConfig({
         "src/features/documents/spellcheck/worker-protocol.ts",
       ],
       thresholds: {
-        // Ratcheted to measured Component+coverage on main (PR #21 / 92149a7):
-        // ~99.65% lines/statements, ~98.26% branches, 100% functions.
-        // Only go up; never lower.
-        lines: 99.6,
-        functions: 100,
-        branches: 98.2,
-        statements: 99.6,
+        // Global floor 90%. Upward-only ratchet is enforced by
+        // scripts/check-coverage-ratchet.mjs + coverage-baseline.json.
+        // PR new/changed lines under src/ also need diff coverage
+        // (scripts/check-coverage-diff.mjs).
+        ...globalFloor,
+        // Critical: auth
         "src/features/auth/{account-state,auth-time,constants,csrf,map-auth-error,next}.ts":
           highBar,
-        "src/lib/env.ts": highBar,
-        "src/lib/env-defaults.ts": highBar,
-        "src/lib/motion.ts": highBar,
-        "src/lib/startup-env.ts": highBar,
-        "src/lib/utils.ts": highBar,
-        "src/lib/security-headers.ts": highBar,
+        "src/features/auth/password.ts": highBar,
+        "src/features/auth/register.ts": highBar,
+        "src/features/auth/register-input.ts": highBar,
+        "src/features/auth/{session,guards,users}.ts": authSurfaceBar,
+        // Critical: billing
+        "src/features/billing/{entitlement,plan-display,configured}.ts": highBar,
+        "src/features/billing/{projection,webhook,checkout,customers,session-sync,subscriptions,plan,actions}.ts":
+          authSurfaceBar,
+        "src/lib/stripe/**": {
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
+        },
+        // Critical: encryption + document payload
         "src/lib/crypto/**": {
           lines: 95,
           functions: 95,
           branches: 85,
           statements: 95,
         },
-        "src/features/auth/password.ts": highBar,
-        "src/features/auth/register.ts": highBar,
-        "src/features/auth/register-input.ts": highBar,
-        "src/instrumentation.ts": highBar,
-        "src/features/auth/{session,guards,users}.ts": authSurfaceBar,
-        "src/features/billing/{entitlement,plan-display,configured}.ts": highBar,
-        "src/features/billing/{projection,webhook,checkout,customers,session-sync,subscriptions,plan,actions}.ts":
-          authSurfaceBar,
         "src/features/documents/{schemas,format-time,save-state,ownership,editor-extensions}.ts":
           {
             lines: 99,
@@ -112,18 +122,6 @@ export default defineConfig({
           functions: 99,
           branches: 99,
           statements: 99,
-        },
-        "src/lib/firebase/**": {
-          lines: 95,
-          functions: 95,
-          branches: 90,
-          statements: 95,
-        },
-        "src/lib/stripe/**": {
-          lines: 100,
-          functions: 100,
-          branches: 100,
-          statements: 100,
         },
       },
     },
