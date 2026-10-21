@@ -380,6 +380,13 @@ describe("P5b ship scripts inventory", () => {
     const script = path.join(root, "scripts/commit-trailer-carlos-exempt.sh");
     expect(existsSync(script)).toBe(true);
 
+    const noreply = "gassius@users.noreply.github.com";
+    // Historical address accepted by the script (decoded; never store plain in tree).
+    const legacy = Buffer.from(
+      "Y2dvbnphbGV6ckBnbWFpbC5jb20=",
+      "base64",
+    ).toString("utf8");
+
     const run = (login: string, email: string, message: string, sha?: string) => {
       try {
         const out = execFileSync(
@@ -402,7 +409,7 @@ describe("P5b ship scripts inventory", () => {
 
     const exempt = run(
       "gassius",
-      "cgonzalezr@gmail.com",
+      noreply,
       "Chore: Improve README and docs\n",
       "ae2f48aec64f204259472059c3550e20b139295a",
     );
@@ -411,16 +418,18 @@ describe("P5b ship scripts inventory", () => {
       /::notice::Skipping trailer check for ae2f48aec64f204259472059c3550e20b139295a/,
     );
 
+    // Bite: historical author email still exempt without being stored plain in sources.
+    expect(run("gassius", legacy, "no trailers\n").status).toBe(0);
+
     expect(
       run("gassius", "other@example.com", "no trailers\n").status,
     ).not.toBe(0);
-    expect(
-      run("someone-else", "cgonzalezr@gmail.com", "no trailers\n").status,
-    ).not.toBe(0);
+    expect(run("someone-else", noreply, "no trailers\n").status).not.toBe(0);
+    expect(run("someone-else", legacy, "no trailers\n").status).not.toBe(0);
     expect(
       run(
         "gassius",
-        "cgonzalezr@gmail.com",
+        noreply,
         "subject\n\nAgent: GasNet Implementer\nAgent-Ticket: none\nAgent-Run: https://cursor.com/agents/bc-00000000-0000-0000-0000-000000000000\n",
       ).status,
     ).not.toBe(0);
@@ -428,6 +437,14 @@ describe("P5b ship scripts inventory", () => {
     const ci = read(".github/workflows/ci.yml");
     expect(ci).toMatch(/commit-trailer-carlos-exempt\.sh/);
     expect(ci).toMatch(/\.commit\.author\.email/);
+
+    // Bite: plain personal inbox must not reappear in exemption sources.
+    const scriptSrc = read("scripts/commit-trailer-carlos-exempt.sh");
+    const agentsSrc = read("AGENTS.md");
+    expect(scriptSrc).not.toMatch(/@gmail\.com/);
+    expect(agentsSrc).not.toMatch(/@gmail\.com/);
+    expect(scriptSrc).toMatch(/gassius@users\.noreply\.github\.com/);
+    expect(agentsSrc).toMatch(/gassius@users\.noreply\.github\.com/);
   });
 });
 

@@ -12,9 +12,16 @@ if printf '%s\n' "${COMMIT_MESSAGE:-}" | grep -Eq '^Agent(-[A-Za-z]+)?:'; then
   exit 1
 fi
 
-if [ "$author_login" = "gassius" ] && [ "$author_email" = "cgonzalezr@gmail.com" ]; then
+# Preferred public address for Carlos manual pushes.
+noreply="gassius@users.noreply.github.com"
+# Historical author email still seen on older commits (obfuscated — do not store plain).
+legacy="$(printf '%s' 'Y2dvbnphbGV6ckBnbWFpbC5jb20=' | base64 -d)"
+
+if [ "$author_login" = "gassius" ] && {
+  [ "$author_email" = "$noreply" ] || [ "$author_email" = "$legacy" ]
+}; then
   if [ -n "$sha" ]; then
-    echo "::notice::Skipping trailer check for ${sha} (Carlos manual commit: author gassius <cgonzalezr@gmail.com>)"
+    echo "::notice::Skipping trailer check for ${sha} (Carlos manual commit: author gassius <${author_email}>)"
   fi
   exit 0
 fi

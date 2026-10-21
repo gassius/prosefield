@@ -599,7 +599,7 @@ jobs:
                 echo "skip: ${sha} (Carlos, verified web-flow author gassius)"
                 continue
               fi
-              # Carlos manual pushes: GitHub author login gassius + author email.
+              # Carlos manual pushes: GitHub author login gassius + noreply (or historical) email.
               if COMMIT_MESSAGE="$msg" \
                 bash scripts/commit-trailer-carlos-exempt.sh \
                   "$author_login" "$author_email" "$sha"
