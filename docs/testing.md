@@ -7,7 +7,7 @@ Every PR that changes behaviour must ship tests in the **same** PR:
 1. **Same-PR tests for behaviour changes** — Vitest unit and component (RTL) coverage for logic and UI wiring; Playwright E2E for user flows (register, login, logout, redirects, CTAs); axe accessibility checks for new pages; Docker-only visual baselines for UI changes (`pnpm test:visual` / `pnpm test:visual:update`).
 2. **Bug fixes** include a **regression test that fails before the fix** (prove it bites).
 3. **Tests must bite** — be ready to show a red run when the feature is removed or weakened.
-4. **Coverage policy (ratchet).** Only `src/` is measured (data/assets stay out). Repo-wide floor is **90%** for statements/branches/functions/lines; a committed [`coverage-baseline.json`](../coverage-baseline.json) never moves down — CI fails if global coverage falls below the baseline, and `pnpm coverage:ratchet:update` only raises it. Critical paths (auth, billing, encryption/document payload) keep high per-path Vitest thresholds. On PRs, new/changed instrumented lines under `src/` need **≥90% diff coverage** (same **Component + coverage** job). New files under covered `src/` globs must stay inside Vitest coverage `include`.
+4. **Coverage policy (ratchet).** Only `src/` is measured (data/assets stay out). Repo-wide floor is **90%** for statements/branches/functions/lines; a committed [`coverage-baseline.json`](../coverage-baseline.json) tracks measured totals and never moves down — CI fails if global coverage falls below the baseline (on PRs, the higher of the PR file and the merge-base file wins; lowering the PR file fails). `pnpm coverage:ratchet:update` only raises it. Critical paths (auth, billing, encryption/document payload) keep high per-path Vitest thresholds. On PRs, new/changed instrumented lines under `src/` need **≥90% diff coverage**; changed `src/**/*.{ts,tsx}` files must appear in the coverage report (type-only allowlist only), ignore pragmas and narrowed include/exclude are rejected (same **Component + coverage** job).
 5. **No weakening to get green:** no `.skip` / `.only`, no loosened assertions, no extra visual diff allowance, no retries used to hide flakes.
 6. **PR body** lists which tests cover each scope item / behaviour change.
 
@@ -34,6 +34,7 @@ export APP_URL=http://localhost:3000
 
 pnpm test:coverage
 pnpm coverage:ratchet          # floor + baseline (after coverage report exists)
+# COVERAGE_RATCHET_BASE=<base-sha> pnpm coverage:ratchet   # PR: pin to merge-base baseline
 # After an intentional coverage improvement:
 # pnpm coverage:ratchet:update
 # On a PR branch (base SHA or ref):

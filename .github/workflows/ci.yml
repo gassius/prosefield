@@ -130,6 +130,10 @@ jobs:
         run: pnpm test:coverage
 
       - name: Coverage ratchet (floor + baseline)
+        env:
+          # On PRs, pin the baseline to max(PR file, base SHA file) so a PR
+          # cannot lower coverage-baseline.json and stay green.
+          COVERAGE_RATCHET_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
         run: pnpm coverage:ratchet
 
       - name: Diff coverage (PR new/changed lines under src/)

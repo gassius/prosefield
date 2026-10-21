@@ -9,6 +9,19 @@ export const COVERAGE_FLOOR = 90;
 /** Diff-coverage bar for new/changed instrumented lines under src/. */
 export const DIFF_COVERAGE_THRESHOLD = 90;
 
+/**
+ * Type-only (or otherwise intentionally uninstrumented) src files that may
+ * lack a coverage-final entry when changed. Keep this list explicit and short.
+ */
+export const DIFF_COVERAGE_TYPE_ONLY_ALLOWLIST = new Set([
+  "src/lib/crypto/types.ts",
+  "src/features/documents/spellcheck/worker-protocol.ts",
+]);
+
+/** Added-line patterns that silence coverage instrumentation. */
+export const COVERAGE_IGNORE_PRAGMA_RE =
+  /\/\*\s*(?:istanbul|v8)\s+ignore(?:\s+[a-z-]+)?\s*\*\//i;
+
 export const METRICS = /** @type {const} */ ([
   "statements",
   "branches",
@@ -115,6 +128,37 @@ export function compareToBaseline(measured, baseline, floor = COVERAGE_FLOOR) {
 }
 
 /**
+ * Merge PR checkout baseline with the base-branch baseline.
+ * Higher value wins per metric; PR values below base are reported as lowered.
+ * @param {MetricMap} prBaseline
+ * @param {MetricMap | null} baseBaseline
+ * @returns {{ effective: MetricMap, lowered: string[] }}
+ */
+export function mergeBaselines(prBaseline, baseBaseline) {
+  /** @type {MetricMap} */
+  const effective = {
+    statements: prBaseline.statements,
+    branches: prBaseline.branches,
+    functions: prBaseline.functions,
+    lines: prBaseline.lines,
+  };
+  /** @type {string[]} */
+  const lowered = [];
+  if (!baseBaseline) {
+    return { effective, lowered };
+  }
+  for (const key of METRICS) {
+    if (prBaseline[key] + 1e-9 < baseBaseline[key]) {
+      lowered.push(
+        `${key}: PR baseline ${prBaseline[key]} is below base ${baseBaseline[key]} (cannot lower coverage-baseline.json)`,
+      );
+    }
+    effective[key] = Math.max(prBaseline[key], baseBaseline[key]);
+  }
+  return { effective, lowered };
+}
+
+/**
  * Propose a new baseline: max(current baseline, measured) per metric, never below floor.
  * @param {MetricMap} measured
  * @param {MetricMap} baseline
@@ -190,12 +234,90 @@ export function parseAddedLinesFromDiff(diffText) {
 }
 
 /**
+ * Collect added line *text* (without the leading `+`) per file from a unified diff.
+ * @param {string} diffText
+ * @returns {Map<string, string[]>}
+ */
+export function parseAddedLineTextsFromDiff(diffText) {
+  /** @type {Map<string, string[]>} */
+  const map = new Map();
+  let currentFile = null;
+
+  for (const line of diffText.split(/\r?\n/)) {
+    if (line.startsWith("+++ ")) {
+      const raw = line.slice(4).trim();
+      if (raw === "/dev/null") {
+        currentFile = null;
+        continue;
+      }
+      currentFile = raw.startsWith("b/") ? raw.slice(2) : raw;
+      if (!map.has(currentFile)) {
+        map.set(currentFile, []);
+      }
+      continue;
+    }
+    if (!currentFile) continue;
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      map.get(currentFile)?.push(line.slice(1));
+    }
+  }
+  return map;
+}
+
+/**
  * @param {string} filePath
  * @returns {boolean}
  */
 export function isSrcPath(filePath) {
   const normalized = filePath.replace(/\\/g, "/");
   return normalized === "src" || normalized.startsWith("src/");
+}
+
+/**
+ * @param {string} filePath
+ * @returns {boolean}
+ */
+export function isSrcTsPath(filePath) {
+  const normalized = filePath.replace(/\\/g, "/");
+  return (
+    isSrcPath(normalized) &&
+    (normalized.endsWith(".ts") || normalized.endsWith(".tsx"))
+  );
+}
+
+/**
+ * Build a lookup from coverage-final keys (absolute or relative) → entry key.
+ * @param {Record<string, unknown>} coverageFinal
+ * @returns {Map<string, string>}
+ */
+export function indexCoverageFinalKeys(coverageFinal) {
+  /** @type {Map<string, string>} */
+  const covKeys = new Map();
+  for (const key of Object.keys(coverageFinal)) {
+    const norm = key.replace(/\\/g, "/");
+    covKeys.set(norm, key);
+    const srcIdx = norm.lastIndexOf("/src/");
+    if (srcIdx !== -1) {
+      covKeys.set(norm.slice(srcIdx + 1), key);
+    } else if (norm.startsWith("src/")) {
+      covKeys.set(norm, key);
+    }
+  }
+  return covKeys;
+}
+
+/**
+ * Resolve a repo-relative src path to a coverage-final entry key.
+ * @param {string} filePath
+ * @param {Map<string, string>} covKeys
+ * @returns {string | undefined}
+ */
+export function resolveCoverageKey(filePath, covKeys) {
+  const norm = filePath.replace(/\\/g, "/");
+  return (
+    covKeys.get(norm) ??
+    covKeys.get(norm.startsWith("./") ? norm.slice(2) : norm)
+  );
 }
 
 /**
@@ -222,37 +344,32 @@ export function lineHitsFromFileCoverage(fileCov) {
  * Diff coverage for added lines that are instrumented.
  * @param {Map<string, Set<number>>} addedByFile
  * @param {Record<string, { s?: Record<string, number>, statementMap?: Record<string, { start: { line: number }, end: { line: number } }> }>} coverageFinal
- * @returns {{ instrumented: number, covered: number, pct: number | null, uncovered: { file: string, line: number }[] }}
+ * @returns {{ instrumented: number, covered: number, pct: number | null, uncovered: { file: string, line: number }[], missingCoverage: string[] }}
  */
 export function diffCoverageStats(addedByFile, coverageFinal) {
   let instrumented = 0;
   let covered = 0;
   /** @type {{ file: string, line: number }[]} */
   const uncovered = [];
+  /** @type {string[]} */
+  const missingCoverage = [];
 
-  /** @type {Map<string, string>} absolute/relative key → coverage key */
-  const covKeys = new Map();
-  for (const key of Object.keys(coverageFinal)) {
-    const norm = key.replace(/\\/g, "/");
-    covKeys.set(norm, key);
-    // Also index by trailing src/… segment when Vitest uses absolute paths.
-    const srcIdx = norm.lastIndexOf("/src/");
-    if (srcIdx !== -1) {
-      covKeys.set(norm.slice(srcIdx + 1), key);
-    } else if (norm.startsWith("src/")) {
-      covKeys.set(norm, key);
-    }
-  }
+  const covKeys = indexCoverageFinalKeys(coverageFinal);
 
   for (const [file, lines] of addedByFile) {
-    if (!isSrcPath(file)) continue;
+    if (!isSrcTsPath(file)) continue;
     const norm = file.replace(/\\/g, "/");
-    const covKey =
-      covKeys.get(norm) ??
-      covKeys.get(norm.startsWith("./") ? norm.slice(2) : norm);
-    if (!covKey) continue;
+    if (DIFF_COVERAGE_TYPE_ONLY_ALLOWLIST.has(norm)) continue;
+    const covKey = resolveCoverageKey(norm, covKeys);
+    if (!covKey) {
+      missingCoverage.push(norm);
+      continue;
+    }
     const fileCov = coverageFinal[covKey];
-    if (!fileCov) continue;
+    if (!fileCov) {
+      missingCoverage.push(norm);
+      continue;
+    }
     const hits = lineHitsFromFileCoverage(fileCov);
     for (const line of lines) {
       if (!hits.has(line)) continue; // not instrumented (comment/type-only/etc.)
@@ -267,19 +384,163 @@ export function diffCoverageStats(addedByFile, coverageFinal) {
 
   const pct =
     instrumented === 0 ? null : Math.round((covered / instrumented) * 10000) / 100;
-  return { instrumented, covered, pct, uncovered };
+  return { instrumented, covered, pct, uncovered, missingCoverage };
+}
+
+/**
+ * Changed src/*.ts(x) paths that lack a coverage-final entry (not allowlisted).
+ * @param {Iterable<string>} changedFiles
+ * @param {Record<string, unknown>} coverageFinal
+ * @param {ReadonlySet<string>} [allowlist]
+ * @returns {string[]}
+ */
+export function missingCoverageEntries(
+  changedFiles,
+  coverageFinal,
+  allowlist = DIFF_COVERAGE_TYPE_ONLY_ALLOWLIST,
+) {
+  const covKeys = indexCoverageFinalKeys(coverageFinal);
+  /** @type {string[]} */
+  const missing = [];
+  for (const file of changedFiles) {
+    const norm = file.replace(/\\/g, "/");
+    if (!isSrcTsPath(norm)) continue;
+    if (allowlist.has(norm)) continue;
+    if (!resolveCoverageKey(norm, covKeys)) {
+      missing.push(norm);
+    }
+  }
+  return missing.sort();
+}
+
+/**
+ * Find newly added coverage-ignore pragmas in a unified diff.
+ * @param {string} diffText
+ * @returns {{ file: string, text: string }[]}
+ */
+export function findAddedIgnorePragmas(diffText) {
+  /** @type {{ file: string, text: string }[]} */
+  const hits = [];
+  const byFile = parseAddedLineTextsFromDiff(diffText);
+  for (const [file, texts] of byFile) {
+    for (const text of texts) {
+      if (COVERAGE_IGNORE_PRAGMA_RE.test(text)) {
+        hits.push({ file: file.replace(/\\/g, "/"), text: text.trim() });
+      }
+    }
+  }
+  return hits;
+}
+
+/**
+ * Extract string-literal entries from a `include:` / `exclude:` array in vitest.config.
+ * @param {string} configText
+ * @param {"include" | "exclude"} key
+ * @returns {string[]}
+ */
+export function extractCoverageGlobList(configText, key) {
+  const coverageIdx = configText.search(/\bcoverage\s*:/);
+  if (coverageIdx === -1) return [];
+  const fromCoverage = configText.slice(coverageIdx);
+  const keyRe = new RegExp(`\\b${key}\\s*:\\s*\\[`);
+  const keyMatch = keyRe.exec(fromCoverage);
+  if (!keyMatch || keyMatch.index === undefined) return [];
+  let i = keyMatch.index + keyMatch[0].length;
+  /** @type {string[]} */
+  const out = [];
+  let depth = 1;
+  let inStr = /** @type {null | '"' | "'" | "`"} */ (null);
+  let escaped = false;
+  let buf = "";
+  while (i < fromCoverage.length && depth > 0) {
+    const ch = fromCoverage[i];
+    if (ch === undefined) break;
+    if (inStr) {
+      if (escaped) {
+        buf += ch;
+        escaped = false;
+      } else if (ch === "\\") {
+        buf += ch;
+        escaped = true;
+      } else if (ch === inStr) {
+        out.push(buf);
+        buf = "";
+        inStr = null;
+      } else {
+        buf += ch;
+      }
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      inStr = /** @type {'"' | "'" | "`"} */ (ch);
+      buf = "";
+      i += 1;
+      continue;
+    }
+    if (ch === "[") depth += 1;
+    if (ch === "]") depth -= 1;
+    i += 1;
+  }
+  return out;
+}
+
+/**
+ * Detect narrowing of Vitest coverage include/exclude vs the base config.
+ * - include narrowed: patterns removed from include
+ * - exclude narrowed: patterns added to exclude
+ * @param {string} baseConfig
+ * @param {string} headConfig
+ * @returns {{ ok: boolean, failures: string[] }}
+ */
+export function compareCoverageGlobs(baseConfig, headConfig) {
+  const baseInclude = new Set(extractCoverageGlobList(baseConfig, "include"));
+  const headInclude = new Set(extractCoverageGlobList(headConfig, "include"));
+  const baseExclude = new Set(extractCoverageGlobList(baseConfig, "exclude"));
+  const headExclude = new Set(extractCoverageGlobList(headConfig, "exclude"));
+
+  /** @type {string[]} */
+  const failures = [];
+  for (const pattern of baseInclude) {
+    if (!headInclude.has(pattern)) {
+      failures.push(
+        `coverage include narrowed: removed "${pattern}" (vs base)`,
+      );
+    }
+  }
+  for (const pattern of headExclude) {
+    if (!baseExclude.has(pattern)) {
+      failures.push(
+        `coverage exclude narrowed: added "${pattern}" (vs base)`,
+      );
+    }
+  }
+  return { ok: failures.length === 0, failures };
 }
 
 /**
  * @param {number | null} pct
  * @param {number} [threshold]
+ * @param {{ requireInstrumented?: boolean }} [opts]
  * @returns {{ ok: boolean, reason: string }}
  */
-export function evaluateDiffCoverage(pct, threshold = DIFF_COVERAGE_THRESHOLD) {
+export function evaluateDiffCoverage(
+  pct,
+  threshold = DIFF_COVERAGE_THRESHOLD,
+  opts = {},
+) {
   if (pct === null) {
+    if (opts.requireInstrumented) {
+      return {
+        ok: false,
+        reason:
+          "diff coverage found no instrumented added lines under src/ (vacuous pass blocked)",
+      };
+    }
     return {
       ok: true,
-      reason: "no instrumented added lines under src/; diff coverage skipped",
+      reason:
+        "no instrumented added lines under src/ (all changed files have coverage entries or are allowlisted)",
     };
   }
   if (pct + 1e-9 < threshold) {
