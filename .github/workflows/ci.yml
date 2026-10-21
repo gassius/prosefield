@@ -637,7 +637,7 @@ jobs:
             fi
             if [ -z "$ticket" ]; then
               reasons+=("missing required Agent-Ticket trailer")
-            elif ! printf '%s\n' "$ticket" | grep -Eq '^(none|[0-9a-z]{9}|#[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+)$'; then
+            elif ! bash scripts/commit-trailer-ticket-ok.sh "$ticket"; then
               reasons+=("Agent-Ticket '${ticket}' must be a ClickUp id, none, or a GitHub issue/PR reference")
             fi
             if [ -z "$run" ]; then

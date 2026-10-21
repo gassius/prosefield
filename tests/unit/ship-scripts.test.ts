@@ -376,6 +376,42 @@ describe("P5b ship scripts inventory", () => {
     expect(existsSync(path.join(root, "docs/time-log.md"))).toBe(false);
   });
 
+  it("commit-trailer Agent-Ticket accepts legacy 869… and newer ClickUp ids", () => {
+    const script = path.join(root, "scripts/commit-trailer-ticket-ok.sh");
+    expect(existsSync(script)).toBe(true);
+
+    const ok = (ticket: string) => {
+      try {
+        execFileSync("bash", [script, ticket], { encoding: "utf8" });
+        return 0;
+      } catch (err) {
+        return (err as { status?: number }).status ?? 1;
+      }
+    };
+
+    // Legacy ClickUp custom ids (exactly 9 lowercase alnum).
+    expect(ok("869f9e0zr")).toBe(0);
+    expect(ok("869faehaz")).toBe(0);
+    // Newer ClickUp ids (longer lowercase alnum, e.g. 1amjtrevumd).
+    expect(ok("1amjtrevumd")).toBe(0);
+    expect(ok("none")).toBe(0);
+    expect(ok("#64")).toBe(0);
+    expect(ok("gassius/prosefield#39")).toBe(0);
+
+    // Bite: too short, uppercase, or punctuation fail.
+    expect(ok("1amjtrev")).not.toBe(0); // 8 chars
+    expect(ok("1AMJTREVUMD")).not.toBe(0);
+    expect(ok("869f9e0zr!")).not.toBe(0);
+    expect(ok("")).not.toBe(0);
+
+    const ci = read(".github/workflows/ci.yml");
+    expect(ci).toMatch(/commit-trailer-ticket-ok\.sh/);
+    // Bite: do not regress to fixed-length {9} only in the workflow.
+    expect(ci).not.toMatch(
+      /grep -Eq '\^\(none\|\[0-9a-z\]\{9\}\|/,
+    );
+  });
+
   it("commit-trailer Carlos manual exemption: gassius + email, Agent* lines block it", () => {
     const script = path.join(root, "scripts/commit-trailer-carlos-exempt.sh");
     expect(existsSync(script)).toBe(true);
