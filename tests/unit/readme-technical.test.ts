@@ -73,6 +73,9 @@ describe("README technical sections (evaluator-facing)", () => {
     const titleIdx = text.indexOf("# Prosefield");
     const badgeIdx = text.indexOf("actions/workflows/ci.yml/badge.svg?branch=main");
     const pitchIdx = text.indexOf("A writing workspace");
+    const disclaimerIdx = text.indexOf(
+      "This is a Proof of Concept project to test Agentic Engineering methods",
+    );
     const agentIdx = text.indexOf(
       "## Let your agent set up and run this project (locally)",
     );
@@ -87,11 +90,17 @@ describe("README technical sections (evaluator-facing)", () => {
     expect(text).toMatch(/badge\/node-24/);
     expect(text).toMatch(/TypeScript-strict/);
     expect(text).toMatch(/Next\.js-16/);
+    // Status badges only — license is a text section + LICENSE file, not a shields badge.
     expect(text).not.toMatch(/img\.shields\.io\/badge\/[Ll]icense/);
     expect(pitchIdx).toBeGreaterThan(-1);
-    expect(agentIdx).toBeGreaterThan(pitchIdx);
+    expect(disclaimerIdx).toBeGreaterThan(pitchIdx);
+    expect(agentIdx).toBeGreaterThan(disclaimerIdx);
     expect(quickIdx).toBeGreaterThan(agentIdx);
     expect(demoIdx).toBeGreaterThan(quickIdx);
+    // Bite: PoC disclaimer must stay directly under the tagline.
+    expect(text).toMatch(
+      /A writing workspace: register, subscribe, and keep pages with less friction\.\n\nThis is a Proof of Concept project to test Agentic Engineering methods, tools, and best practices\. It is not an intended commercial product and is not associated with any commercial service\./,
+    );
 
     const quickEnd = text.indexOf("## Demo");
     const quick = text.slice(quickIdx, quickEnd);
@@ -134,6 +143,30 @@ describe("README technical sections (evaluator-facing)", () => {
     // Bite: reintroducing internal process names fails.
     expect(text).not.toMatch(EVALUATOR_DENY);
     expect(text).not.toMatch(/AGENTS\.md/);
+  });
+
+  it("ships MIT license at repo root and references it from README and package.json", () => {
+    const text = readme();
+    const licenseIdx = text.indexOf("## License");
+    const creditsIdx = text.indexOf("## Credits");
+    expect(licenseIdx).toBeGreaterThan(-1);
+    expect(creditsIdx).toBeGreaterThan(licenseIdx);
+    expect(text).toMatch(/\[MIT License\]\(LICENSE\)/);
+    expect(text).toMatch(/Copyright \(c\) 2026 Carlos González Rico/);
+
+    const licensePath = path.resolve(process.cwd(), "LICENSE");
+    expect(existsSync(licensePath)).toBe(true);
+    const license = readFileSync(licensePath, "utf8");
+    expect(license).toMatch(/^MIT License\b/);
+    expect(license).toMatch(/Copyright \(c\) 2026 Carlos González Rico/);
+    expect(license).toMatch(/Permission is hereby granted, free of charge/);
+    // Bite: renaming or emptying LICENSE fails offline link resolution + this assert.
+    expect(license).toMatch(/THE SOFTWARE IS PROVIDED "AS IS"/);
+
+    const pkg = JSON.parse(
+      readFileSync(path.resolve(process.cwd(), "package.json"), "utf8"),
+    ) as { license?: string };
+    expect(pkg.license).toBe("MIT");
   });
 
   it("links every More docs entry and each file exists", () => {
