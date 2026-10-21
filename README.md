@@ -9,6 +9,8 @@
 
 A writing workspace: register, subscribe, and keep pages with less friction.
 
+This is a Proof of Concept project to test Agentic Engineering methods, tools, and best practices. It is not an intended commercial product and is not associated with any commercial service.
+
 ## Let your agent set up and run this project (locally)
 
 Paste this into any coding agent (or point it at the raw file):
@@ -115,6 +117,10 @@ Full commands with the same env CI uses, plus scripts inventory: [`docs/testing.
 | [`docs/design-notes.md`](docs/design-notes.md) | Limitations, tradeoffs, next steps |
 | [`docs/security.md`](docs/security.md) | Encryption, transport, personal data, passwords |
 | [`docs/ai-usage.md`](docs/ai-usage.md) | AI assistance and manual verification |
+
+## License
+
+Released under the [MIT License](LICENSE). Copyright (c) 2026 Carlos González Rico.
 
 ## Credits
 
