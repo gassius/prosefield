@@ -7,7 +7,7 @@ Every PR that changes behaviour must ship tests in the **same** PR:
 1. **Same-PR tests for behaviour changes** — Vitest unit and component (RTL) coverage for logic and UI wiring; Playwright E2E for user flows (register, login, logout, redirects, CTAs); axe accessibility checks for new pages; Docker-only visual baselines for UI changes (`pnpm test:visual` / `pnpm test:visual:update`).
 2. **Bug fixes** include a **regression test that fails before the fix** (prove it bites).
 3. **Tests must bite** — be ready to show a red run when the feature is removed or weakened.
-4. **Coverage thresholds only go up.** New files under covered `src/` globs must stay inside Vitest coverage `include`. Do not lower thresholds to get green.
+4. **Coverage policy (ratchet).** Only `src/` is measured (data/assets stay out). Repo-wide floor is **90%** for statements/branches/functions/lines; a committed [`coverage-baseline.json`](../coverage-baseline.json) never moves down — CI fails if global coverage falls below the baseline, and `pnpm coverage:ratchet:update` only raises it. Critical paths (auth, billing, encryption/document payload) keep high per-path Vitest thresholds. On PRs, new/changed instrumented lines under `src/` need **≥90% diff coverage** (same **Component + coverage** job). New files under covered `src/` globs must stay inside Vitest coverage `include`.
 5. **No weakening to get green:** no `.skip` / `.only`, no loosened assertions, no extra visual diff allowance, no retries used to hide flakes.
 6. **PR body** lists which tests cover each scope item / behaviour change.
 
@@ -33,6 +33,11 @@ export FIRESTORE_EMULATOR_HOST=127.0.0.1:8080
 export APP_URL=http://localhost:3000
 
 pnpm test:coverage
+pnpm coverage:ratchet          # floor + baseline (after coverage report exists)
+# After an intentional coverage improvement:
+# pnpm coverage:ratchet:update
+# On a PR branch (base SHA or ref):
+# COVERAGE_DIFF_BASE=origin/main pnpm coverage:diff
 # or only integration:
 pnpm test:integration
 ```
@@ -132,7 +137,10 @@ Demo GIFs (`pnpm demo:gifs`) are **not** part of the visual-regression gate.
 |---|---|
 | `pnpm test` | Vitest unit project |
 | `pnpm test:component` | React Testing Library component suite (jsdom) |
-| `pnpm test:coverage` | Unit + component + integration with V8 coverage thresholds (needs emulators) |
+| `pnpm test:coverage` | Unit + component + integration with V8 coverage (floor + per-path bars; needs emulators) |
+| `pnpm coverage:ratchet` | Fail if measured coverage is below the 90% floor or `coverage-baseline.json` |
+| `pnpm coverage:ratchet:update` | Raise the committed baseline to measured totals (never lowers) |
+| `pnpm coverage:diff` | PR diff coverage for new/changed instrumented lines under `src/` (`COVERAGE_DIFF_BASE` required) |
 | `pnpm test:integration` | Session/guard tests against running emulators (`pnpm backend:up` first) |
 | `pnpm test:e2e` | Playwright Chromium E2E + axe a11y (app + emulators running) |
 | `pnpm test:e2e:offline` | Landing page only, backend down (host-only frontend rule) |

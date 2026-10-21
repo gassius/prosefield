@@ -107,7 +107,7 @@ Every PR that changes behaviour must ship tests in the **same** PR. Mirror the C
    - Docker-only **visual** baselines for UI changes (`pnpm test:visual` / `pnpm test:visual:update`)
 2. **Bug fixes** include a **regression test that fails before the fix** (prove it bites).
 3. **Tests must bite** — be ready to show a red run when the feature is removed or weakened.
-4. **Coverage thresholds only go up.** New files under `src/lib/**` and `src/features/auth/**` must stay inside Vitest coverage `include` globs. Do not lower thresholds to get green.
+4. **Coverage policy (ratchet).** Repo-wide floor 90%; committed `coverage-baseline.json` only moves up; critical paths (auth, billing, encryption/document payload) keep high per-path bars; PRs need ≥90% diff coverage on new/changed instrumented lines under `src/`. New files under covered `src/` globs must stay inside Vitest coverage `include`. Do not lower the baseline or critical path thresholds to get green.
 5. **No weakening to get green:** no `.skip` / `.only`, no loosened assertions, no extra visual diff allowance, no retries used to hide flakes.
 6. **PR body** lists which tests cover each scope item / behaviour change.
 
