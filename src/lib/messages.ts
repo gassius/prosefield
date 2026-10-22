@@ -1,20 +1,16 @@
 /**
  * User-facing error and empty-state messages (en-GB).
- * Prefer this module over hard-coding those strings in UI components.
+ * Derived from siteCopy so there is one source of truth; prefer this module
+ * when wiring empty-state / error UI.
  */
 
+import { siteCopy } from "@/content/site";
+
 export const messages = {
-  errors: {
-    network: "Something went wrong. Please try again.",
-    saveFailed: "Save failed. Try again.",
-    signOut: "We couldn't sign you out. Please try again.",
-  },
   empty: {
-    documentsTitle: "Your first page is waiting.",
-    documentsBody: "Create a document to start writing.",
-    notFoundTitle: "Page not found",
-    notFoundBody: "That page isn’t here. Head home to keep writing.",
-    spellcheckNoSuggestions: "No suggestions",
+    documentsTitle: siteCopy.documents.emptyTitle,
+    documentsBody: siteCopy.documents.emptyBody,
+    spellcheckNoSuggestions: siteCopy.documents.spellcheckNoSuggestions,
   },
 } as const;
 
