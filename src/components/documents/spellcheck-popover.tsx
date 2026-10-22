@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 import { siteCopy } from "@/content/site";
+import { messages } from "@/lib/messages";
 import { cn } from "@/lib/utils";
 
 export type SpellcheckPopoverProps = {
@@ -78,7 +79,7 @@ export function SpellcheckPopover({
       </p>
       {suggestions.length === 0 ? (
         <p className="text-muted-foreground px-2 py-1.5 text-sm">
-          {siteCopy.documents.spellcheckNoSuggestions}
+          {messages.empty.spellcheckNoSuggestions}
         </p>
       ) : (
         <ul className="flex flex-col">
